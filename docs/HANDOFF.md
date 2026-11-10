@@ -22,7 +22,7 @@
 
 角色资料从 [characters.json](../src/ai/characters.json) 读取。稳定角色 ID 对应联系人，`departmentId` 对应功能分组，`roomId` 对应模型舱室；外部联系人可没有舱室。原作依据写进 `facts` 和 `sources`，项目拟定的语气及专长写进 `persona` 和 `expertise`。补资料时同步[角色说明](舰上组织与角色.md)。普通船员复用 `crew`，会话按实际 SE 编号区分。
 
-本地对话由 `src/ai/server.py` 提供同源登舰页和流式接口，`dialogue.js` 处理选角、输入、停止和页面内会话。模型回复只产生文本。接手时从项目根运行 `python src/ai/server.py --open`，从舰内按钮实际发送消息；浏览单文件离线版时，运行入口见其通讯提示。只将公开角色资料和运行方法写入仓库。
+本地对话由 `src/ai/server.py` 提供同源登舰页和流式接口，`dialogue.js` 处理选角、输入、停止和页面内会话。每次舰上请求显式发送 `think: false` 和 `options.num_ctx: 8192`，思考设置仅作用于本项目的角色通讯。角色直接以中文生成同人对白。接手时从项目根运行 `python src/ai/server.py --open`，从舰内按钮实际发送消息；浏览单文件离线版时，运行入口见其通讯提示。只将公开角色资料和运行方法写入仓库。
 
 ## 贡献一次改动
 

@@ -46,6 +46,7 @@ notices = '\n\n'.join(path.read_text(encoding='utf-8') for path in
 inner = f'{head}{title}<style>{style}</style><body>{fragment}</body></html>'
 document = (f'{head}{title}<style>html,body,iframe{{margin:0;border:0;width:100%;height:100%;'
             'display:block;background:#101723}}</style><body>'
-            f'<iframe title="赛尔号三维漫游" allowfullscreen sandbox="allow-scripts" srcdoc="{escape(inner, quote=True)}">'
+            '<iframe title="赛尔号三维漫游" allowfullscreen '
+            f'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
             '</iframe><template id="licenses">' + escape(notices) + '</template></body></html>')
 publish_text(output/'seer-starship.html',document)

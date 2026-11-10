@@ -124,6 +124,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   host.hidden=true;
   const requestedModel='qwen3.5:9b';
   let selectedModel=requestedModel,modelChanged=false,characters=[],organization=[];
+  let thinkingOffModel=null;
   let availableModels=new Set();
   let genericCharacter=null,currentKey='',serviceReady=false,catalogReady=false,disposed=false;
   let connectRequest=null,activeRequest=null,followBottom=true;
@@ -136,6 +137,10 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   function stopMovement() { adapter.stopMovement?.();adapter.requestFrame?.(); }
   function showProblem(message) {problem.textContent=message||'';problem.hidden=!message;}
   function setPhase(message,tone='') {phase.textContent=message;phase.dataset.tone=tone;}
+  function modelCaption() {
+    const caption=(serviceReady?'Ollama 可用 · 已安装 ':'所选模型 · ')+selectedModel;
+    return serviceReady&&thinkingOffModel===selectedModel?caption+' · 思考已关闭':caption;
+  }
   function sessionFor(key=currentKey) {
     if(!sessions.has(key))sessions.set(key,{messages:[],draft:'',retry:null});
     return sessions.get(key);
@@ -353,11 +358,12 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
       }
       if(modelsResult.status==='fulfilled')setModelOptions(modelsResult.value);
       const health=healthResult.status==='fulfilled'?healthResult.value:null;
+      thinkingOffModel=health?.thinking===false?health.model:null;
       const needsModel=modelsResult.status==='fulfilled'&&!availableModels.has(selectedModel);
       serviceReady=Boolean(catalogResult.status==='fulfilled'&&catalogReady&&health?.ok&&health?.ollamaAvailable&&
         modelsResult.status==='fulfilled'&&!needsModel);
       if(serviceReady) {
-        modelStatus.textContent='Ollama 可用 · 已安装 '+selectedModel;modelStatus.dataset.tone='ready';
+        modelStatus.textContent=modelCaption();modelStatus.dataset.tone='ready';
         showProblem('');
       }else {
         modelStatus.textContent=health?'通讯服务已连接 · 本地模型尚未就绪':'通讯服务未连接';modelStatus.dataset.tone='error';
@@ -450,7 +456,9 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
         let event;
         try{event=JSON.parse(line);}catch(_){throw new Error('通讯响应格式有误，请重连后再试。');}
         if(event.type==='status') {
-          if(event.phase==='thinking')setPhase('正在思考…');
+          if(event.phase==='thinking'){
+            thinkingOffModel=null;modelStatus.textContent=modelCaption();setPhase('正在思考…');
+          }
           else if(event.phase==='loading')setPhase('正在载入模型…');
         }else if(event.type==='token'&&typeof event.content==='string') {
           // Only response content is rendered. Thought traces are never displayed.
@@ -512,7 +520,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   people.addEventListener('change',()=>selectTarget(people.value));
   models.addEventListener('change',()=>{
     selectedModel=models.value;modelChanged=true;
-    modelStatus.textContent=(serviceReady?'Ollama 可用 · 已安装 ':'所选模型 · ')+selectedModel;
+    modelStatus.textContent=modelCaption();
   });
   form.addEventListener('submit',event=>{event.preventDefault();submitMessage();});
   stop.addEventListener('click',()=>cancelGeneration());
