@@ -28,7 +28,9 @@
   const viewButtons=[...root.querySelectorAll('[data-view]')];
   for(const [i,deck] of regions.entries())deckSelect.add(new Option(deck.name,String(i)));
   const state={mode:'board',deck:1,room:'',located:'',rotate:false,wire:false,
-    azimuth:-.16,elevation:.20,distance:18.7};
+    azimuth:-.16,elevation:.20,distance:18.7,quality:'fine'};
+  const finishing=createFrameFinish();
+  const qualitySelect=root.querySelector('[data-quality]');
   const target=new T.Vector3();
   const raycaster=new T.Raycaster();
   let selected=null, frame=0, lastTime=0, disposed=false;
@@ -71,6 +73,8 @@
     const aboard=state.mode==='board', cut=state.mode==='section', single=state.mode==='deck';
     const detailed=boardable();
     const located=cut && habitat.byId.get(state.located);
+    reflections.select(aboard || Boolean(detailed));
+    qualitySelect.value=state.quality;
     locator.visible=Boolean(located);
     if(located){
       const {width,height,depth}=located.spec;
@@ -139,6 +143,7 @@
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
     state.mode=saved.mode;
+    state.quality=saved.quality==='fast'?'fast':'fine';
     state.located=habitat.byId.has(saved.located)?saved.located:'';
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
     state.room=(state.mode==='board'?habitat.byId.has(saved.room):regions[state.deck].rooms.some(r=>r.id===saved.room))?saved.room:'';
@@ -160,7 +165,7 @@
     frame=0;if(disposed)return;
     if(state.mode==='board'){
       const walking=boarding.frame(time);
-      renderer.render(scene,camera);
+      finishing.render(state.quality==='fine',unitMetre*.68);
       if(walking)requestDraw();
       return;
     }
@@ -171,13 +176,33 @@
     camera.position.set(target.x+Math.sin(state.azimuth)*horizontal,
       target.y+Math.sin(state.elevation)*distance,target.z+Math.cos(state.azimuth)*horizontal);
     camera.lookAt(target);
-    renderer.render(scene,camera);
+    finishing.render(state.quality==='fine' && !state.wire,boardable()?unitMetre*.68:.115);
     if(state.rotate)requestDraw();
   }
   function requestDraw(){if(!disposed && !frame)frame=requestAnimationFrame(draw);}
   function resize(){
     const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+    const fine=state.quality==='fine';
+    const ratio=Math.min(window.devicePixelRatio||1,fine?2:1,Math.sqrt((fine?2800000:1050000)/(w*h)));
+    if(renderer.getPixelRatio()!==ratio)renderer.setPixelRatio(ratio);
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestDraw();
+  }
+  qualitySelect.addEventListener('change',()=>{state.quality=qualitySelect.value;resize();save();});
+  const fullscreenButton=root.querySelector('[data-action=fullscreen]');
+  if(document.fullscreenEnabled && root.requestFullscreen){
+    fullscreenButton.hidden=false;
+    fullscreenButton.addEventListener('click',async()=>{
+      try{
+        if(document.fullscreenElement===root)await document.exitFullscreen();
+        else await root.requestFullscreen();
+      }catch{fullscreenButton.hidden=true;}
+    });
+    root.addEventListener('fullscreenchange',()=>{
+      const expanded=document.fullscreenElement===root;
+      fullscreenButton.setAttribute('aria-pressed',String(expanded));
+      fullscreenButton.textContent=expanded?'退出全屏':'全屏';
+      resize();
+    });
   }
   for(const btn of viewButtons)btn.addEventListener('click',()=>applySelection(btn.dataset.view));
   enterRoomButton.addEventListener('click',()=>applySelection('board',state.deck,state.room));
@@ -258,7 +283,7 @@
   });
   function loadHostState(e){
     const saved=e.detail?.globals?.widgetState?.privateContent;if(!saved || saved.version!==3 || JSON.stringify(saved)===lastSaved)return;
-    restore(saved);syncScene();
+    restore(saved);syncScene();resize();
   }
   ship.updateMatrixWorld(true);
   frameSelection();
@@ -273,8 +298,10 @@
     window.removeEventListener('openai:set_globals',loadHostState);
     const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
     scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});
-    geometries.forEach(g=>g.dispose());materials.forEach(m=>{if(m.map)textures.add(m.map);m.dispose();});textures.forEach(t=>t.dispose());
-    renderer.dispose();
+    geometries.forEach(g=>g.dispose());
+    materials.forEach(m=>{for(const value of Object.values(m))if(value?.isTexture)textures.add(value);m.dispose();});
+    textures.forEach(t=>t.dispose());
+    finishing.dispose();reflections.dispose();renderer.dispose();
   },{once:true});
   syncScene();resize();
 })();

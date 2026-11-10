@@ -82,12 +82,108 @@
       return room;
     });
     const byId=new Map(rooms.map(r=>[r.id,r]));
+    // Static fittings are compiled after the room builder has finished placing
+    // them. Small pieces in the same bay and physical parent can share one
+    // ordinary mesh, with real bounds for frustum culling and room raycasts.
+    function batchCabinFittings(room,kit){
+      const knownGeometry=new Set(cabinAssets.geometries.values());
+      const bounds=new Map(),probe=new T.Box3(),extent=new T.Vector3();
+      const localBox=g=>{
+        if(!bounds.has(g))bounds.set(g,new T.Box3().setFromBufferAttribute(g.attributes.position));
+        return bounds.get(g);
+      };
+      function eligible(part){
+        if(part.type!=='Mesh'||part.children.length||!part.visible||part.name||part.animations.length||
+            part.layers.mask!==1||part.renderOrder||!part.frustumCulled||!part.matrixAutoUpdate||
+            !part.material?.isMeshStandardMaterial||part.material.transparent||part.material.wireframe||
+            part.material.transmission||part.material.displacementMap||part.material.alphaTest||
+            part.material.onBeforeCompile!==T.Material.prototype.onBeforeCompile||
+            part.scale.x<=0||part.scale.y<=0||part.scale.z<=0||
+            Object.keys(part.userData).length||part.customDepthMaterial||part.customDistanceMaterial||
+            part.raycast!==T.Mesh.prototype.raycast||part.onBeforeRender!==T.Object3D.prototype.onBeforeRender||
+            part.onAfterRender!==T.Object3D.prototype.onAfterRender)return false;
+        const g=part.geometry,a=g.attributes;
+        return knownGeometry.has(g)&&!Object.keys(g.morphAttributes).length&&
+          a.position?.count<=384&&a.normal&&a.uv&&Object.keys(a).length===3&&
+          g.drawRange.start===0&&g.drawRange.count===Infinity;
+      }
+      // The boarding light classifies a fitting by its world-space bounds.
+      // The render parent, material and original shadow flags are preserved;
+      // skip a merge when the combined bounds would change that classification.
+      function majorCaster(box,matrix){
+        probe.copy(box).applyMatrix4(matrix).getSize(extent).multiplyScalar(metresPerRenderUnit);
+        return extent.y>.20&&Math.max(extent.x,extent.z)>.60;
+      }
+      const metrics={shell:{sources:0,batches:0},equipment:{sources:0,batches:0},drawsSavedIfVisible:0};
+      function merge(group,parts,shell,caster){
+        if(parts.length<3)return;
+        if(!shell&&!parts[0].castShadow){
+          const outer=new T.Box3(),scratch=new T.Box3();
+          for(const part of parts)outer.union(scratch.copy(localBox(part.geometry)).applyMatrix4(part.matrix));
+          if(majorCaster(outer,group.matrixWorld)!==caster)return;
+        }
+        let vertices=0,indices=0;
+        for(const part of parts){
+          const g=part.geometry;vertices+=g.attributes.position.count;
+          indices+=g.index?g.index.count:g.attributes.position.count;
+        }
+        const positions=new Float32Array(vertices*3),normals=new Float32Array(vertices*3);
+        const uv=new Float32Array(vertices*2),order=new Uint16Array(indices);
+        const v=new T.Vector3(),normalMatrix=new T.Matrix3();
+        let first=0,next=0;
+        for(const part of parts){
+          const g=part.geometry,a=g.attributes;normalMatrix.getNormalMatrix(part.matrix);
+          for(let i=0;i<a.position.count;i++){
+            const at=first+i;
+            v.fromBufferAttribute(a.position,i).applyMatrix4(part.matrix).toArray(positions,at*3);
+            v.fromBufferAttribute(a.normal,i).applyNormalMatrix(normalMatrix).toArray(normals,at*3);
+            uv[at*2]=a.uv.getX(i);uv[at*2+1]=a.uv.getY(i);
+          }
+          const count=g.index?g.index.count:a.position.count;
+          for(let i=0;i<count;i++)order[next++]=first+(g.index?g.index.getX(i):i);
+          first+=a.position.count;
+        }
+        const g=new T.BufferGeometry();
+        g.setAttribute('position',new T.BufferAttribute(positions,3));
+        g.setAttribute('normal',new T.BufferAttribute(normals,3));
+        g.setAttribute('uv',new T.BufferAttribute(uv,2));g.setIndex(new T.BufferAttribute(order,1));
+        g.computeBoundingBox();
+        if(!shell&&!parts[0].castShadow&&majorCaster(g.boundingBox,group.matrixWorld)!==caster)return;
+        g.computeBoundingSphere();
+        const result=new T.Mesh(g,parts[0].material);
+        result.castShadow=parts[0].castShadow;result.receiveShadow=parts[0].receiveShadow;
+        for(const part of parts)group.remove(part);
+        group.add(result);
+        const count=shell?metrics.shell:metrics.equipment;
+        count.sources+=parts.length;count.batches++;metrics.drawsSavedIfVisible+=parts.length-1;
+      }
+      function visit(group,shell){
+        if(group.animations.length)return;
+        const children=group.children.slice(),bins=new Map();
+        for(const part of children){
+          if(part.isGroup){visit(part,shell||part===kit.shell);continue;}
+          if(!eligible(part))continue;
+          const caster=!shell&&!part.castShadow&&majorCaster(localBox(part.geometry),part.matrixWorld);
+          const p=part.position,cell=[Math.floor(p.x/12),Math.floor(p.y/8),Math.floor(p.z/12)];
+          const key=[part.material.id,part.castShadow,part.receiveShadow,caster,...cell].join('/');
+          let bin=bins.get(key);if(!bin){bin={parts:[],vertices:0,caster};bins.set(key,bin);}
+          const count=part.geometry.attributes.position.count;
+          if(bin.vertices+count>4096){merge(group,bin.parts,shell,caster);bin.parts=[];bin.vertices=0;}
+          bin.parts.push(part);bin.vertices+=count;
+        }
+        for(const bin of bins.values())merge(group,bin.parts,shell,bin.caster);
+      }
+      room.group.updateWorldMatrix(true,true);
+      visit(room.group,false);
+      room.group.userData.staticBatching=metrics;
+    }
     function buildRoom(room) {
       if(room.built)return;
       const builder=cabinBuilders[room.id];
       if(typeof builder!=='function')throw new Error('未装配舱室模块：'+room.name);
       const kit=buildRoomKit(room.group,room.spec);
       builder(kit);
+      batchCabinFittings(room,kit);
       room.roof=kit.roof;
       room.built=true;
     }

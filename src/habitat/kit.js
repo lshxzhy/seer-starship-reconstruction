@@ -6,10 +6,109 @@
     return collection.get(key);
   }
 
+  // One seamless painted pattern per manufacturing finish. Red stores height
+  // and green stores microsurface roughness in the same linear data texture.
+  // G03 shows segmented floor bands; G04 and G07 show framed equipment bays.
+  // Joint widths, captive screws, overhead air slots and tread are inferred.
+  function cabinFinish(kind){
+    return cabinAsset(cabinAssets.canvases,'finish/'+kind,()=>{
+      const deck=kind==='deck'||kind==='tread',lid=kind==='soffit';
+      const n=deck?512:256;
+      const makeCanvas=()=>{
+        const c=document.createElement('canvas');c.width=n;c.height=n;return c;
+      };
+      const colour=makeCanvas(),relief=makeCanvas();
+      const ink=colour.getContext('2d'),data=relief.getContext('2d');
+      const pixels=ink.createImageData(n,n),packed=data.createImageData(n,n);
+      let seed=271;
+      for(let i=0;i<pixels.data.length;i+=4){
+        seed=(Math.imul(seed,1664525)+1013904223)>>>0;
+        const grain=(seed>>>29)-3;
+        const row=Math.floor(i/(4*n));
+        const shade=248+grain+(row%5===0?-2:0);
+        pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=shade;
+        pixels.data[i+3]=255;
+        packed.data[i]=156;packed.data[i+1]=(deck?223:202)+grain;
+        packed.data[i+3]=255;
+      }
+      ink.putImageData(pixels,0,0);data.putImageData(packed,0,0);
+      // Work on a common drafting grid, independent of the texture resolution.
+      for(const ctx of [ink,data])ctx.scale(n/256,n/256);
+      function stroke(points,width,grey,height,rough){
+        for(const [ctx,style] of [[ink,'rgb('+[grey,grey,grey]+')'],[data,'rgb('+[height,rough,0]+')']]){
+          ctx.strokeStyle=style;ctx.lineWidth=width;ctx.lineJoin='round';
+          ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
+        }
+      }
+      function screw(x,y){
+        for(const [ctx,style] of [[ink,'#abadae'],[data,'rgb(105,165,0)']]){
+          ctx.fillStyle=style;ctx.beginPath();ctx.arc(x,y,1.6,0,Math.PI*2);ctx.fill();
+        }
+        stroke([[x-.8,y+.7],[x+.8,y-.7]],.55,90,69,205);
+      }
+      const bevel=deck?3.0:2.1;
+      const edge=[[bevel,8],[8,bevel],[248,bevel],[256-bevel,8],
+        [256-bevel,248],[248,256-bevel],[8,256-bevel],[bevel,248],[bevel,8]];
+      stroke(edge,deck?2.5:1.8,200,106,247);
+      stroke(edge,.9,163,70,244);
+      for(const x of [11,245])for(const y of [11,245])screw(x,y);
+      if(deck){
+        // Two recessed finger holds near one edge of each removable deck plate.
+        for(const x of [98,140]){
+          stroke([[x,237],[x+18,237]],2.7,188,85,218);
+          stroke([[x,239],[x+18,239]],.75,253,164,163);
+        }
+        if(kind==='tread'){
+          for(let j=0;j<12;j++)for(let i=0;i<14;i++){
+            const x=15+i*17+(j%2)*5,y=21+j*18;
+            stroke([[x,y],[x+5,y-3]],2.1,226,205,153);
+          }
+        }
+      }else if(lid){
+        // The slotted return strip sits to one side of each overhead cassette.
+        for(let i=0;i<18;i++){
+          const x=26+i*11;stroke([[x,207],[x+4,216]],2.6,189,65,235);
+        }
+        stroke([[19,200],[235,200]],.8,220,121,226);
+      }else{
+        // Stepped removable facing and two quarter-turn latches.
+        stroke([[15,180],[15,216],[26,227],[124,227]],1.2,219,112,233);
+        for(const x of [24,232]){
+          stroke([[x-3,37],[x+3,37]],2.0,180,116,170);
+          stroke([[x-2,38],[x+2,38]],.7,250,163,152);
+        }
+      }
+      const spanX=deck?2:lid?2.4:2.8,spanY=deck?2:1.6;
+      const albedo=new T.CanvasTexture(colour),detail=new T.CanvasTexture(relief);
+      albedo.encoding=T.sRGBEncoding;
+      for(const tex of [albedo,detail]){
+        tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.repeat.set(1/spanX,1/spanY);tex.anisotropy=4;
+      }
+      return {map:albedo,bumpMap:detail,roughnessMap:detail,bumpScale:deck?.013:.009};
+    });
+  }
+
+  // UV lengths are metres. Different wall bays therefore share the same paint
+  // and texels; a long wall does not stretch a single screw over its width.
+  function cabinMetricUV(g,sx,sy,sz){
+    const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;
+    for(let i=0;i<uv.count;i++){
+      const x=p.getX(i)*sx,y=p.getY(i)*sy,z=p.getZ(i)*sz;
+      const nx=n.getX(i),ny=n.getY(i),nz=n.getZ(i);
+      if(Math.abs(ny)>Math.max(Math.abs(nx),Math.abs(nz)))uv.setXY(i,x,-z*Math.sign(ny));
+      else if(Math.abs(nx)>Math.abs(nz))uv.setXY(i,-z*Math.sign(nx),y);
+      else uv.setXY(i,x*Math.sign(nz),y);
+    }
+    return g;
+  }
+
   function buildRoomKit(parent,spec){
     const W=spec.width,D=spec.depth,H=spec.height;
     const halfW=W/2,halfD=D/2;
     const root=parent;
+    // Lighting derivatives are in rendered world units while plate dimensions
+    // are authored in metres, even when the ship is displayed at reduced scale.
+    const worldUnitsPerMetre=root.getWorldScale(new T.Vector3()).x;
     const geom=(key,fn)=>cabinAsset(cabinAssets.geometries,key,fn);
     const texture=(key,fn)=>cabinAsset(cabinAssets.canvases,key,fn);
     const material=(color,opts={})=>{
@@ -17,12 +116,14 @@
       const tint=new T.Color(color===undefined?0xc9d4d9:color);
       const glow=opts.glow||0,roughness=opts.roughness??.53,metalness=opts.metalness??.23;
       const opacity=opts.opacity??1;
-      const key=[tint.getHex(),glow,roughness,metalness,opacity].join('/');
+      const key=[tint.getHex(),glow,roughness,metalness,opacity,opts.finish||'',
+        opts.finish?worldUnitsPerMetre:0].join('/');
       return cabinAsset(cabinAssets.materials,key,()=>{
         tint.convertSRGBToLinear();
+        const finish=opts.finish?cabinFinish(opts.finish):null;
         return new T.MeshStandardMaterial({color:tint,roughness,metalness,
           emissive:tint.clone(),emissiveIntensity:glow,transparent:opacity<1,
-          opacity,depthWrite:opacity>=1});
+          opacity,depthWrite:opacity>=1,...(finish?{...finish,bumpScale:finish.bumpScale*worldUnitsPerMetre}:{})});
       });
     };
     const blocks=root.userData.blocks||(root.userData.blocks=[]);
@@ -45,7 +146,9 @@
       return m;
     }
     function box(x,y,z,w,h,d,color,opts={}){
-      const m=place(boxGeometry,material(color,opts),x,y,z,opts);
+      const g=opts.finish?geom('metric-box/'+[w,h,d].join('/'),
+        ()=>cabinMetricUV(boxGeometry.clone(),w,h,d)):boxGeometry;
+      const m=place(g,material(color,opts),x,y,z,opts);
       m.scale.set(w,h,d);return m;
     }
     function cyl(x,y,z,rt,rb,h,color,opts={}){
@@ -117,23 +220,58 @@
     function panel(x,y,z,w,h,color,opts={}){
       const frame=new T.Group();frame.position.set(x,y,z);
       frame.rotation.set(opts.rx||0,opts.ry||0,opts.rz||0);(opts.parent||root).add(frame);
-      const tint=cssHex(color??0x65d4da), key='display/'+tint;
-      const map=texture(key,()=>canvasMap(384,192,(ctx,pw,ph)=>{
-        ctx.fillStyle='#112a37';ctx.fillRect(0,0,pw,ph);
-        ctx.strokeStyle='#284753';ctx.lineWidth=1;
-        for(let n=20;n<380;n+=24){ctx.beginPath();ctx.moveTo(n,22);ctx.lineTo(n,ph-15);ctx.stroke();}
-        for(let n=22;n<185;n+=23){ctx.beginPath();ctx.moveTo(10,n);ctx.lineTo(pw-10,n);ctx.stroke();}
-        ctx.fillStyle=tint;ctx.fillRect(15,12,53,5);ctx.fillRect(330,12,33,4);
-        ctx.strokeStyle=tint;ctx.lineWidth=3;ctx.beginPath();
-        for(let i=0;i<=63;i++){const X=14+i*3.65,Y=101+15*Math.sin(i*.27)+8*Math.cos(i*.70)-19*Math.sin(i*.09);
-          if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);}
-        ctx.stroke();ctx.lineWidth=4;
-        ctx.beginPath();ctx.arc(309,84,33,-Math.PI*.77,Math.PI*.82);ctx.stroke();
-        ctx.lineWidth=1;ctx.beginPath();ctx.arc(309,84,26,0,Math.PI*2);ctx.stroke();
-        for(let j=0;j<7;j++)ctx.fillRect(19+j*32,158,18-j,4);
+      const ratio=w/h,aspect=ratio<.88?.75:ratio<1.65?1.25:ratio<3.25?2:4;
+      const tint=cssHex(color??0x65d4da), key='display/'+aspect+'/'+tint;
+      const map=texture(key,()=>canvasMap(aspect>=2?512:256,aspect===4?128:256,(ctx,pw,ph)=>{
+        // Logical coordinates follow the housing so a dial on a narrow
+        // handheld unit remains round. External room labels carry its purpose.
+        const wide=aspect>=2,dh=200,dw=dh*aspect;
+        ctx.scale(pw/dw,ph/dh);
+        const back=ctx.createLinearGradient(0,0,0,dh);
+        back.addColorStop(0,'#18373f');back.addColorStop(.65,'#0d202c');back.addColorStop(1,'#122c38');
+        ctx.fillStyle=back;ctx.fillRect(0,0,dw,dh);
+        const line=(x1,y1,x2,y2)=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();};
+        ctx.strokeStyle='#284854';ctx.lineWidth=1;
+        for(let x=12;x<dw-10;x+=18)line(x,25,x,dh-22);
+        for(let y=28;y<dh-20;y+=18)line(10,y,dw-10,y);
+        ctx.fillStyle=tint;ctx.fillRect(9,10,dw*.14,3);
+        for(let i=0;i<3;i++)ctx.fillRect(dw-27+6*i,10,3,3);
+        const cx=wide?dw*.78:dw*.5,cy=wide?99:87,r=wide?48:43;
+        const sweep=Math.PI*1.5,start=Math.PI*.75;
+        ctx.strokeStyle=tint;ctx.lineWidth=1.8;
+        ctx.beginPath();ctx.arc(cx,cy,r,start,start+sweep);ctx.stroke();
+        for(let j=0;j<=24;j++){
+          const a=start+j*sweep/24,l=j%4===0?8:3;
+          line(cx+(r-l)*Math.cos(a),cy+(r-l)*Math.sin(a),cx+r*Math.cos(a),cy+r*Math.sin(a));
+        }
+        ctx.fillStyle=tint;ctx.beginPath();ctx.arc(cx,cy,3.5,0,2*Math.PI);ctx.fill();
+        line(cx,cy,cx+r*.62,cy-r*.44);
+        if(wide){
+          const traceW=dw*.52;
+          ctx.lineWidth=2.3;ctx.beginPath();
+          for(let i=0;i<=72;i++){
+            const x=16+i*traceW/72,y=106+12*Math.sin(i*.24)+5*Math.cos(i*.75)-15*Math.sin(i*.09);
+            if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+          }
+          ctx.stroke();
+          for(let i=0;i<=12;i++)line(16+i*traceW/12,145,16+i*traceW/12,i%3===0?139:142);
+        }
+        for(let j=0;j<3;j++){
+          const y=155+j*8;ctx.fillStyle='#30505a';ctx.fillRect(dw*.10,y,dw*.37,2.5);
+          ctx.fillStyle=tint;ctx.fillRect(dw*.10,y,dw*(.18+.052*j),2.5);
+        }
       }));
-      box(0,0,0,w,h,.075,0x273f4a,{parent:frame,roughness:.32});
-      face(0,0,.040,w*.94,h*.88,map,{parent:frame});
+      const casing=geom('instrument-casing/'+aspect,()=>{
+        const a=aspect/2,b=.5,c=.04,s=new T.Shape();
+        s.moveTo(-a+c,-b);s.lineTo(a-c,-b);s.lineTo(a,-b+c);s.lineTo(a,b-c);
+        s.lineTo(a-c,b);s.lineTo(-a+c,b);s.lineTo(-a,b-c);s.lineTo(-a,-b+c);s.closePath();
+        const g=new T.ExtrudeGeometry(s,{depth:1,steps:1,bevelEnabled:true,bevelSegments:1,
+          bevelThickness:.065,bevelSize:.017});
+        g.translate(0,0,-.5);return g;
+      });
+      const body=place(casing,material(0x273f4a,{roughness:.32}),0,0,0,{parent:frame});
+      body.scale.set(w/(aspect+.034),h/1.034,.075);
+      face(0,0,.044,w*.94,h*.88,map,{parent:frame});
       return frame;
     }
 
@@ -177,32 +315,9 @@
     const floorFace=box(0,-.125,0,W,.25,D,frameColor,shellOpts);
     floorFace.name='连续甲板';
 
-    // Draw a repeating, two-metre removable plate with captive screws and a
-    // shallow maintenance grip. The aspect of the pattern stays physical even
-    // when the compartment sizes differ.
-    const floorMap=texture('floor/'+family+'/'+W+'/'+D+'/'+cssHex(floorColor),()=> {
-      const map=canvasMap(256,256,(ctx,pw,ph)=>{
-        ctx.fillStyle=cssHex(floorColor);ctx.fillRect(0,0,pw,ph);
-        ctx.strokeStyle='rgba(20,35,45,.35)';ctx.lineWidth=1.8;
-        ctx.strokeRect(2,2,252,252);ctx.strokeStyle='rgba(233,241,236,.18)';ctx.strokeRect(4,4,248,248);
-        ctx.fillStyle='rgba(28,45,53,.58)';
-        for(const x of [12,244])for(const y of [12,244]){ctx.beginPath();ctx.arc(x,y,2.15,0,Math.PI*2);ctx.fill();}
-        ctx.fillStyle='rgba(30,46,54,.24)';
-        for(let j=0;j<3;j++)ctx.fillRect(103,232+j*3,48,1.5);
-        if(family==='power'){
-          ctx.fillStyle='rgba(206,164,107,.16)';
-          for(let y=28;y<227;y+=18)for(let x=18;x<240;x+=22){
-            const offset=(y%36===28)?8:0;
-            ctx.beginPath();ctx.moveTo(x+offset,y);ctx.lineTo(x+offset+5,y-3);
-            ctx.lineTo(x+offset+9,y-3);ctx.lineTo(x+offset+4,y+1);ctx.fill();
-          }
-        }
-      });
-      map.wrapS=map.wrapT=T.RepeatWrapping;map.repeat.set(W/2,D/2);return map;
-    });
-    const floorMaterial=cabinAsset(cabinAssets.materials,'floor/'+floorMap.uuid,
-      ()=>new T.MeshStandardMaterial({map:floorMap,roughness:.72,metalness:.12}));
-    const tiles=place(faceGeometry,floorMaterial,0,.004,0,{rx:-Math.PI/2,parent:shell});
+    const floorMaterial=material(floorColor,{finish:family==='power'?'tread':'deck',roughness:.80,metalness:.12});
+    const floorUV=geom('metric-deck/'+W+'/'+D,()=>cabinMetricUV(faceGeometry.clone(),W,D,1));
+    const tiles=place(floorUV,floorMaterial,0,.004,0,{rx:-Math.PI/2,parent:shell});
     tiles.scale.set(W,D,1);
 
     // The clear door opening is part of the wall geometry, including the
@@ -213,13 +328,13 @@
     root.userData.doorWidth=doorWidth;root.userData.doorHeight=doorHeight;
     const t=.22,sideWidth=(W-doorWidth)/2;
     for(const side of [-1,1]){
-      shellBox(side*(doorWidth+sideWidth)/2,H/2,halfD+t/2,sideWidth,H,t,wall);
+      shellBox(side*(doorWidth+sideWidth)/2,H/2,halfD+t/2,sideWidth,H,t,wall,{finish:'skin'});
       shellBox(side*(doorWidth/2+.105),doorHeight/2,halfD,.21,doorHeight,.53,dark);
       shellBox(side*(doorWidth/2+.19),doorHeight/2,halfD-.22,.13,doorHeight,.22,lining);
       shellBox(side*(doorWidth/2+.27),doorHeight*.73,halfD-.35,.07,.59,.05,accent,{glow:.46});
       shellBox(side*(doorWidth/2+.39),1.34,halfD-.15,.20,.32,.11,dark);
     }
-    shellBox(0,(H+doorHeight)/2,halfD+t/2,doorWidth,H-doorHeight,t,wall);
+    shellBox(0,(H+doorHeight)/2,halfD+t/2,doorWidth,H-doorHeight,t,wall,{finish:'skin'});
     shellBox(0,doorHeight+.11,halfD,doorWidth+.48,.22,.52,frameColor);
     shellBox(0,doorHeight+.22,halfD-.21,doorWidth*.48,.065,.13,accent,{glow:.7});
     shellBox(0,.015,halfD-.16,doorWidth,.023,.28,frameColor);
@@ -229,15 +344,16 @@
     // and the third dimension follows a wall bay. Reusing the section makes
     // thick bevels and large overhangs cheaper than stacks of thin cuboids.
     function sideCasting(side,z,length,section,color){
-      const key='casting/'+section.map(p=>p.join(',')).join('/');
+      const finish=length>2?'skin':undefined;
+      const key='casting/'+section.map(p=>p.join(',')).join('/')+(finish?'/uv/'+length:'');
       const g=geom(key,()=>{
         const outline=new T.Shape();
         section.forEach(([x,y],i)=>i?outline.lineTo(x,y):outline.moveTo(x,y));
         outline.closePath();
         const geo=new T.ExtrudeGeometry(outline,{depth:1,bevelEnabled:false,steps:1});
-        geo.translate(0,0,-.5);return geo;
+        geo.translate(0,0,-.5);return finish?cabinMetricUV(geo,1,1,length):geo;
       });
-      const m=place(g,material(color),side*halfW,0,z,shellOpts);
+      const m=place(g,material(color,{finish}),side*halfW,0,z,shellOpts);
       m.scale.set(-side,1,length);return m;
     }
     // Back-wall armor with clipped corners. Its depth sits in front of the
@@ -252,7 +368,8 @@
         shape.lineTo(-a,b-c);shape.lineTo(-a,-b+c);shape.closePath();
         return new T.ExtrudeGeometry(shape,{depth:1,bevelEnabled:false,steps:1});
       });
-      const m=place(g,material(color),x,y,z,shellOpts);
+      // Leading faces of this extrusion already use XY in metres.
+      const m=place(g,material(color,{finish:w>2&&h>2?'skin':undefined}),x,y,z,shellOpts);
       m.scale.z=depth;return m;
     }
     if(industrial){
@@ -270,7 +387,7 @@
     }
     for(const side of [-1,1]){
       const x=side*(halfW+t/2);
-      if(!openEdge)shellBox(x,H/2,0,t,H,D,wall);
+      if(!openEdge)shellBox(x,H/2,0,t,H,D,wall,{finish:'skin'});
       shellBox(side*(halfW-.09),.17,0,.18,.34,D,frameColor);
       shellBox(side*(halfW-.045),.48,0,.09,.105,D-.04,dark);
       const bays=Math.max(3,Math.round(D/(industrial?6.8:5.5))),span=D/bays;
@@ -282,7 +399,7 @@
           // Nothing spans the clear viewing edge at the far end of the deck.
           const h=i<bays-2?1.62:Math.min(H,1.62+(i-bays+3)*2.85);
           shellBox(x,h/2,z,t,h,span,wall);
-          shellBox(side*(halfW-.065),h*.49,z,.13,h*.74,span-.23,lining);
+          shellBox(side*(halfW-.065),h*.49,z,.13,h*.74,span-.23,lining,{finish:'skin'});
           shellBox(side*(halfW-.12),h-.07,z,.28,.14,span,frameColor);
           shellBox(side*(halfW-.16),h-.21,z,.055,.07,span-.18,accent,{glow:.2});
           shellBox(side*(halfW-.13),h/2,postZ,.26,h,.24,frameColor);
@@ -315,7 +432,7 @@
           }
           continue;
         }
-        shellBox(side*(halfW-.044),H*.50,z,.09,H*.66,span-.16,lining);
+        shellBox(side*(halfW-.044),H*.50,z,.09,H*.66,span-.16,lining,{finish:'skin'});
         shellBox(side*(halfW-.10),H*.63,z,.08,.30,span-.23,frameColor);
         shellBox(side*(halfW-.147),H*.63,z,.018,.055,span*.58,accent,{glow:.27});
         shellBox(side*(halfW-.13),H*.50,postZ,.26,H-.06,.22,frameColor);
@@ -354,7 +471,7 @@
       shellBox(0,head,-halfD+.03,W-2*pier+.25,.17,.36,frameColor);
       shellBox(0,(sill+head)/2,-halfD-.12,W-2*pier,glassH,.035,0x91c5da,{opacity:.12,metalness:.12,roughness:.12});
     }else{
-      shellBox(0,H/2,-halfD-t/2,W,H,t,wall);
+      shellBox(0,H/2,-halfD-t/2,W,H,t,wall,{finish:'skin'});
       shellBox(0,.17,-halfD+.09,W,.34,.18,frameColor);
       shellBox(0,H*.68,-halfD+.07,W,.19,.16,frameColor);
       if(industrial){
@@ -403,7 +520,7 @@
       }
     }
     if(!spec.openRoof){
-      roofBox(0,H+.12,0,W,.24,D,ceiling);
+      roofBox(0,H+.12,0,W,.24,D,ceiling,{finish:'soffit',roughness:.72});
       const spans=Math.max(3,Math.round(D/5.5)),length=D/spans;
       for(let i=0;i<spans;i++){
         const z=-halfD+(i+.5)*length;

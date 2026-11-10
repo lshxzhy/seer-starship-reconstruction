@@ -1,3 +1,102 @@
+  // A low receiver query keeps shoes on top of flush hatches, floor inlays
+  // and charging plates. The camera and the crew use the same deck datum.
+  const contactFloor=(()=>{
+    const rooms=new Map(),ray=new T.Raycaster(),hits=[],point=new T.Vector3();
+    const inverse=new T.Matrix4(),relative=new T.Matrix4(),box=new T.Box3();
+    function roomSurfaces(room){
+      if(rooms.has(room))return rooms.get(room);
+      const low=[];room.group.updateWorldMatrix(true,true);
+      inverse.copy(room.group.matrixWorld).invert();
+      room.group.traverse(part=>{
+        if(!part.isMesh||part.material.transparent)return;
+        const geometry=part.geometry;
+        if(!geometry.boundingBox)geometry.computeBoundingBox();
+        relative.multiplyMatrices(inverse,part.matrixWorld);
+        box.copy(geometry.boundingBox).applyMatrix4(relative);
+        // A material batch may span both a floor flange and taller fixtures.
+        // Keep overlapping bounds; the downward ray selects the actual top.
+        if(box.max.y<0 || box.min.y>.15)return;
+        low.push({part,x0:box.min.x,x1:box.max.x,z0:box.min.z,z1:box.max.z});
+      });
+      const receivers={low,cache:new Map()};rooms.set(room,receivers);return receivers;
+    }
+    function height(p){
+      const ward=habitat.residences.zoneAt(p);
+      if(ward){
+        const localZ=ward.side*p.z-ward.front;
+        const row=Math.round((localZ-habitat.residences.firstRow)/habitat.residences.pitchZ);
+        if(row>=0 && row<habitat.residences.rows &&
+          Math.abs(localZ-habitat.residences.firstRow-row*habitat.residences.pitchZ)<.58){
+          for(let col=0;col<habitat.residences.columns;col++)
+            if(Math.abs((p.x-ward.cx)*ward.side-habitat.residences.localX(col))<.74)return .064;
+        }
+        return Math.abs(p.x-ward.cx)<2.7?.016:.006;
+      }
+      const room=habitat.rooms.find(r=>r.built && r.level===p.level &&
+        Math.abs(p.x-r.center[0])<=r.spec.width/2 && Math.abs(p.z-r.center[2])<=r.spec.depth/2);
+      if(!room)return .027;
+      const sign=room.side===1?-1:1, x=(p.x-room.center[0])*sign,z=(p.z-room.center[2])*sign;
+      const ix=Math.floor(x*4),iz=Math.floor(z*4),key=(ix+256)*1024+iz+256;
+      const {low,cache}=roomSurfaces(room);
+      if(cache.has(key))return cache.get(key);
+      const cx=(ix+.5)/4,cz=(iz+.5)/4;
+      point.set(cx,.18,cz);room.group.localToWorld(point);
+      ray.ray.origin.copy(point);ray.ray.direction.set(0,-1,0);
+      let top=0;
+      for(const entry of low){
+        if(cx<entry.x0||cx>entry.x1||cz<entry.z0||cz>entry.z1)continue;
+        hits.length=0;entry.part.raycast(ray,hits);
+        for(const hit of hits){
+          const y=room.group.worldToLocal(point.copy(hit.point)).y;
+          if(y>top && y<=.151)top=y;
+        }
+      }
+      cache.set(key,top);return top;
+    }
+    return height;
+  })();
+
+  // One transparent draw for all pairs of soles. The unlit footprint
+  // widens and softens when the matching shoe is lifted during a step.
+  function createSoleContacts(capacity) {
+    const geometry=new T.PlaneGeometry(1,1).rotateX(-Math.PI/2);
+    const strength=new T.InstancedBufferAttribute(new Float32Array(capacity*2),1);
+    geometry.setAttribute('soleStrength',strength.setUsage(T.DynamicDrawUsage));
+    const material=new T.ShaderMaterial({
+      transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1,
+      vertexShader:`attribute float soleStrength;
+        varying vec2 footUV; varying float opacity;
+        void main(){footUV=uv*2.0-1.0;opacity=soleStrength;
+          gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.0);}`,
+      fragmentShader:`varying vec2 footUV; varying float opacity;
+        void main(){vec2 p=footUV;float r=dot(p,p);
+          float fog=exp(-2.8*r),heel=exp(-7.0*dot(p-vec2(0.0,-.16),p-vec2(0.0,-.16)));
+          float alpha=(.48*fog+.52*heel)*(1.0-smoothstep(.68,1.0,r))*opacity;
+          gl_FragColor=vec4(.035,.047,.062,alpha);}`
+    });
+    const mesh=new T.InstancedMesh(geometry,material,capacity*2),transform=new T.Object3D();
+    mesh.name='双脚接触阴影';mesh.count=0;mesh.frustumCulled=false;
+    mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+    function write(slot,x,y,z,yaw,bones){
+      const cos=Math.cos(yaw),sin=Math.sin(yaw);
+      for(let j=0;j<2;j++){
+        const foot=j===0?bones.footL:bones.footR, local=foot.position;
+        const toe=.058, direction=yaw+foot.rotation.y;
+        transform.position.set(x+cos*local.x+sin*local.z-Math.sin(direction)*toe,y+.004,
+          z-sin*local.x+cos*local.z-Math.cos(direction)*toe);
+        const lift=T.MathUtils.clamp(local.y-.177,0,.14);
+        transform.rotation.y=direction;transform.scale.set(.73+lift,.95,1.00+lift);
+        transform.updateMatrix();mesh.setMatrixAt(slot*2+j,transform.matrix);
+        strength.setX(slot*2+j,.57-2.1*lift);
+      }
+    }
+    function finish(n){
+      mesh.count=n*2;
+      if(n){mesh.instanceMatrix.needsUpdate=true;strength.needsUpdate=true;}
+    }
+    return {mesh,write,finish,dispose(){geometry.dispose();material.dispose();mesh.dispose();}};
+  }
+
   // Each crew number owns one physical charging berth. Duty routes are
   // sampled against a common simulation clock; leaving the camera's area
   // releases its draw slot without changing its crew number or route phase.
@@ -21,6 +120,8 @@
     let elapsed = 0, active = false, lastScan = -Infinity, lastX = Infinity, lastZ = Infinity, lastLevel = '';
     let visibleIds = [], nearby = [], drawnCount=0;
     const batch = seerRobots.createBatch(maxVisible);
+    const contacts=createSoleContacts(maxVisible);
+    batch.root.add(contacts.mesh);
     batch.root.name = '邻近的在舰赛尔';
     habitat.root.add(batch.root);
     batch.root.visible = false;
@@ -320,15 +421,21 @@
             if(habitat.canStand(alt)){a.x=alt.x;a.z=alt.z;break;}
           }
         }
-        if(!blocksSight(a,p,eye))
-          batch.write(drawnCount++,a.x,a.y,a.z,a.yaw,crew[i].tint,a.phase,a.speed);
+        if(!blocksSight(a,p,eye)){
+          const y=a.y+contactFloor(a);
+          const feet=batch.write(drawnCount,a.x,y,a.z,a.yaw,crew[i].tint,a.phase,a.speed);
+          contacts.write(drawnCount,a.x,y,a.z,a.yaw,feet);
+          drawnCount++;
+        }
         nearby.push({i,p:a});
       }
       batch.finish(drawnCount);
+      contacts.finish(drawnCount);
     }
     function setActive(value){
       active=Boolean(value);batch.root.visible=active;
       lastScan=-Infinity;lastLevel='';visibleIds=[];nearby=[];drawnCount=0;batch.finish(0);
+      contacts.finish(0);
     }
     function nearest(p,maxMetres=4){
       let match=null,best=maxMetres**2;
@@ -354,6 +461,7 @@
       return p;
     }
     return {update,setActive,getById,nearest,constrainStep,
+      dispose(){batch.root.remove(contacts.mesh);contacts.dispose();},
       get summary(){const onDuty=1+tasks.length+rotatingRows;
         return {total,npc:total-1,capacity:residences.capacity,visible:drawnCount,active:onDuty,charging:total-onDuty};}
     };

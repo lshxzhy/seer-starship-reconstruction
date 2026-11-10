@@ -22,7 +22,7 @@
   const starMap=new T.CanvasTexture(starSprite);
   let seed=521;
   function randomUnit(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
-  for(const [count,diameter,opacity] of [[2900,.23,.62],[420,.43,.84]]){
+  for(const [count,diameter,opacity] of [[2900,.37,.72],[780,.66,.9],[120,1.05,.98]]){
     const positions=[],colors=[];
     for(let i=0;i<count;i++){
       const a=randomUnit()*2*Math.PI, v=randomUnit()*2-1, r=60+randomUnit()*43, ring=Math.sqrt(1-v*v);

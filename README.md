@@ -2,9 +2,11 @@
 
 一个可离线登舰的三维同人项目。你将操控一名经典页游造型的小赛尔，从传送舱出发，沿走廊走进设备之间，也可以乘升降机前往其他甲板。
 
-![首版基础赛尔的正面、右前方和背面](https://github.com/lshxzhy/seer-starship-reconstruction/releases/download/v0.1.0/robot-turnaround.png)
+![精修版在传送舱内的实际画面](https://github.com/lshxzhy/seer-starship-reconstruction/releases/download/v0.2.0/teleport-bay.jpg)
 
 **直接游玩**　从 [GitHub Releases](https://github.com/lshxzhy/seer-starship-reconstruction/releases/latest) 下载 `seer-starship.html`，用支持 WebGL 的桌面浏览器打开。点一下画面，W/A/S/D 移动，Shift 快行，拖动环视，滚轮调整跟随距离，V 切换第一人称。“看正面”可以观察赛尔的面盘和双脚。触屏使用方向键和视角菜单。
+
+默认“精细”画质保留舱内反射、甲板接缝和屏幕空间接触遮蔽。“流畅”降低像素预算并直接绘制场景。想观察机体细节，可点“看正面”并向前滚动鼠标滚轮；在传送舱、瞭望舱或动力室点“近看设备”，会以第一人称站到机器旁，仍可自由走动。浏览器支持时可切换全屏。
 
 **从源码构建**　安装 Python 3.8 或更新版本，在仓库根目录运行：
 

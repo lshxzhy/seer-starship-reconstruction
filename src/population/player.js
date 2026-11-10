@@ -1,20 +1,13 @@
   // Both camera styles follow one physical robot, using the same foot pose
   // as door collision, deck navigation and lift landings.
   function createSeerPilot(worldMetre) {
-    const rig=seerRobots.create(0xd84a38,{name:'SE-00001'});
+    const rig=seerRobots.create(0xd84a38,{name:'SE-00001',castShadow:false});
     const avatar=rig.root;
     avatar.name='SE-00001 · 玩家赛尔';
     avatar.scale.setScalar(worldMetre);
     avatar.visible=false;
     scene.add(avatar);
-    const ground=new T.Group();
-    const disk=document.createElement('canvas');disk.width=disk.height=64;
-    const c=disk.getContext('2d'),g=c.createRadialGradient(32,32,2,32,32,31);
-    g.addColorStop(0,'rgba(6,13,25,.48)');g.addColorStop(.62,'rgba(6,13,25,.25)');g.addColorStop(1,'rgba(6,13,25,0)');
-    c.fillStyle=g;c.fillRect(0,0,64,64);
-    const contact=new T.Mesh(new T.PlaneGeometry(1.22,.89),new T.MeshBasicMaterial({
-      map:new T.CanvasTexture(disk),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));
-    contact.rotation.x=-Math.PI/2;ground.add(contact);
+    const contacts=createSoleContacts(1),ground=contacts.mesh;
     ground.scale.setScalar(worldMetre);ground.visible=false;scene.add(ground);
     let facing=0,phase=0,previous=null,style='follow',distance=4.15,active=false;
     let sampled=null,available=distance;
@@ -40,15 +33,17 @@
       phase+=seerRobots.phaseStep(speed,dt);
       avatar.rotation.y=facing;
       seerRobots.animate(rig,phase,speed,dt);
-      avatar.position.copy(habitat.worldPosition(pose.x,pose.y,pose.z));
-      ground.position.copy(habitat.worldPosition(pose.x,pose.y+.034,pose.z));
+      const floorY=pose.y+contactFloor(pose);
+      avatar.position.copy(habitat.worldPosition(pose.x,floorY,pose.z));
+      ground.position.copy(avatar.position);
       ground.rotation.y=facing;
+      contacts.write(0,0,0,0,0,rig.bones);contacts.finish(1);
       const sin=Math.sin(yaw),cos=Math.cos(yaw);
-      const head=habitat.worldPosition(pose.x,pose.y+eyeHeight,pose.z);
+      const head=habitat.worldPosition(pose.x,floorY+eyeHeight,pose.z);
       if(style==='eye'){
         avatar.visible=ground.visible=false;camera.position.copy(head);
         camera.lookAt(head.clone().add(new T.Vector3(-sin*Math.cos(pitch),Math.sin(pitch),-cos*Math.cos(pitch))));
-        return {x:pose.x,y:pose.y+eyeHeight,z:pose.z};
+        return {x:pose.x,y:floorY+eyeHeight,z:pose.z};
       }
       // Sweep the camera boom through the walkable footprint, stopping before
       // bulkheads and equipment. Only resample when the camera actually moves.
@@ -72,11 +67,16 @@
       if(!avatar.visible){
         camera.position.copy(head);
         camera.lookAt(head.clone().add(new T.Vector3(-sin*Math.cos(pitch),Math.sin(pitch),-cos*Math.cos(pitch))));
-        return {x:pose.x,y:pose.y+eyeHeight,z:pose.z};
+        return {x:pose.x,y:floorY+eyeHeight,z:pose.z};
       }
-      const cy=T.MathUtils.clamp(1.12+Math.tan(angle)*available,.43,sampled.ceiling-.32);
+      const cy=T.MathUtils.clamp(1.12+floorY-pose.y+Math.tan(angle)*available,.43,sampled.ceiling-.32);
       camera.position.copy(habitat.worldPosition(pose.x+sin*available,pose.y+cy,pose.z+cos*available));
-      camera.lookAt(habitat.worldPosition(pose.x-sin*.85,pose.y+1.08+.52*Math.sin(pitch),pose.z-cos*.85));
+      // Aim slightly past the player's shoulder from behind. The swept boom
+      // stays in the safe path and the front inspection angle stays centred.
+      const shoulder=Math.min(.65,available*.16)*Math.min(1,camera.aspect)*
+        T.MathUtils.smoothstep(Math.cos(yaw-facing),-.1,.72);
+      camera.lookAt(habitat.worldPosition(pose.x-sin*.85+cos*shoulder,
+        floorY+1.08+.21*shoulder+.52*Math.sin(pitch),pose.z-cos*.85-sin*shoulder));
       return {x:pose.x+sin*available,y:pose.y+cy,z:pose.z+cos*available};
     }
     return {
@@ -86,8 +86,6 @@
       zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),2.4,6.6);sampled=null;},
       get style(){return style;},get facing(){return facing;},
       snapshot(){return {perspective:style,facing,boom:distance};},
-      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);ground.traverse(piece=>{
-        piece.geometry?.dispose();if(piece.material){piece.material.map?.dispose();piece.material.dispose();}
-      });}
+      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();}
     };
   }

@@ -27,18 +27,24 @@
   }
   // Patches share the same parametric skin. Their narrow gaps expose the
   // darker structural layer without drawing a heavy line around every panel.
-  function patch(sample, nx, ny, material) {
-    const vertices=[], indices=[];
-    for(let i=0;i<=nx;i++) for(let j=0;j<=ny;j++) vertices.push(...sample(i/nx,j/ny));
+  const shellBatches=new Map();
+  function patch(sample, nx, ny, material, tile=null) {
+    if(!shellBatches.has(material))shellBatches.set(material,{vertices:[],indices:[],uv:[]});
+    const {vertices,indices,uv}=shellBatches.get(material);
+    const first=vertices.length/3;
+    // The two extra edge samples form a folded return on each armour sheet.
+    const along=(i,n)=>tile===null?i/n:i===0?0:i===n?1:.013+.974*(i-1)/(n-2);
+    for(let i=0;i<=nx;i++) for(let j=0;j<=ny;j++){
+      const u=along(i,nx),v=along(j,ny);
+      vertices.push(...sample(u,v));
+      if(tile!==null){
+        uv.push((tile%2+.008+u*.984)/2,1-(Math.floor(tile/2)+.015+v*.97)/2);
+      }
+    }
     for(let i=0;i<nx;i++) for(let j=0;j<ny;j++) {
-      const a=i*(ny+1)+j, b=a+1, c=a+ny+1, d=c+1;
+      const a=first+i*(ny+1)+j, b=a+1, c=a+ny+1, d=c+1;
       indices.push(a,b,c,b,d,c);
     }
-    const geometry=new T.BufferGeometry();
-    geometry.setAttribute('position',new T.Float32BufferAttribute(vertices,3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    return mesh(geometry,material);
   }
   const tau=Math.PI*2;
   patch((u,v)=>shellPoint(lerp(-4.80,6,u),v*tau),72,64,mats.dark);
@@ -61,8 +67,10 @@
         const q=side===1?v:1-v;
         const x=lerp(seam(k,q)+.009,seam(k+1,q)-.009,u);
         const a=lerp(bands[b]+.003,bands[b+1]-.003,q);
-        return shellPoint(x,mirroredAngle(side,a),.029);
-      },12,7,coating);
+        const edge=Math.min(u,1-u,v,1-v);
+        const lip=.012+.025*Math.min(1,edge/.013);
+        return shellPoint(x,mirroredAngle(side,a),lip);
+      },16,10,armourCoat(coating),(b*3+k+(side===1?1:0))%4);
     }
   }
   // Cross-section end caps and a bevel-edged outer sill.
@@ -81,10 +89,13 @@
     trim(side,-4.44,5.97,1.23,1.32,mats.pearl);
     // Two continuous dark window galleries wrap around the blunt bow.
     for(const [start,end,a0,a1] of [[.62,5.96,1.44,1.59],[1.10,5.79,1.70,1.82]]) {
-      trim(side,start,end,a0,a1,mats.dark,.069);
+      trim(side,start-.025,end+.025,a0-.012,a1+.012,mats.steel,.072);
+      trim(side,start,end,a0,a1,mats.dark,.082);
       for(let x=start+.13,j=0;x<end-.10;x+=.165,j++) {
         const light=j%7===4?mats.glass:j%5===1?mats.cyan:mats.blue;
-        trim(side,x,x+.071,a0+.030,a1-.032,light,.089);
+        trim(side,x-.009,x+.084,a0+.017,a1-.018,mats.edge,.094);
+        trim(side,x,x+.071,a0+.029,a1-.030,light,.099);
+        trim(side,x-.012,x+.086,a1-.027,a1-.009,mats.steel,.105);
       }
     }
     trim(side,-4.36,-2.60,1.66,1.95,mats.cobalt);
@@ -180,3 +191,13 @@
     for(let i=0;i<7;i++)roofPlate(-5.05+i*.202,-4.95+i*.202,...sides(.33,.67),mats.steel,.043);
     for(let i=0;i<3;i++)roofPlate(-5.34+i*.22,-5.25+i*.22,...sides(1.05,1.43),mats.pearl,.050);
   }
+  // The many fitted panes and seams all stay in ship coordinates; a single
+  // indexed surface per finish handles them in exterior and sectional views.
+  for(const [material,{vertices,indices,uv}] of shellBatches){
+    const geometry=new T.BufferGeometry();
+    geometry.setAttribute('position',new T.Float32BufferAttribute(vertices,3));
+    if(uv.length)geometry.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
+    geometry.setIndex(indices);geometry.computeVertexNormals();
+    mesh(geometry,material).name='舰壳分板与舷窗';
+  }
+  shellBatches.clear();

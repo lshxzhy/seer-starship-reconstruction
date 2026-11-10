@@ -106,30 +106,68 @@
     const {ring,screen,cabinet,overhead,floorLine} = equipment(kit);
     const P={gold:0xe8b952,light:0xf3ce78,cream:0xe8ddc3,trim:0x8c775b,
       brown:0x91724e,inset:0x62503c,base:0x353631,black:0x202b2b,cyan:0x58e0ce};
+    const F={enamel:{roughness:.38,metalness:.32},coat:{roughness:.56,metalness:.15},
+      metal:{roughness:.29,metalness:.78},grip:{roughness:.86,metalness:.02},base:{roughness:.73,metalness:.19}};
+    const surfaces=color=>color===P.gold||color===P.light?F.enamel:
+      color===P.cream||color===P.brown?F.coat:color===P.black?F.grip:color===P.base?F.base:F.metal;
+    const parts=new Map();
+    const geometry=(key,make)=>{if(!parts.has(key))parts.set(key,make());return parts.get(key);};
     const z=-5.3, tau=Math.PI*2;
     root.name='动力室 · 罩壳与操作凹口';
 
     // Closed profiles give the hood, shoulders and cut ends actual thickness.
     // Materials and ordinary fittings still come from the shared room kit.
-    function plate(points,depth,x,y,zz,color,name) {
-      const shape=new T.Shape(points.map(p=>new T.Vector2(p[0],p[1])));
-      const g=new T.ExtrudeGeometry(shape,{depth,steps:1,bevelEnabled:true,
-        bevelThickness:.035,bevelSize:.035,bevelSegments:1,curveSegments:4});
-      g.translate(0,0,-depth/2);
-      const m=box(x,y,zz,1,1,1,color,{name});m.geometry=g;return m;
+    function plate(points,depth,x,y,zz,color,name,opts={}) {
+      const radius=opts.radius??.035;
+      const key='plate/'+JSON.stringify([points,depth,radius]);
+      const g=geometry(key,()=>{
+        const shape=new T.Shape(points.map(p=>new T.Vector2(p[0],p[1])));
+        const g=new T.ExtrudeGeometry(shape,{depth,steps:1,bevelEnabled:true,
+          bevelThickness:radius,bevelSize:radius,bevelSegments:3,curveSegments:4});
+        g.translate(0,0,-depth/2);return g;
+      });
+      const m=box(x,y,zz,1,1,1,color,{...surfaces(color),...opts,name});m.geometry=g;return m;
     }
-    function swept(profile,start,arc,color,name) {
-      const closed=profile.concat([profile[0]]);
-      const steps=Math.max(6,Math.ceil(64*arc/tau));
-      const m=box(0,0,z,1,1,1,color,{name});
-      m.geometry=new T.LatheGeometry(closed.map(p=>new T.Vector2(...p)),steps,start,arc);
+    function swept(profile,start,arc,color,name,opts={}) {
+      const steps=opts.segments||Math.max(6,Math.ceil(64*arc/tau));
+      const key='sweep/'+JSON.stringify([profile,arc,steps]);
+      const m=box(0,0,z,1,1,1,color,{...surfaces(color),...opts,ry:start,name});
+      m.geometry=geometry(key,()=>new T.LatheGeometry(profile.concat([profile[0]])
+        .map(p=>new T.Vector2(...p)),steps,0,arc));
       if(arc<tau-.001)for(const end of [false,true]) {
         const a=start+(end?arc:0), sign=end?-1:1;
-        const shape=new T.Shape(profile.map(p=>new T.Vector2(sign*p[0],p[1])));
-        const cap=box(0,0,z,1,1,1,color,{ry:a+(end?Math.PI/2:-Math.PI/2),name:name+' · 端面'});
-        cap.geometry=new T.ShapeGeometry(shape);
+        const cap=box(0,0,z,1,1,1,color,{...surfaces(color),...opts,
+          ry:a+(end?Math.PI/2:-Math.PI/2),name:name+' · 端面'});
+        cap.geometry=geometry('cap/'+JSON.stringify([profile,sign]),()=>new T.ShapeGeometry(
+          new T.Shape(profile.map(p=>new T.Vector2(sign*p[0],p[1])))));
       }
       return m;
+    }
+    // Short quadratic returns are real rounded cross-sections, in metres.
+    function softened(points,r=.035) {
+      const out=[];
+      points.forEach((p,i)=>{
+        const prev=points[(i+points.length-1)%points.length],next=points[(i+1)%points.length];
+        const d0=Math.hypot(prev[0]-p[0],prev[1]-p[1]),d1=Math.hypot(next[0]-p[0],next[1]-p[1]);
+        const d=Math.min(r,d0*.25,d1*.25);
+        const a=p.map((v,k)=>v+(prev[k]-v)*d/d0),b=p.map((v,k)=>v+(next[k]-v)*d/d1);
+        for(let j=0;j<=3;j++){const t=j/3;out.push(p.map((v,k)=>(1-t)**2*a[k]+2*t*(1-t)*v+t*t*b[k]));}
+      });return out;
+    }
+    function fitting(p,axis,r,h,color,name,opts={}) {
+      const m=cyl(...p,r,r,h,color,{...surfaces(color),segments:12,...opts,name});
+      m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),new T.Vector3(...axis).normalize());return m;
+    }
+    function socket(p,direction,r) {
+      const axis=new T.Vector3(...direction).normalize(),n=new T.Vector3(p[0],0,p[2]-z).normalize();
+      const at=d=>p.map((v,i)=>v+axis.getComponent(i)*d);
+      fitting(p,n.toArray(),r*1.8,.16,P.brown,'接管焊座');
+      fitting(at(.17),axis.toArray(),r*1.2,.4,P.trim,'接管套颈');
+      fitting(at(.35),axis.toArray(),r*1.65,.13,C.edge,'接管压兰',F.metal);
+      fitting(at(.44),axis.toArray(),r*1.23,.045,P.black,'压兰密封');
+      const side=new T.Vector3(0,1,0).cross(axis).normalize();
+      for(const s of [-1,1])fitting(at(.35).map((v,i)=>v+s*side.getComponent(i)*r*1.4),
+        axis.toArray(),.046,.17,C.edge,'压兰对夹螺栓',{...F.metal,segments:6});
     }
     function deck(points,depth,y,zz,color,name) {
       const m=plate(points,depth,0,y,zz,color,name);m.rotation.x=Math.PI/2;return m;
@@ -178,15 +216,24 @@
     // The golden bell is a hollow skin with a visible underside and return lip.
     swept([[4.6,6.05],[4.6,6.55],[4.22,6.95],[3.75,9.4],[2.6,11.7],[1.1,12.8],
       [.96,12.55],[2.3,11.5],[3.4,9.3],[3.92,6.9],[4.18,6.55],[4.18,6.05]],0,tau,P.gold,'金色中空罩壳');
-    swept([[4.29,7.05],[4.25,7.34],[4.08,7.38],[4.13,7.06]],0,tau,P.cream,'罩壳腰部浅色嵌带');
+    swept(softened([[4.29,7.05],[4.25,7.34],[4.08,7.38],[4.13,7.06]],.03),
+      0,tau,P.cream,'罩壳腰带圆折边');
+    swept(softened([[4.17,6.005],[4.53,6.005],[4.625,6.07],[4.65,6.16],
+      [4.61,6.23],[4.5,6.26],[4.2,6.26],[4.17,6.18]],.04),0,tau,P.gold,'罩檐卷边及内翻回口');
+    swept([[4.17,5.99],[4.49,5.99],[4.49,6.027],[4.17,6.027]],0,tau,P.black,'罩檐密封座');
     swept([[1.24,12.58],[1.24,12.88],[.87,12.88],[.87,12.58]],0,tau,P.trim,'顶部接环');
     cyl(0,13.1,z,.82,.82,.43,P.black);
     cyl(0,13.37,z,1.1,.82,.16,P.cream);
-    for(const a of [-.43,.43,1.57,2.7,3.58,4.71]) {
-      pipe([[Math.sin(a)*4.61,6.5,z+Math.cos(a)*4.61],
-        [Math.sin(a)*4.24,7.0,z+Math.cos(a)*4.24],
-        [Math.sin(a)*3.78,9.35,z+Math.cos(a)*3.78],
-        [Math.sin(a)*2.63,11.65,z+Math.cos(a)*2.63]],.025,P.trim);
+    // Formed access skins follow the existing bell, keeping its overall contour.
+    // Their gaskets, latches and coating boundaries are inferred assembly detail.
+    for(const a of [-.48,0,.48]) {
+      const width=a===0?.3:.4;
+      swept([[4.125,7.59],[3.778,9.4],[3.023,10.91],[2.993,10.91],[3.748,9.4],[4.095,7.59]],
+        a-width/2-.018,width+.036,P.black,'罩面盖板周缘密封');
+      swept(softened([[4.14,7.65],[3.81,9.4],[3.085,10.85],[3.035,10.85],[3.76,9.4],[4.09,7.65]],.018),
+        a-width/2,width,a===0?P.gold:P.light,'弧形可拆罩面',a===0?F.enamel:F.coat);
+      for(const [r,y] of [[4.17,7.74],[3.16,10.74]])
+        box(Math.sin(a)*r,y,z+Math.cos(a)*r,.16,.13,.085,P.trim,{...F.metal,ry:a});
     }
     // Two broad front shoulders bound the golden hood and its front recess.
     // Matching rear pair is an explicit construction inference.
@@ -196,14 +243,34 @@
     const angles=[-.95,.95,Math.PI-.95,Math.PI+.95];
     for(const a of angles) {
       swept(shoulder,a-.16,.32,P.cream,'厚肩梁');
-      swept([[5.68,5.72],[5.42,6.34],[4.86,6.96],[4.78,6.68],[5.15,6.12],[5.31,5.63]],
+      swept(softened([[5.68,5.72],[5.42,6.34],[4.86,6.96],[4.78,6.68],[5.15,6.12],[5.31,5.63]],.045),
         a-.185,.37,P.trim,'肩肘压边');
       const x=Math.sin(a)*5.18,zz=z+Math.cos(a)*5.18;
       box(x,.62,zz,1.1,.38,1.15,P.trim,{ry:a});
       for(const y of [1.1,1.48])ball(x+Math.sin(a)*.36,y,zz+Math.cos(a)*.36,.075,.075,.075,P.trim);
       block(x,zz,1.8,1.8);
-      beam([Math.sin(a)*1.6,13.12,z+Math.cos(a)*1.6],
-        [Math.sin(a)*3.7,H-.8,z+Math.cos(a)*3.7],.16,.23,C.steel);
+      const foot=[Math.sin(a)*1.45,13.0,z+Math.cos(a)*1.45];
+      const head=[Math.sin(a)*3.7,H-.8,z+Math.cos(a)*3.7];
+      box(...foot,.39,.25,.42,P.trim,{...F.metal,ry:a});
+      beam(foot,head,.16,.23,C.steel,F.metal);
+      box(...head,.41,.31,.45,C.edge,{...F.metal,ry:a});
+      cyl(head[0],H-.43,head[2],.08,.08,.74,C.steel,{...F.metal,segments:12});
+      box(head[0],H-.06,head[2],.74,.12,.74,P.trim,F.metal);
+    }
+    // Inferred secondary lids sit on the shoulder skin with hinges and cams.
+    for(const a of [-.95,.95]) {
+      const normal=[Math.sin(a),0,Math.cos(a)];
+      const at=(u,v,n)=>[Math.sin(a)*5.58+u*Math.cos(a)+n*Math.sin(a),2.65+v,
+        z+Math.cos(a)*5.58-u*Math.sin(a)+n*Math.cos(a)];
+      const outline=[[-.49,-.83],[.49,-.83],[.57,-.75],[.57,.75],[.49,.83],[-.49,.83],[-.57,.75],[-.57,-.75]];
+      const seal=plate(outline,.035,...at(0,0,.018),P.black,'检修盖密封');seal.rotation.y=a;
+      const lid=plate(outline.map(p=>p.map(v=>v*.91)),.11,...at(0,0,.1),P.cream,'肩梁二级检修盖',{radius:.025});lid.rotation.y=a;
+      for(const v of [-.52,.52]) {
+        fitting(at(-.49,v,.11),[0,1,0],.052,.24,P.trim,'检修盖铰筒');
+        fitting(at(.36,v,.18),normal,.07,.04,C.edge,'四分之一转锁',F.metal);
+        beam(at(.33,v,.207),at(.39,v,.207),.012,.012,P.black,F.grip);
+      }
+      box(...at(0,.2,.167),.62,.22,.025,P.trim,{...F.metal,ry:a});
     }
     // The front cheek frame is a single extruded U, including its inner wall.
     const arch=[[-4.95,.75],[-5.02,4.5],[-4.37,6.3],[-2.8,6.65],[2.8,6.65],
@@ -230,7 +297,7 @@
     block(0,z-.9,6.65,1.12);
     block(0,z-.53,2.85,1.1);
     for(const a of [-.285,-.095,.095,.285]) {
-      box(Math.sin(a)*4.57,5.98,z+Math.cos(a)*4.57,.24,.23,.13,P.cyan,{ry:a,glow:.35});
+      box(Math.sin(a)*4.57,5.89,z+Math.cos(a)*4.57,.24,.23,.13,P.cyan,{ry:a,glow:.35});
     }
 
     // The chamfered tongue projects beyond the ring, with its two cyan rails.
@@ -258,13 +325,28 @@
     for(const s of [-1,1]) {
       pipe([[s*1.24,1.69,controlZ],[s*1.05,2.10,controlZ-.12],[s*.7,2.32,controlZ-.13]],.09,P.black);
       ball(s*.7,2.32,controlZ-.13,.13,.13,.13,C.steel);
-      for(let i=0;i<3;i++)ring(s*1.29,.8+i*.13,controlZ+.14,.2-i*.025,.055,P.black);
+      for(let i=0;i<3;i++)ring(s*1.29,.8+i*.13,controlZ+.14,.2-i*.025,.055,P.black,{...F.grip,segments:24});
       cyl(s*.55,1.08,controlZ+.31,.105,.105,.08,s<0?C.blue:C.red,{rx:Math.PI/2});
     }
     cyl(0,1.24,controlZ+.19,.66,.73,.26,P.cream,{rx:Math.PI/2-.57});
     cyl(0,1.32,controlZ+.32,.49,.49,.045,P.black,{rx:Math.PI/2-.57});
     torus(0,1.34,controlZ+.35,.4,.065,P.cyan,{rx:-.57,glow:.25});
-    for(const x of [-.18,.18])ball(x,1.36,controlZ+.38,.055,.055,.04,P.cyan,{glow:.3});
+    const bezel=swept(softened([[.49,-.055],[.58,-.055],[.6,-.015],[.6,.045],[.56,.09],[.49,.09]],.022),
+      0,tau,P.cream,'操作器折边护圈',{...F.coat,segments:40});
+    bezel.position.set(0,1.34,controlZ+.35);bezel.rotation.x=Math.PI/2-.57;
+    const dial=(u,v,n)=>[u,1.34+v*Math.cos(.57)+n*Math.sin(.57),
+      controlZ+.35-v*Math.sin(.57)+n*Math.cos(.57)];
+    // All twelve engraved index bars are one small solid mesh, without a map.
+    const ticks=[];
+    for(let i=0;i<12;i++) {
+      const a=-Math.PI*.75+i*Math.PI*1.5/11,inner=i%3===0?.24:.27;
+      const p=(r,t)=>new T.Vector2(Math.sin(a)*r+Math.cos(a)*t,Math.cos(a)*r-Math.sin(a)*t);
+      ticks.push(new T.Shape([p(inner,-.006),p(.30,-.006),p(.30,.006),p(inner,.006)]));
+    }
+    const markings=box(...dial(0,0,.025),1,1,1,P.cream,{...F.coat,rx:-.57,name:'操作器实体刻度'});
+    markings.geometry=new T.ExtrudeGeometry(ticks,{depth:.012,steps:1,bevelEnabled:false});
+    beam(dial(0,0,.048),dial(.16,.12,.048),.018,.018,P.light,F.metal);
+    fitting(dial(0,0,.048),[0,Math.sin(.57),Math.cos(.57)],.034,.025,P.trim,'操作器指针轴');
     pipe([[0,.6,controlZ-.2],[0,.18,controlZ-.85],[1.5,.14,controlZ-1.3]],.055,P.black);
     block(0,controlZ,3.0,2.35);
     block(.75,controlZ-1.03,1.65,.65);
@@ -285,6 +367,7 @@
       screen(x,3.46,-5.03,1.5,.63,s<0?'资源转换':'支路监控');
       pipe([[x,7.5,-7.6],[x,11.65,-7.6],[s*8.1,11.65,-7.6],
         [s*3.4,11.2,-6.9],[s*2.6,10.8,-6.9]],.27,C.steel);
+      socket([s*2.6,10.8,-6.9],[s*.8,.4,0],.27);
       for(const y of [8.2,10.8])ring(x,y,-7.6,.34,.07,P.trim);
       block(x,-7.6,5.8,5.8);
       cabinet(s*10.6,-14.4,4.1,3.8,s<0?'采集物':'备用支路',P.cream);
@@ -312,12 +395,14 @@
       ring(x+.9,5.1,9.8,.49,.09,P.gold);
       const returnY=x<16?5.5:6.0;
       pipe([[x+.9,4.9,9.8],[x+.9,returnY,9.8],[21.1,returnY,9.8]],.17,C.steel);
-      cyl(21.1,returnY,9.8,.31,.31,.18,P.trim,{rz:Math.PI/2});
+      fitting([21.42,returnY,9.8],[1,0,0],.26,.7,C.steel,'壁面回管套座');
+      fitting([21.36,returnY,9.8],[1,0,0],.37,.12,P.brown,'回管壁面法兰');
       pipe([[x-.8,2.33,.35],[x-.8,3.4,-1.7],[x-.8,3.4,-4.9]],.11,C.steel);
       block(x+.3,2.7,3.45,16.0);
     }
     for(const y of [3.4,4.1]) {
       pipe([[3.5,y,-7.75],[5.6,y,-10],[7.3,y,-11.7],[13.8,y,-11.7],[16,y,-9.9]],.23,P.brown);
+      socket([3.5,y,-7.75],[2.1,0,-2.25],.23);
       box(10.1,y,-11.7,.24,.7,.72,C.steel);
     }
     // This rear link has 3.17 m minimum soffit; the personnel aisle runs below.

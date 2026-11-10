@@ -26,6 +26,7 @@
     const population=createSeerPopulation();
     const perspective=root.querySelector('[data-perspective]');
     const inspect=root.querySelector('[data-face-player]');
+    const detailVisit=root.querySelector('[data-inspect-workstation]');
     const populationText=root.querySelector('[data-population]');
     const idleClock={timer:0,lastReadout:-1};
     let inView=true;
@@ -41,12 +42,14 @@
     const exteriorLights=scene.children.filter(object=>object.isLight);
     const cabinLights=new T.Group();
     cabinLights.name='舱内工作照明';cabinLights.visible=false;scene.add(cabinLights);
-    const bounce=new T.HemisphereLight(0xc8d9e5,0x394654,.27);
+    const bounce=new T.HemisphereLight(0xc8d9e5,0x394654,.18);
     const taskLamp=new T.DirectionalLight(0xffe9c9,.88);
     const farBank=new T.PointLight(0x91c5e6,.86,40*worldMetre,1.45);
-    const nearFill=new T.PointLight(0xffe7cd,.37,14*worldMetre,1.5);
-    cabinLights.add(bounce,taskLamp,taskLamp.target,farBank,nearFill);
-    taskLamp.shadow.mapSize.set(1024,1024);
+    const nearFill=new T.PointLight(0xffe7cd,.21,11*worldMetre,1.5);
+    const workSpot=new T.SpotLight(0xe0f6ff,1.12,0,.73,.78,1.2);
+    cabinLights.add(bounce,taskLamp,taskLamp.target,farBank,nearFill,workSpot,workSpot.target);
+    const shadowSize=Math.min(2048,renderer.capabilities.maxTextureSize);
+    taskLamp.shadow.mapSize.set(shadowSize,shadowSize);
     taskLamp.shadow.bias=-.00019;
     taskLamp.shadow.normalBias=.055*worldMetre;
     let savedRig=null;
@@ -65,7 +68,7 @@
         lights:exteriorLights.map(light=>[light,light.visible])
       };
       for(const [light] of savedRig.lights)light.visible=false;
-      renderer.toneMappingExposure=.76;
+      renderer.toneMappingExposure=.82;
       renderer.shadowMap.autoUpdate=false;
       cabinLights.visible=true;
     }
@@ -83,6 +86,22 @@
       restoreCasters();
       const [x,y,z]=room?room.center:[pose.x,pose.y,pose.z];
       const width=room?.spec.width||12,depth=room?.spec.depth||12,height=room?.spec.height||4.4;
+      const palette={
+        teleport:[0xffe6be,0x8bd8ef],power:[0xffdaa5,0x81bdcc],
+        observation:[0xcce6ff,0x9ba9ed],archives:[0xe1efcf,0x95c6b6],
+        laboratory:[0xe8f8ec,0x7fc7d0],captain:[0xffedce,0x8bbddf]
+      }[room?.id]||[0xffe9d3,0x99c6db];
+      taskLamp.color.setHex(palette[0]);farBank.color.setHex(palette[1]);
+      // The pool of task light is fixed to the overhead bank across the work
+      // station. The room frame rotates with port/starboard installation.
+      workSpot.intensity=room?1.12:0;
+      if(room){
+        const focal=focalPoints[room.id]||[0,height*.29,-depth*.23];
+        workSpot.position.copy(room.group.localToWorld(new T.Vector3(-width*.24,height*.87,depth*.12)));
+        workSpot.target.position.copy(room.group.localToWorld(new T.Vector3(...focal)));
+        workSpot.distance=Math.max(width,depth)*.95*worldMetre;
+        workSpot.color.setHex(palette[0]);
+      }
       const sign=room?.side===1?-1:1;
       taskLamp.position.copy(habitat.worldPosition(x-sign*width*.69,y+height*1.25+depth*.26,z+sign*depth*.52));
       taskLamp.target.position.copy(habitat.worldPosition(x,y+height*.18,z));
@@ -121,6 +140,29 @@
       archives:[2,2.4,-3],honors:[0,3.2,-6],captain:[-3.2,2.2,-3],
       observation:[-3.9,3.0,-5],terraceAccess:[0,2.15,-11]
     };
+    // Each view is a visitor standing on the installed floor, not a detached
+    // camera. Use the ordinary collision check and leave the player in control.
+    const workstationViews={
+      teleport:{floor:[-2.1,-4.1],look:[-4.8,2.9,-9.8]},
+      power:{floor:[3.7,4.6],look:[-.2,3.7,-3.4]},
+      observation:{floor:[-2.5,3.4],look:[-6.9,4.35,-2.3]}
+    };
+    detailVisit.addEventListener('click',()=>{
+      const room=habitat.byId.get(currentRoomId),view=workstationViews[currentRoomId];
+      if(!active || !room || !view)return;
+      const sign=room.side===1?-1:1;
+      for(const [offsetX,offsetZ] of [[0,0],[.95,0],[-.95,0],[0,.95],[1.8,.95],[-1.8,.95]]){
+        const p={level:room.level,y:room.center[1],x:room.center[0]+sign*(view.floor[0]+offsetX),
+          z:room.center[2]+sign*(view.floor[1]+offsetZ)};
+        if(!habitat.canStand(p)||population.nearest(p,.92))continue;
+        const aim=room.group.localToWorld(new T.Vector3(...view.look))
+          .sub(habitat.worldPosition(p.x,p.y+eyeHeight+contactFloor(p),p.z)).normalize();
+        const angle=Math.atan2(-aim.x,-aim.z);
+        enter(room.id,{pose:p,yaw:angle,facing:angle,pitch:Math.asin(T.MathUtils.clamp(aim.y,-1,1)),perspective:'eye'});
+        focusFlightControls();persist();return;
+      }
+      info.textContent='观景位置有船员经过，稍后可以再试。';
+    });
     picker.add(new Option('选择舱室',''));
     for (const room of habitat.rooms) picker.add(new Option(room.name,room.id));
     const residentialStops=new Set(habitat.residences.deckSpecs.map(row=>Array.isArray(row)?row[0]:row.id));
@@ -183,6 +225,7 @@
       if(force || currentRoomId!==(room?.id||null) || !room)placeCabinLamps(room);
       currentPlace = identity;
       currentRoomId = room?.id || null;
+      detailVisit.hidden=!workstationViews[currentRoomId];
       picker.value = currentRoomId || (residentialStops.has(pose.level)?pose.level:'');
       root.querySelector('[data-locate-room]').hidden=!currentRoomId;
       const levelName = place.levelName || habitat.levels.find(l=>l.id===place.level)?.name || '';

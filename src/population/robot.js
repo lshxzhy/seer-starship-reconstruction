@@ -12,41 +12,65 @@
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: new T.MeshStandardMaterial({vertexColors:true, roughness:.33, metalness:.28}),
-      optic: new T.MeshStandardMaterial({vertexColors:true, roughness:.20, metalness:.10}),
-      signal: new T.MeshBasicMaterial({vertexColors:true, toneMapped:false})
+      optic: new T.MeshStandardMaterial({vertexColors:true, roughness:.24, metalness:.07, envMapIntensity:.45}),
+      signal: new T.MeshBasicMaterial({vertexColors:true, toneMapped:false}),
+      alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.34, metalness:.78}),
+      machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
+      gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
+      display: new T.MeshStandardMaterial({vertexColors:true, roughness:.37, metalness:.05, envMapIntensity:.28}),
+      phosphor: new T.MeshStandardMaterial({vertexColors:true, roughness:.58, metalness:.02,
+        emissive:hex(0xb9c0c0), emissiveIntensity:.54}),
+      // A single near-only glass surface catches the environment above the display stack.
+      glass: new T.MeshPhysicalMaterial({vertexColors:true, roughness:.085, metalness:.05,
+        clearcoat:1, clearcoatRoughness:.065, reflectivity:.59, envMapIntensity:.8,
+        transparent:true, opacity:.22, blending:T.AdditiveBlending, depthWrite:false})
     };
+    const lacquer = new T.MeshPhysicalMaterial({vertexColors:true, roughness:.36, metalness:.19,
+      clearcoat:.67, clearcoatRoughness:.19, envMapIntensity:.85});
     const suitColors = new Map(), suitMaterials = new Map();
     function suitColor(value) {
       if (!suitColors.has(value)) suitColors.set(value,hex(value));
       return suitColors.get(value);
     }
-    function suitMaterial(value) {
-      if (!suitMaterials.has(value)) {
-        const material = skinMaterials.paint.clone();
+    function suitMaterial(value,simple) {
+      const key=(simple?'crew/':'pilot/')+value;
+      if (!suitMaterials.has(key)) {
+        const material=(simple?skinMaterials.paint:lacquer).clone();
         material.color.copy(suitColor(value));
-        suitMaterials.set(value,material);
+        suitMaterials.set(key,material);
       }
-      return suitMaterials.get(value);
+      return suitMaterials.get(key);
     }
-
     const templates = new Map();
     function template(simple) {
       if (templates.has(simple)) return templates.get(simple);
       const parts = new Map(), primitives = [];
       const segments = simple ? 16 : 48;
-      function profile(points) {
-        const geometry = new T.LatheGeometry(points.map(([radius,y]) => new T.Vector2(radius,y)),segments);
+      function profile(points, radialSegments=segments) {
+        const geometry = new T.LatheGeometry(points.map(([radius,y]) => new T.Vector2(radius,y)),radialSegments);
         primitives.push(geometry);
         return geometry;
       }
-      const orb = new T.SphereGeometry(1,simple?12:36,simple?8:24);
+      // Retain the registration silhouette while smoothing the large painted panels.
+      function smoothProfile(points) {
+        if (simple) return profile(points);
+        const spline=new T.SplineCurve(points.slice(1).map(([x,y])=>new T.Vector2(x,y)));
+        const sampled=spline.getPoints((points.length-1)*4);
+        return profile([points[0],...sampled.map(p=>[Math.max(0,p.x),p.y])],88);
+      }
+      const orb = new T.SphereGeometry(1,simple?12:64,simple?8:40);
       const drum = new T.CylinderGeometry(1,1,1,segments);
       const cube = new T.BoxGeometry(1,1,1);
       primitives.push(orb,drum,cube);
       const pose = new T.Object3D(), normalMatrix = new T.Matrix3();
       const point = new T.Vector3(), normal = new T.Vector3();
       function cast(bone,geometry,x,y,z,w,h,d,color,mode,rx=0,ry=0,rz=0) {
-        const family = color === paint ? 'paint' : (mode || 'fixed');
+        let family = color === paint ? 'paint' : (mode || 'fixed');
+        if (!simple && family==='fixed') {
+          if (color===gold || color===bronze) family='alloy';
+          else if (color===steel) family='machined';
+          else if (color===rubber || color===dark) family='gasket';
+        }
         const key = bone + '/' + family;
         if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],col:[],ix:[]});
         const dest = parts.get(key), offset = dest.pos.length/3;
@@ -57,12 +81,14 @@
         pose.updateMatrix();
         normalMatrix.getNormalMatrix(pose.matrix);
         const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal');
+        const colors=geometry.getAttribute('color');
         for (let i=0;i<positions.count;i++) {
           point.fromBufferAttribute(positions,i).applyMatrix4(pose.matrix);
           normal.fromBufferAttribute(normals,i).applyNormalMatrix(normalMatrix);
           dest.pos.push(point.x,point.y,point.z);
           dest.norm.push(normal.x,normal.y,normal.z);
-          dest.col.push(tint.r,tint.g,tint.b);
+          if (colors) dest.col.push(tint.r*colors.getX(i),tint.g*colors.getY(i),tint.b*colors.getZ(i));
+          else dest.col.push(tint.r,tint.g,tint.b);
         }
         for (let i=0;i<geometry.index.count;i++) dest.ix.push(geometry.index.getX(i)+offset);
       }
@@ -71,7 +97,7 @@
       }
 
       // One equipment shell carries the optics, side covers and leg mounts.
-      const shell = profile([[0,-.408],[.35,-.405],[.447,-.358],[.508,-.27],[.539,-.15],
+      const shell = smoothProfile([[0,-.408],[.35,-.405],[.447,-.358],[.508,-.27],[.539,-.15],
         [.548,-.052],[.544,.046],[.522,.158],[.474,.265],[.395,.357],[.302,.425],
         [.206,.47],[.105,.491],[0,.5]]);
       cast('core',shell,0,0,.005,1,1,.98,paint);
@@ -82,13 +108,19 @@
         [.567,.005],[.558,.013],[.528,.013]]);
       coreShape(rolledEdge,0,-.388,0,bronze);
       coreShape(rolledEdge,0,-.252,0,bronze);
+      if (!simple) {
+        const bandSeal = profile([[.510,0],[.539,0],[.545,.003],[.545,.008],[.535,.012],[.51,.012]]);
+        coreShape(bandSeal,0,-.226,0,rubber);
+      }
       const rivet = profile([[0,-.015],[.058,-.015],[.068,-.006],[.068,.014],
         [.059,.024],[.048,.028],[0,.029]]);
+      const studCap = simple ? null : profile([[0,-.001],[.046,-.001],[.047,.001],
+        [.045,.004],[.024,.004],[.020,.002],[.015,.002],[.014,.004],[0,.004]],32);
       for (let i=0;i<8;i++) {
         const a=i*TAU/8, x=Math.sin(a), z=-Math.cos(a);
         // Place the local +Y axis of each stud radially outwards.
         cast('core',rivet,x*.561,-.325,z*.561,1,1,1,graphite,null,-PI/2,0,-a);
-        if (!simple) cast('core',drum,x*.591,-.325,z*.591,.047,.004,.047,0x636971,null,-PI/2,0,-a);
+        if (!simple) cast('core',studCap,x*.591,-.325,z*.591,1,1,1,0x82868a,'machined',-PI/2,0,-a);
       }
 
       // Short plug with a flat, broad button on the crown.
@@ -99,7 +131,13 @@
       coreShape(stem,0,.483,0,graphite);
       cast('core',button,0,.563,0,1,1.33,1,paint);
       cast('core',drum,0,.570,0,.174,.013,.174,dark);
-      if (!simple) cast('core',drum,0,.745,0,.161,.002,.161,paint);
+      if (!simple) {
+        const socketLip=profile([[.078,0],[.104,0],[.112,.005],[.111,.012],[.100,.017],[.078,.017]]);
+        coreShape(socketLip,0,.487,0,0x696d70);
+        const capInset=profile([[.143,0],[.154,0],[.155,.002],[.153,.004],[.145,.004],[.143,.002]]);
+        coreShape(capInset,0,.743,0,graphite);
+        cast('core',drum,0,.745,0,.144,.002,.144,paint);
+      }
 
       // The side-on assembly frame shows a round gold service cover. The rear
       // follows the existing shell contour because a rear reference is missing.
@@ -110,6 +148,8 @@
         cast('core',drum,sign*.548,-.068,.003,.169,.022,.169,gold,null,0,0,PI/2);
         cast('core',cube,sign*.56,-.060,0,.009,.182,.034,bronze,null,-.53,0,0);
         if (!simple) {
+          const coverSeat=profile([[.157,0],[.171,0],[.175,.002],[.173,.006],[.168,.007],[.158,.006]]);
+          coreShape(coverSeat,sign*.557,-.068,.003,bronze,0,0,-sign*PI/2);
           cast('core',cube,sign*.56,-.060,.071,.010,.066,.029,bronze,null,-.53,0,0);
           cast('core',cube,sign*.56,-.113,.033,.010,.065,.029,bronze,null,-.53,0,0);
         }
@@ -118,28 +158,48 @@
       // The eyes are patches on the convex glass rather than separate eyeballs.
       const faceY = faceAxisY, glassZ = -.555, glassRadius = .349, glassDepth = .085;
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
-        [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]]);
+        [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]],simple?segments:88);
       coreShape(bezel,0,faceY,-.498,graphite,-PI/2);
-      cast('core',orb,0,faceY,glassZ,glassRadius,glassRadius,glassDepth,0x0c1017,'optic');
+      cast('core',orb,0,faceY,glassZ,glassRadius,glassRadius,glassDepth,0x0c1017,simple?'optic':'display');
       if (!simple) {
+        const lip=profile([[.338,.067],[.350,.067],[.353,.070],[.352,.075],
+          [.348,.077],[.343,.077],[.339,.074],[.338,.067]],88);
+        coreShape(lip,0,faceY,-.498,0x4e5359,-PI/2);
+        const glassSeal=profile([[.334,.067],[.342,.066],[.345,.069],[.344,.073],
+          [.339,.074],[.335,.072],[.334,.067]],88);
+        coreShape(glassSeal,0,faceY,-.498,rubber,-PI/2);
+        // A countersink seats the hexagonal drive below the front of each screw head.
+        const fastener=profile([[0,-.002],[.017,-.002],[.017,.001],[.014,.003],
+          [.008,.003],[.006,.001],[0,.001]],24);
+        const hexSocket=profile([[0,0],[.005,0],[.005,.001],[0,.001]],6);
         for (let i=0;i<8;i++) {
           const a=TAU*(i+.5)/8;
-          cast('core',drum,.384*Math.cos(a),faceY+.384*Math.sin(a),-.573,
-            .015,.009,.015,dark,null,-PI/2);
+          const x=.384*Math.cos(a), y=faceY+.384*Math.sin(a);
+          cast('core',fastener,x,y,-.573,1,1,1,0x777c7f,'machined',-PI/2);
+          cast('core',hexSocket,x,y,-.5743,1,1,1,dark,'gasket',-PI/2);
         }
+        // Only the front hemisphere is drawn. The eye graphics stay below the glass.
+        const cover=new T.SphereGeometry(1,64,40,PI,PI);
+        primitives.push(cover);
+        cast('core',cover,0,faceY,glassZ,glassRadius,glassRadius,glassDepth+.031,0x12181b,'glass');
       }
       function lensMark(cx,cy,rx,ry,clearance,color,mode) {
-        const positions=[], indices=[];
+        const positions=[], indices=[], colors=[];
         const sides=simple?16:40, rings=simple?3:7;
-        function vertex(x,y) {
+        function vertex(x,y,r) {
           const dome=Math.sqrt(Math.max(0,1-(x*x+y*y)/(glassRadius*glassRadius)));
-          positions.push(x,faceY+y,glassZ-glassDepth*dome-clearance);
+          const relief=simple?0:(1-r*r)*.005;
+          positions.push(x,faceY+y,glassZ-glassDepth*dome-clearance-relief);
+          if (!simple) {
+            const shade=1-.28*r*r*r*r;
+            colors.push(shade,shade,Math.min(1,shade+.012));
+          }
         }
-        vertex(cx,cy);
+        vertex(cx,cy,0);
         for(let row=1;row<=rings;row++) {
           for(let i=0;i<sides;i++) {
             const a=i*TAU/sides, r=row/rings;
-            vertex(cx+rx*r*Math.cos(a),cy+ry*r*Math.sin(a));
+            vertex(cx+rx*r*Math.cos(a),cy+ry*r*Math.sin(a),r);
             const outer=1+(row-1)*sides+i, next=1+(row-1)*sides+(i+1)%sides;
             if(row===1) indices.push(0,next,outer);
             else indices.push(outer-sides,next,outer,next-sides,next,outer-sides);
@@ -147,31 +207,40 @@
         }
         const geometry=new T.BufferGeometry();
         geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+        if (colors.length) geometry.setAttribute('color',new T.Float32BufferAttribute(colors,3));
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
         primitives.push(geometry);
         cast('core',geometry,0,0,0,1,1,1,color,mode);
       }
       for (const sign of [-1,1]) {
-        lensMark(sign*.139,-.009,.131,.223,.003,0xfaf9f3,'signal');
-        lensMark(sign*.121,.018,.054,.103,.006,0x101216,'optic');
+        lensMark(sign*.139,-.009,.131,.223,.003,0xfaf9f3,simple?'signal':'phosphor');
+        lensMark(sign*.121,.018,.054,.103,simple?.006:.013,0x101216,simple?'optic':'display');
       }
 
       const sole = profile([[0,0],[.94,0],[1,.022],[1,.032],[.94,.05],[0,.05]]);
-      const shoe = profile([[0,0],[.95,0],[1,.018],[.99,.044],[.91,.075],[.72,.101],
+      const shoe = smoothProfile([[0,0],[.95,0],[1,.018],[.99,.044],[.91,.075],[.72,.101],
         [.54,.119],[.26,.13],[0,.133]]);
+      const wiper=simple?null:profile([[.055,-.018],[.067,-.018],[.071,-.013],[.071,.010],
+        [.068,.015],[.064,.017],[.055,.017]],32);
+      const retainingLip=simple?null:profile([[.062,0],[.069,0],[.070,.002],[.069,.005],[.062,.005]],32);
       for (const sign of [-1,1]) {
         const side=sign<0?'L':'R', leg='leg'+side, foot='foot'+side;
         cast(leg,drum,0,-restLegLength/2,0,.061,restLegLength,.061,steel);
         for(let i=0;i<4;i++) {
-          cast(leg,drum,0,-(.042+i*.081),0,.070,.032,.070,graphite);
+          const y=-(.042+i*.081);
+          if (simple) cast(leg,drum,0,y,0,.070,.032,.070,graphite);
+          else {
+            cast(leg,wiper,0,y,0,1,1,1,rubber);
+            cast(leg,retainingLip,0,y+.008,0,1,1,1,steel);
+          }
         }
         cast(foot,sole,0,-ankleY,-.051,.222,1,.258,rubber);
         cast(foot,sole,0,-ankleY+.032,-.051,.226,.78,.26,gold);
         cast(foot,shoe,0,-ankleY+.058,-.050,.211,1,.247,paint);
         cast(foot,drum,0,-.003,0,.103,.040,.105,bronze);
         cast(foot,drum,0,.020,0,.084,.014,.086,gold);
-        cast(foot,cube,-sign*.073,-.094,-.261,.074,.050,.048,bronze,null,-.42,0,0);
+        cast(foot,cube,-sign*.073,-.104,-.285,.074,.041,.044,bronze,null,-.42,0,0);
       }
 
       const entries=[];
@@ -229,9 +298,10 @@
       const rig=skeleton();
       rig.root.name=options.name||'赛尔机器人';
       for(const entry of template(options.simple===true)){
-        const m=entry.family==='paint'?suitMaterial(color):skinMaterials[entry.family];
+        const m=entry.family==='paint'?suitMaterial(color,options.simple===true):skinMaterials[entry.family];
         const mesh=new T.Mesh(entry.geometry,m);
-        mesh.castShadow=options.castShadow!==false;mesh.receiveShadow=true;
+        mesh.castShadow=options.castShadow!==false && entry.family!=='glass';
+        mesh.receiveShadow=entry.family!=='glass';
         rig.bones[entry.bone].add(mesh);
       }
       applyPose(rig,0,0,0);return rig;
@@ -271,6 +341,7 @@
           if(tinted && tintChanged)mesh.setColorAt(slot,suitColor(color));
         }
         previousColors[slot]=color;
+        return rig.bones;
       }
       function finish(count){
         const n=clamp(count,0,capacity);

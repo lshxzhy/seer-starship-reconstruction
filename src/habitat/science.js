@@ -416,12 +416,43 @@
     const u=new T.Vector3(0,1,0).cross(n).normalize(),v=n.clone().cross(u);
     const at=t=>a.map((q,i)=>q+delta[i]*t);
     const offset=(p,dir,d)=>p.map((q,i)=>q+dir.getComponent(i)*d);
+    // Optical stacks, fasteners and encoder graduations are design completions;
+    // G05 establishes their surrounding silhouette, not an optical prescription.
+    function precisionMesh(geometry,p,axis,color,opts={}){
+      const m=cyl(...p,1,1,1,color,opts);m.geometry=geometry;m.scale.set(1,1,1);
+      m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),axis.clone().normalize());return m;
+    }
+    function annular(A,B,ra,rb,ia,ib,color,opts={}){
+      const start=new T.Vector3(...A),end=new T.Vector3(...B),d=end.clone().sub(start),h=d.length()/2;
+      const profile=[[ra,-h],[rb,h],[ib,h],[ia,-h],[ra,-h]].map(q=>new T.Vector2(...q));
+      return precisionMesh(new T.LatheGeometry(profile,64),start.add(end).multiplyScalar(.5).toArray(),d,color,opts);
+    }
+    function lining(A,B,ra,rb){
+      const start=new T.Vector3(...A),end=new T.Vector3(...B),d=end.clone().sub(start);
+      const m=precisionMesh(new T.CylinderGeometry(rb,ra,d.length(),64,1,true),
+        start.add(end).multiplyScalar(.5).toArray(),d,0x10161c,{roughness:.96,metalness:.03});
+      m.material=m.material.clone();m.material.side=T.BackSide;return m;
+    }
+    function mirror(p,normal,r,depth){
+      const profile=[0,.25,.50,.75,1].map(t=>new T.Vector2(r*t,-depth*(1-t*t)));
+      const m=precisionMesh(new T.LatheGeometry(profile,64),p,normal,0x527a83,{roughness:.12,metalness:.88});
+      m.material=m.material.clone();m.material.side=T.DoubleSide;
+      tube(offset(p,normal,-depth-.035),offset(p,normal,-depth-.010),r*1.04,dark);
+      ring(p,normal.toArray(),r*1.04,.022,stone);return m;
+    }
+    function opticGlass(p,normal,r){
+      const m=annular(offset(p,normal,-.006),offset(p,normal,.006),r,r,0,0,0x71a8ae,
+        {roughness:.10,metalness:.10,opacity:.20});
+      m.material=m.material.clone();m.material.depthWrite=false;return m;
+    }
     // Separate tapered castings and raised collars keep the silhouette legible
     // from floor level as well as from the game's high fixed camera.
     const seams=[0,.25,.53,.78,1];
     for(let i=0;i<4;i++){
       const t0=seams[i],t1=seams[i+1];
-      tube(at(t0),at(t1),1.45-.33*t1,i%2?pale:C.ivory,1.45-.33*t0);
+      const ra=1.45-.33*t0,rb=1.45-.33*t1;
+      annular(at(t0),at(t1),ra,rb,ra-.10,rb-.10,i%2?pale:C.ivory);
+      lining(at(t0),at(t1),ra-.11,rb-.11);
     }
     for(const t of seams){
       const p=at(t),r=1.45-.33*t;
@@ -432,14 +463,28 @@
         ball(...q,.075,.075,.075,dark);
       }
     }
-    // A far end-cap and the dark near end with its small cyan circular inset.
-    // Their optical function and hidden light path are intentionally unspecified.
-    tube(at(1),at(1.035),1.14,slate);
+    // Open lips, recessed surfaces and genuinely perforated matte baffles.
+    // Solid cylinders must not seal either opening in front of these components.
+    annular(at(1),at(1.035),1.14,1.14,.97,.97,slate);
+    lining(at(.94),at(1.035),1.029,.969);
     ring(at(1.035),delta,1.0,.10,C.edge);
-    tube(at(-.045),at(.015),1.48,dark);
+    for(const t of [.12,.30,.62,.84,.94]){
+      const r=1.45-.33*t-.105,hole=t>.8?.84:.79;
+      annular(at(t-.0018),at(t+.0018),r,r,hole,hole,0x0b1016,{roughness:1,metalness:0});
+    }
+    annular(at(.708),at(.721),1.118,1.114,.80,.80,slate);
+    mirror(at(.72),n,.81,.065);
+    annular(at(-.045),at(.015),1.48,1.48,.395,.395,dark);
     ring(at(-.05),delta,1.39,.13,stone);
-    tube(at(-.043),at(-.067),.38,0x57c9c2);
-    ring(at(-.069),delta,.43,.08,pale);
+    annular(at(-.043),at(-.080),.44,.44,.34,.34,stone);
+    lining(at(-.043),at(-.080),.334,.334);
+    for(const t of [-.076,-.068])annular(at(t-.001),at(t+.001),.335,.335,.29,.29,0x0b1016,{roughness:1});
+    const outward=n.clone().negate();
+    annular(at(-.041),at(-.045),.397,.397,.265,.265,stone);
+    mirror(at(-.044),outward,.275,.020);
+    annular(at(-.0605),at(-.0615),.339,.339,.273,.273,dark);
+    opticGlass(at(-.061),outward,.280);
+    ring(at(-.081),delta,.382,.040,pale);
     // Finder, two mounting feet and raised longitudinal service strips.
     const fa=offset(at(.19),v,1.67),fb=offset(at(.95),v,1.38);
     tube(fa,fb,.17,stone);ring(fb,delta,.24,.055,C.edge);
@@ -455,7 +500,8 @@
     for(let j=0;j<10;j++){
       const t=j*Math.PI/5;box(pivot[0]+Math.sin(t)*2.83,.50,pivot[2]+Math.cos(t)*2.83,.20,.14,.27,dark,{ry:t});
     }
-    tube(offset(pivot,cross,-2.55),offset(pivot,cross,2.55),.34,stone);
+    // Twin horizontal trunnions share an axis, with no steel through the lumen.
+    for(const s of [-1,1])tube(offset(pivot,cross,s*1.25),offset(pivot,cross,s*2.55),.34,stone);
     function gear(p,normal,r,front){
       const g=new T.Group();root.add(g);g.position.fromArray(p);
       g.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),normal.clone().normalize());
@@ -473,6 +519,19 @@
         add(box(Math.sin(t)*r*.46,Math.cos(t)*r*.46,.23,.16,r*.55,.10,stone,{rz:-t}));
         add(ball(Math.sin(t)*r*.88,Math.cos(t)*r*.88,.27,.07,.07,.04,C.edge));
       }
+      if(front){
+        add(torus(0,0,.435,r*.60,.018,C.edge));
+        const stock=box(0,0,0,1,1,1,C.paper),ticks=new T.InstancedMesh(stock.geometry,stock.material,48);
+        root.remove(stock);g.add(ticks);const mark=new T.Object3D();
+        for(let j=0;j<48;j++){
+          const t=j*Math.PI/24;mark.position.set(Math.sin(t)*r*.60,Math.cos(t)*r*.60,.46);
+          mark.rotation.z=-t;mark.scale.set(j%4?.010:.018,j%4?.065:.13,.012);
+          mark.updateMatrix();ticks.setMatrixAt(j,mark.matrix);
+        }
+        ticks.instanceMatrix.needsUpdate=true;ticks.frustumCulled=false;
+        add(box(0,r*.30,.386,.66,.16,.04,dark));
+        add(text(0,r*.30,.411,'0 / 90',.58,.12,C.edge));
+      }
       return g;
     }
     for(const s of [-1,1]){
@@ -480,15 +539,47 @@
       box(foot[0],.94,foot[2],2.0,.48,2.0,stone);
       beam(foot,[p[0],p[1]-.1,p[2]],1.00,1.35,slate);
       beam([foot[0]-.72,1.10,foot[2]],[p[0]-.26,p[1]-.36,p[2]],.27,.40,pale);
-      tube(offset(p,cross,-.25),offset(p,cross,.25),.77,stone);
+      annular(offset(p,cross,-.25),offset(p,cross,.25),.77,.77,.35,.35,stone);
+      for(const q of [-.24,.24])ring(offset(p,cross,q),cross.toArray(),.42,.035,dark);
       gear(offset(p,cross,s*.38),cross.clone().multiplyScalar(s),s>0?1.47:1.05,s>0);
+      for(const x of [-.65,.65])for(const z of [-.65,.65]){
+        cyl(foot[0]+x,1.205,foot[2]+z,.11,.11,.05,dark);
+        cyl(foot[0]+x,1.255,foot[2]+z,.065,.065,.065,stone,{segments:6});
+      }
+      if(s>0){
+        const q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),cross);
+        const radial=new T.Vector3(-.62,.56,0).applyQuaternion(q),read=offset(p,cross,.98).map((x,i)=>x+radial.getComponent(i));
+        box(...read,.30,.22,.18,dark).quaternion.copy(q);
+        const anchor=[p[0],p[1]-2.0,p[2]],elbow=offset(anchor,cross,1.0);
+        beam(anchor,elbow,.14,.18,stone);beam(elbow,read,.14,.18,stone);
+        ball(...offset(read,cross,.10),.04,.04,.025,C.green,{glow:.12});
+      }
+    }
+    // Gasketed service covers lie tangentially on the front-visible barrel side.
+    for(const t of [.18,.65]){
+      const r=1.45-.33*t,g=new T.Group();root.add(g);
+      g.position.fromArray(offset(at(t),u,r+.01));
+      g.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(n.clone().negate(),v,u));
+      const add=m=>{g.add(m);return m;};
+      add(box(0,0,0,1.23,.87,.18,dark));add(box(0,0,.10,1.10,.74,.08,pale));
+      for(const x of [-.47,.47])for(const y of [-.29,.29]){
+        add(cyl(x,y,.16,.045,.045,.045,stone,{rx:Math.PI/2,segments:6}));
+      }
+      add(box(.34,0,.17,.06,.27,.065,stone));
+      add(text(-.10,0,.148,'OPT / '+(t<.5?'A':'B'),.66,.12,dark));
     }
     // The source's lower blue eyepiece is extended down to a usable floor height.
     const low=at(-.035);
     pipe([[low[0],low[1]-.65,low[2]+.25],[-2.95,2.8,.1],[-2.95,1.85,1.15]],.22,stone);
-    tube([-2.95,1.85,1.10],[-2.95,1.85,1.48],.36,dark);
+    annular([-2.95,1.85,1.10],[-2.95,1.85,1.48],.36,.36,.225,.225,dark);
+    lining([-2.95,1.85,1.10],[-2.95,1.85,1.48],.22,.22);
     torus(-2.95,1.85,1.52,.28,.09,pale);
-    tube([-2.95,1.85,1.49],[-2.95,1.85,1.54],.20,C.blue);
+    const eyeNormal=new T.Vector3(0,0,1);
+    annular([-2.95,1.85,1.20],[-2.95,1.85,1.25],.227,.227,.181,.181,stone);
+    mirror([-2.95,1.85,1.24],eyeNormal,.185,.012);
+    annular([-2.95,1.85,1.385],[-2.95,1.85,1.405],.227,.227,.188,.188,dark);
+    opticGlass([-2.95,1.85,1.39],eyeNormal,.195);
+    ring([-2.95,1.85,1.45],[0,0,1],.204,.014,0x0b1016);
     // Overhead service routing leaves the walkable floor free of loose cables.
     pipe([[pivot[0]-2,1.25,pivot[2]],[pivot[0]-2,6.5,pivot[2]],[-17,6.5,-7],[-17,8.0,-7]],.13,C.red);
     block(-8.65,-3.25,12.7,9.9);
@@ -498,21 +589,55 @@
     box(gx,.18,gz,7.25,.36,4.0,dark);
     box(gx,.82,gz-.5,6.45,1.20,2.6,slate);
     box(gx,2.35,gz-.45,6.6,3.55,.95,stone,{rx:tilt});
-    box(gx,2.39,gz+.08,5.82,2.83,.12,0x79d49c,{rx:tilt,glow:.35});
+    const display=new T.Group();root.add(display);display.position.set(gx,2.39,gz+.08);display.rotation.x=tilt;
+    const onDisplay=m=>{display.add(m);return m;};
+    onDisplay(box(0,0,0,5.82,2.83,.12,0x79d49c,{glow:.25}));
+    for(const s of [-1,1]){
+      onDisplay(box(s*2.88,0,.085,.065,2.88,.07,dark));
+      onDisplay(box(0,s*1.40,.085,5.82,.065,.07,dark));
+    }
+    for(let j=0;j<10;j++)onDisplay(box(-2.55+j*.56,0,.070,.008,2.48,.009,0x75c497));
+    for(let j=0;j<5;j++)onDisplay(box(0,-1.03+j*.51,.070,5.40,.008,.009,0x75c497));
+    onDisplay(torus(1.38,.02,.085,.73,.014,0xb1e2b7));
+    onDisplay(torus(1.38,.02,.085,.29,.009,0xb1e2b7));
+    onDisplay(box(1.38,.02,.085,1.70,.012,.010,0xb1e2b7));
+    onDisplay(box(1.38,.02,.085,.012,1.70,.010,0xb1e2b7));
+    // Readout legends illustrate the panel layout; they are not simulated data.
+    onDisplay(text(-1.36,.92,.084,'TRACK  /  0042',1.80,.12,0x214c39));
+    for(let j=0;j<3;j++){
+      onDisplay(box(-1.35,.40-j*.36,.080,.9+j*.38,.035,.015,0xb5edbc));
+      onDisplay(text(-1.40,-.86+j*.18,.084,['AZ  064.2','EL  021.5','LOCK'][j],1.65,.10,0x214c39));
+    }
     for(const s of [-1,1]){
       box(gx+s*3.30,2.15,gz-.3,.55,3.55,1.20,slate,{rx:tilt,rz:-s*.08});
       box(gx+s*2.87,3.94,gz-.38,.24,.22,.18,C.edge);
     }
     box(gx,1.13,gz+1.14,6.6,.25,1.1,stone);
-    keys(gx,1.31,gz+1.18,3.45);
-    for(const s of [-1,1])cyl(gx+s*2.75,1.34,gz+1.18,.16,.16,.12,s<0?C.cyan:C.amber);
-    for(let j=0;j<3;j++)box(gx,.65+j*.14,gz+1.52,4.6,.055,.06,dark);
-    // Thin display markings are built here, not copied from the game image.
-    for(let j=0;j<3;j++){
-      const y=3.05-j*.33,z=gz+.08+Math.tan(tilt)*(y-2.39)+.075;
-      box(gx-1.25,y,z,.75+j*.55,.035,.025,0xa9efb8,{rx:tilt});
+    box(gx,.76,gz+1.41,6.45,.98,.20,slate);
+    for(const s of [-1,1])box(gx+s*3.12,.76,gz+1.02,.20,.98,.86,slate);
+    // Twelve-centimetre keycaps and indexed hand controls give the broad
+    // display station a human/Seer-scale working edge at 1.3 metres.
+    box(gx,1.285,gz+1.14,2.20,.050,.66,dark);
+    for(let row=0;row<3;row++)for(let col=0;col<10;col++){
+      const x=gx+(col-4.5)*.185,z=gz+1.14+(row-1)*.18;
+      box(x,1.330,z,.12,.040,.15,row===0&&col>7?C.green:stone);
+      if(row===0)box(x,1.354,z,.035,.006,.035,C.edge);
     }
-    text(gx,1.02,gz+1.73,'观测记录',3.0,.30,C.edge);block(gx,gz,7.6,4.3);
+    for(const s of [-1,1]){
+      const x=gx+s*2.45,z=gz+1.15;
+      cyl(x,1.295,z,.27,.27,.060,dark);
+      cyl(x,1.350,z,.215,.215,.080,stone);
+      ring([x,1.395,z],[0,1,0],.17,.012,C.edge);
+      box(x,1.396,z-.12,.025,.015,.11,C.paper);
+      for(let j=0;j<6;j++){
+        const t=j*Math.PI/3;box(x+Math.sin(t)*.225,1.394,z+Math.cos(t)*.225,.018,.012,.04,C.edge,{ry:t});
+      }
+    }
+    for(let j=0;j<3;j++)box(gx,.65+j*.14,gz+1.52,4.6,.055,.06,dark);
+    box(gx,.62,gz+1.54,1.55,.52,.09,stone);
+    for(const s of [-1,1])box(gx+s*.53,.62,gz+1.63,.065,.24,.12,dark);
+    box(gx,.75,gz+1.73,1.05,.055,.10,C.edge);
+    text(gx,1.13,gz+1.71,'观测记录',1.70,.12,C.edge);block(gx,gz,7.6,4.3);
     // Smaller round station directly beside the staircase, as in the source.
     cyl(6.0,.20,-7.0,2.05,2.40,.40,dark);
     cyl(6.0,.88,-7.0,2.35,1.90,1.0,0x9c775e);

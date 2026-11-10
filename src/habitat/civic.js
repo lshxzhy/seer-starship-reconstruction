@@ -16,16 +16,51 @@ cabinBuilders.teleport = function(kit) {
   kit.root.userData.civicReference='G07 / 2012-05-08 scene; rear construction, dimensions and overhead feed inferred';
   const {T,root}=kit;
   const paints=new Map();
-  function casting(geometry,color,z=0) {
-    if(!paints.has(color))paints.set(color,new T.MeshStandardMaterial({
-      color:new T.Color(color).convertSRGBToLinear(),roughness:.44,metalness:.22}));
-    const mesh=new T.Mesh(geometry,paints.get(color));
+  function paint(color,roughness=.44,metalness=.22,clearcoat=0) {
+    const key=[color,roughness,metalness,clearcoat].join('/');
+    if(!paints.has(key))paints.set(key,new T.MeshPhysicalMaterial({
+      color:new T.Color(color).convertSRGBToLinear(),roughness,metalness,
+      clearcoat,clearcoatRoughness:.24}));
+    return paints.get(key);
+  }
+  function casting(geometry,color,z=0,roughness=.44,metalness=.22,clearcoat=0) {
+    const mesh=new T.Mesh(geometry,color?.isMaterial?color:paint(color,roughness,metalness,clearcoat));
     mesh.position.z=z;mesh.receiveShadow=true;root.add(mesh);return mesh;
   }
   function faceShape(points) {
     const shape=new T.Shape();
     points.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));
     shape.closePath();return shape;
+  }
+  // Only repetitive local fittings are instanced here; whole-ship batching
+  // and lighting remain the assembler's responsibility. These are built once.
+  const detailBatches=new Map(),unitBox=new T.BoxGeometry(1,1,1),roomFrame=new T.Matrix4();
+  const roundPin=new T.CylinderGeometry(1,1,1,16),hexHead=new T.CylinderGeometry(1,1,1,6);
+  const washer=new T.TorusGeometry(1,.20,5,16),detailPose=new T.Object3D();
+  const alloy=paint(0x91a5af,.25,.82),graphite=paint(0x182932,.79,.07);
+  const brass=paint(0xa88c56,.35,.68),porcelain=paint(0xd6dedb,.29,.18,.45);
+  const batchesFor=(geometry,material)=>{
+    let materials=detailBatches.get(geometry);
+    if(!materials){materials=new Map();detailBatches.set(geometry,materials);}
+    if(!materials.has(material))materials.set(material,[]);
+    return materials.get(material);
+  };
+  function stamp(frame,geometry,material,p,s=[1,1,1],r=[0,0,0]) {
+    detailPose.position.fromArray(p);detailPose.scale.fromArray(s);
+    detailPose.rotation.set(...r);detailPose.updateMatrix();
+    batchesFor(geometry,material).push(frame.clone().multiply(detailPose.matrix));
+  }
+  function stampBeam(frame,a,b,w,d,material) {
+    const start=new T.Vector3().fromArray(a),end=new T.Vector3().fromArray(b),delta=end.clone().sub(start);
+    detailPose.position.copy(start).add(end).multiplyScalar(.5);
+    detailPose.scale.set(w,delta.length(),d);
+    detailPose.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),delta.normalize());detailPose.updateMatrix();
+    batchesFor(unitBox,material).push(frame.clone().multiply(detailPose.matrix));
+  }
+  function captiveBolt(frame,x,y,z,r=.055) {
+    stamp(frame,washer,graphite,[x,y,z],[r*1.34,r*1.34,.095]);
+    stamp(frame,hexHead,alloy,[x,y,z+.025],[r,.048,r],[PI/2,0,0]);
+    stamp(frame,unitBox,graphite,[x,y,z+.053],[r*.80,r*.16,.008],[0,0,.45]);
   }
 
   // Flush blue foreground and inlaid guides: no central machine blocks the hero view.
@@ -86,38 +121,100 @@ cabinBuilders.teleport = function(kit) {
     bevelSize:.07,bevelThickness:.06,bevelSegments:2,steps:1,curveSegments:8});
   const backGeo=new T.ExtrudeGeometry(faceShape(outer),{depth:.18,bevelEnabled:false});
   const wellGeo=new T.ExtrudeGeometry(faceShape(aperture),{depth:.13,bevelEnabled:false});
+  const inset=(sx,sy)=>aperture.map(([x,y])=>[x*sx,3.74+(y-3.74)*sy]);
+  function lipGeometry(outline,opening,depth,bevel=.014) {
+    const shape=faceShape(outline),voidPath=new T.Path();
+    opening.forEach(([x,y],i)=>i?voidPath.lineTo(x,y):voidPath.moveTo(x,y));voidPath.closePath();
+    shape.holes.push(voidPath);
+    return new T.ExtrudeGeometry(shape,{depth,bevelEnabled:bevel>0,bevelSize:bevel,
+      bevelThickness:bevel*.6,bevelSegments:2,steps:1});
+  }
+  const flangeGeo=lipGeometry(inset(1.11,1.025),inset(.988,.995),.11);
+  const sealGeo=lipGeometry(inset(.985,.992),inset(.925,.955),.055,.006);
+  const linerGeo=lipGeometry(inset(.93,.959),inset(.84,.918),.30,.018);
+  const glassGeo=new T.ExtrudeGeometry(faceShape(inset(.865,.936)),
+    {depth:.065,bevelEnabled:true,bevelSize:.016,bevelThickness:.008,bevelSegments:2});
+  // A single closed pane, air gap, internal rails and a dark rear well supply
+  // depth without a transmission render pass or multiple transparent shells.
+  const glassPaint=new T.MeshPhysicalMaterial({color:new T.Color(0x9ec8d2).convertSRGBToLinear(),
+    roughness:.11,metalness:.035,clearcoat:1,clearcoatRoughness:.08,
+    transparent:true,opacity:.19,depthWrite:false,envMapIntensity:.75});
+  const glintGeo=new T.ShapeGeometry([
+    faceShape([[-1.00,3.66],[-.96,3.67],[-.66,4.75],[-.22,5.72],[-.26,5.68],[-.71,4.72]]),
+    faceShape([[.72,4.39],[.743,4.38],[.50,5.12],[.48,5.13]])]);
+  const glintPaint=new T.MeshBasicMaterial({color:0xb6d4df,transparent:true,opacity:.14,
+    depthWrite:false,toneMapped:false});
+  const shoulderGeo=new T.ExtrudeGeometry([-1,1].map(s=>faceShape([
+    [s*1.75,2.20],[s*2.02,2.20],[s*2.10,3.57],[s*1.73,5.12],
+    [s*1.48,5.16],[s*1.80,3.55]])),
+    {depth:.14,bevelEnabled:true,bevelSize:.025,bevelThickness:.018,bevelSegments:2});
+  const footRibGeo=new T.ExtrudeGeometry([-1,1].map(s=>faceShape([
+    [s*1.35,.48],[s*2.07,.48],[s*1.94,1.21],[s*1.65,1.45],[s*1.55,.80]])),
+    {depth:.22,bevelEnabled:true,bevelSize:.025,bevelThickness:.018,bevelSegments:1});
   const shieldGeo=new T.ExtrudeGeometry(faceShape([[-.79,1.89],[-.89,2.28],[-.36,3.43],
     [0,3.65],[.36,3.43],[.89,2.28],[.79,1.89]]),
     {depth:.27,bevelEnabled:true,bevelSize:.055,bevelThickness:.035,bevelSegments:1});
   function pod(x,z,a,tint,n) {
+    const frame=new T.Matrix4().makeRotationY(a);frame.setPosition(x,0,z);
+    const frameInverse=frame.clone().invert();
     const g=civicAssembly(kit,x,z,a,()=>{
       cyl(0,.18,0,2.17,2.3,.36,dark);
       cyl(0,.40,0,1.98,2.17,.14,ivory);
       cyl(0,.495,.04,1.72,1.72,.055,tint,{glow:.18});
       torus(0,.54,.04,1.68,.07,tint,{rx:PI/2,glow:.4});
-      casting(backGeo,0x4b4a49,-1.29);
-      casting(shellGeo,n===2?0xb87e43:n===3?0xc1c8cc:0xa7997d,-1.08);
-      casting(wellGeo,n===3?0x344a91:0x305255,-.73);
-      // Raised ribs follow the sharp crown. No oval torus softens the silhouette.
-      const rim=[...aperture,aperture[0]];
-      for(let i=1;i<rim.length;i++)beam([rim[i-1][0],rim[i-1][1],.17],
-        [rim[i][0],rim[i][1],.17],.065,.075,i<4||i>6?dark:tint);
+      casting(backGeo,0x4b4a49,-1.29,.63,.28);
+      casting(shellGeo,n===2?0xb87e43:n===3?0xc1c8cc:0xa7997d,-1.08,.32,.26,.42);
+      casting(wellGeo,n===3?0x233459:0x203b3d,-.99,.67,.18);
+      casting(flangeGeo,0x8d9c9e,.015,.29,.75);
+      casting(sealGeo,graphite,-.11);
+      casting(linerGeo,0x5b7680,-.43,.26,.80);
+      const pane=casting(glassGeo,glassPaint,-.30);pane.receiveShadow=false;pane.renderOrder=2;
+      const glints=casting(glintGeo,glintPaint,-.221);glints.receiveShadow=false;glints.renderOrder=3;
+      casting(shoulderGeo,porcelain,.12);
+      // Internal rails remain behind the glass; their dark mounts and bright
+      // narrow edges make the air gap legible while moving across the bay.
       for(const s of [-1,1]) {
-        beam([s*1.99,2.25,.25],[s*1.98,3.53,.25],.15,.17,ivory);
-        beam([s*1.96,3.62,.25],[s*1.63,4.91,.25],.13,.17,0xc8d4d5);
-        beam([s*1.62,5.03,.24],[s*.32,6.71,.24],.12,.16,0xdddccc);
+        stamp(frame,unitBox,graphite,[s*.82,4.18,-.70],[.23,1.66,.24]);
+        stamp(frame,unitBox,brass,[s*.82,4.18,-.555],[.075,1.45,.08]);
+        for(const y of [3.66,4.18,4.70])
+          stamp(frame,unitBox,alloy,[s*.82,y,-.515],[.28,.075,.11]);
+      }
+      for(const y of [4.84,5.10,5.36])
+        stamp(frame,unitBox,graphite,[0,y,-.69],[.92,.09,.12]);
+      for(const s of [-1,1]) {
+        stampBeam(frame,[s*1.62,5.03,.24],[s*.32,6.71,.24],.12,.16,porcelain);
         box(s*1.93,1.68,.30,.18,.62,.12,gold);
         // Inner hooked links frame the separate silver pointed shield in G07.
         pipe([[s*.52,3.02,.40],[s*1.03,3.69,.37],[s*1.12,4.44,.17],
           [s*.88,5.1,.10]],.12,0x263f43);
-        cyl(s*1.12,3.17,.48,.27,.27,.19,steel,{rx:PI/2});
-        cyl(s*1.12,3.17,.60,.14,.14,.07,tint,{rx:PI/2,glow:.2});
-        box(s*1.45,2.2,-1.4,.31,1.7,.23,0x344e5c);
-        beam([s*1.4,.6,-1.31],[s*.84,5.9,-1.37],.17,.24,steel);
+        stamp(frame,roundPin,graphite,[s*1.12,3.17,.40],[.31,.16,.31],[PI/2,0,0]);
+        stamp(frame,roundPin,alloy,[s*1.12,3.17,.515],[.25,.12,.25],[PI/2,0,0]);
+        captiveBolt(frame,s*1.12,3.17,.59,.095);
+        for(const [xx,yy,zz] of [[1.95,2.43,.286],[1.92,3.48,.286],[1.60,4.89,.286],[.83,6.05,.327]])
+          captiveBolt(frame,s*xx,yy,zz);
+        for(const [xx,yy] of [[1.22,2.45],[1.18,4.28],[.65,5.59]])
+          captiveBolt(frame,s*xx,yy,-.092,.037);
+        stamp(frame,unitBox,graphite,[s*1.45,2.2,-1.40],[.31,1.7,.23]);
+        stampBeam(frame,[s*1.4,.6,-1.31],[s*.84,5.9,-1.37],.17,.24,alloy);
+        // Shoulder ribs across the rear reveal and an upper service truss are
+        // original hidden construction, not additional game-proven devices.
+        for(const y of [2.65,3.65,4.65])
+          stamp(frame,unitBox,alloy,[s*1.77,y,-.63],[.18,.14,.98]);
+        // Backboard anchors are in room coordinates; undo the station yaw
+        // before joining them so each truss actually closes onto its bracket.
+        const mountA=new T.Vector3(x+s*1.52,6.14,-13.80).applyMatrix4(frameInverse).toArray();
+        const mountB=new T.Vector3(x+s*.74,6.54,-13.80).applyMatrix4(frameInverse).toArray();
+        stampBeam(frame,[s*1.52,4.20,-1.55],mountA,.17,.22,alloy);
+        stampBeam(frame,mountA,mountB,.17,.22,alloy);
+        stamp(roomFrame,unitBox,alloy,[x+s*1.13,6.35,-13.985],[1.10,.90,.33]);
+        for(const y of [6.04,6.66])captiveBolt(roomFrame,x+s*1.13,y,-13.81,.065);
+        stamp(frame,unitBox,graphite,[s*1.52,4.20,-1.46],[.40,.43,.18]);
+        captiveBolt(frame,s*1.52,4.20,-1.345,.070);
       }
-      casting(shieldGeo,steel,.28);
-      const face=casting(shieldGeo,n===3?0xd4d9e7:white,.58);face.scale.set(.72,.84,.35);face.position.y=.42;
-      beam([0,2.02,.76],[0,3.32,.76],.10,.07,0x6f8492);
+      casting(shieldGeo,0x7e929f,.28,.24,.78);
+      const face=casting(shieldGeo,n===3?0xd4d9e7:white,.58,.31,.17,.45);face.scale.set(.72,.84,.35);face.position.y=.42;
+      stampBeam(frame,[0,2.02,.76],[0,3.32,.76],.10,.07,alloy);
+      for(const xx of [-.43,.43])captiveBolt(frame,xx,2.30,.697,.038);
       ball(0,1.43,.72,1.21,.20,.78,tint,{glow:.16});
       cyl(0,1.03,.57,.83,.98,.3,steel);
       box(0,.92,1.15,.22,.86,.26,ivory);
@@ -129,18 +226,38 @@ cabinBuilders.teleport = function(kit) {
       for(const [yy,zz,hh,dd] of [[.08,3.18,.16,1.10],[.16,2.45,.32,.90],[.25,1.7,.50,.90]]) {
         box(0,yy,zz,2.18,hh,dd,ivory);
         box(0,yy,zz+dd/2+.025,2.18,.08,.05,dark);
+        for(let j=0;j<6;j++)stamp(frame,unitBox,graphite,
+          [0,yy+hh/2+.012,zz-dd*.34+j*dd*.133],[1.76,.018,.035]);
+      }
+      casting(footRibGeo,0x8e9a98,.68,.38,.60);
+      for(const s of [-1,1]) {
+        stamp(frame,unitBox,graphite,[s*1.75,.86,.935],[.16,.30,.025]);
+        captiveBolt(frame,s*1.84,.58,.927,.045);
       }
       text(0,.27,2.925,'0'+n,.8,.18,steel);
       // Independent side socket, exposed piston and hinged service cover.
-      box(2.48,1.72,-.2,.77,2.8,1.08,ivory);
-      box(2.91,1.73,-.19,.12,2.18,.79,steel);
-      cyl(2.91,2.25,.29,.23,.23,.16,gold,{rx:PI/2});
+      box(2.48,1.72,-.2,.77,2.8,1.08,ivory,{roughness:.34,metalness:.24});
+      box(2.91,1.73,-.19,.12,2.18,.79,steel,{roughness:.29,metalness:.68});
+      stamp(frame,roundPin,brass,[2.91,2.25,.29],[.23,.16,.23],[PI/2,0,0]);
+      captiveBolt(frame,2.91,2.25,.39,.10);
+      stamp(frame,unitBox,graphite,[2.48,1.43,.377],[.64,1.45,.11]);
+      for(const y of [.66,2.20])stamp(frame,unitBox,alloy,[2.48,y,.42],[.72,.12,.18]);
+      for(const xx of [2.20,2.76])stamp(frame,unitBox,alloy,[xx,1.43,.42],[.09,1.42,.18]);
+      for(let j=0;j<11;j++)stamp(frame,unitBox,alloy,
+        [2.48,.83+j*.115,.475],[.58,.045,.22],[-.22,0,0]);
+      for(const y of [1.05,1.98]) {
+        stamp(frame,unitBox,graphite,[2.94,y,-.55],[.25,.76,.25]);
+        stamp(frame,roundPin,alloy,[3.00,y,-.55],[.10,.58,.10]);
+        for(const e of [-1,1])stamp(frame,roundPin,brass,[3.00,y+e*.30,-.55],[.13,.08,.13]);
+      }
+      for(const xx of [2.20,2.76])for(const y of [.63,2.19])captiveBolt(frame,xx,y,.520,.038);
       pipe([[1.95,3.52,-.15],[2.53,3.22,.03],[2.58,2.28,.20]],.10,dark);
       beam([2.1,.62,.18],[2.6,1.35,.18],.16,.16,steel);
       panel(2.48,2.7,.39,.53,.62,tint);
       // Rear access panel and conduit can be seen on a walk around the appliance.
       box(0,3.3,-1.39,1.32,2.5,.18,0x445966);
-      for(let i=0;i<6;i++)box(0,2.5+i*.23,-1.50,.91,.06,.03,dark);
+      stamp(frame,unitBox,graphite,[0,3.19,-1.50],[1.05,1.61,.07]);
+      for(let i=0;i<7;i++)stamp(frame,unitBox,alloy,[0,2.51+i*.23,-1.565],[.91,.065,.13],[.20,0,0]);
       pipe([[-.72,1,-1.45],[-.87,3.2,-1.52],[0,6.2,-1.1]],.09,gold);
     });
     g.name='独立传送舱位 0'+n;
@@ -286,6 +403,16 @@ cabinBuilders.teleport = function(kit) {
     box(x,.86,z+.34,.22,.18,.04,cyan,{glow:.45});
     block(x,z,.4,.7);
   }
+  let detailCount=0,detailDraws=0;
+  for(const [geometry,materials] of detailBatches)for(const [material,matrices] of materials) {
+    const instances=new T.InstancedMesh(geometry,material,matrices.length);
+    instances.name='传送舱 · 可复用机械附件';
+    matrices.forEach((matrix,i)=>instances.setMatrixAt(i,matrix));
+    instances.instanceMatrix.needsUpdate=true;instances.frustumCulled=false;
+    instances.receiveShadow=true;root.add(instances);
+    detailCount+=matrices.length;detailDraws++;
+  }
+  root.userData.teleportDetailInstances={count:detailCount,draws:detailDraws};
 };
 
 cabinBuilders.instructor = function(kit) {

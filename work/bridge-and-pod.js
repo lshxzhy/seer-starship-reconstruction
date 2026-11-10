@@ -12,14 +12,20 @@
   };
 
   function platedStack(parent, stations, material, exponent = 0.82, segments = 40) {
-    const positions = [], indices = [];
+    const positions = [], indices = [], uv = [];
+    const bottom=stations[0][0], rise=stations[stations.length-1][0]-bottom;
+    const plated=rise>.52 && (material===mats.hull||material===mats.steel||material===mats.pearl);
+    const ringCount=segments+1;
     for (const section of stations) {
-      for (let j = 0; j < segments; j++) positions.push(...pointOnRim(section, 2 * Math.PI * j / segments, exponent));
+      for (let j = 0; j <= segments; j++) {
+        positions.push(...pointOnRim(section, 2 * Math.PI * j / segments, exponent));
+        uv.push(j/segments,.02+.96*(section[0]-bottom)/rise);
+      }
     }
     for (let i = 0; i < stations.length - 1; i++) {
       for (let j = 0; j < segments; j++) {
-        const a = i * segments + j, b = i * segments + (j + 1) % segments;
-        const c = a + segments, d = b + segments;
+        const a = i * ringCount + j, b = a + 1;
+        const c = a + ringCount, d = b + ringCount;
         indices.push(a, c, b, b, c, d);
       }
     }
@@ -28,7 +34,12 @@
       const section = stations[top ? stations.length - 1 : 0];
       const center = positions.length / 3;
       positions.push((section[1] + section[2]) / 2, section[0], 0);
-      for (let j = 0; j < segments; j++) positions.push(...pointOnRim(section, 2 * Math.PI * j / segments, exponent));
+      uv.push(.25,.25);
+      for (let j = 0; j < segments; j++) {
+        const p=pointOnRim(section,2*Math.PI*j/segments,exponent);
+        positions.push(...p);
+        uv.push(.025+.45*(p[0]-section[1])/(section[2]-section[1]),.25+.225*p[2]/section[3]);
+      }
       for (let j = 0; j < segments; j++) {
         const a = center + 1 + j, b = center + 1 + (j + 1) % segments;
         indices.push(center, top ? b : a, top ? a : b);
@@ -36,9 +47,16 @@
     }
     const geometry = new T.BufferGeometry();
     geometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    if(plated)geometry.setAttribute('uv',new T.Float32BufferAttribute(uv,2));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-    return mesh(geometry, material, 0, 0, 0, parent);
+    const normals=geometry.attributes.normal, a=new T.Vector3(), b=new T.Vector3();
+    for(let i=0;i<stations.length;i++){
+      const first=i*ringCount,last=first+segments;
+      a.fromBufferAttribute(normals,first).add(b.fromBufferAttribute(normals,last)).normalize();
+      normals.setXYZ(first,a.x,a.y,a.z);normals.setXYZ(last,a.x,a.y,a.z);
+    }
+    return mesh(geometry, plated?armourCoat(material):material, 0, 0, 0, parent);
   }
 
   function insetStrip(parent, section, startAngle, endAngle, material, thickness, exponent) {
@@ -77,6 +95,20 @@
     platedStack(bridge, [[height - .01, aft, forwardReach - .025, depth * .98],
       [height + .18, aft - .025, forwardReach + .025, depth]], mats.glass);
     const mid = [height + .09, aft - .025, forwardReach + .027, depth * 1.003];
+    // Window mullions wrap the raked facade; the panes sit behind its head and sill.
+    const posts=[];
+    for(let j=0;j<22;j++){
+      const angle=2*Math.PI*j/22;
+      const angleWidth=.024;
+      const base=[height-.004,aft-.010,forwardReach-.015,depth*.99];
+      const head=[height+.179,aft-.042,forwardReach+.045,depth*1.016];
+      const corners=[pointOnRim(base,angle-angleWidth,.82),pointOnRim(head,angle-angleWidth,.82),
+        pointOnRim(head,angle+angleWidth,.82),pointOnRim(base,angle+angleWidth,.82)];
+      for(const k of [0,1,2,0,2,3])posts.push(...corners[k]);
+    }
+    const framing=new T.BufferGeometry();
+    framing.setAttribute('position',new T.Float32BufferAttribute(posts,3));
+    framing.computeVertexNormals();mesh(framing,mats.edge,0,0,0,bridge);
     for (const sign of [-1, 1]) {
       insetStrip(bridge, mid, sign * .14, sign * .43, mats.cyan, .018, .82);
       insetStrip(bridge, mid, sign * .52, sign * 1.02, mats.blue, .016, .82);
