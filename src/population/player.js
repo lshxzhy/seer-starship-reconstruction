@@ -7,6 +7,7 @@
     avatar.scale.setScalar(worldMetre);
     avatar.visible=false;
     scene.add(avatar);
+    const drill=createMiningDrill();
     const contacts=createSoleContacts(1),ground=contacts.mesh;
     ground.scale.setScalar(worldMetre);ground.visible=false;scene.add(ground);
     let facing=0,phase=0,previous=null,style='follow',distance=4.15,active=false;
@@ -36,6 +37,7 @@
       seerRobots.animate(rig,phase,speed,dt,Boolean(ride));
       const floorY=pose.y+(ride?ride.footOffset:contactFloor(pose));
       avatar.position.copy(habitat.worldPosition(pose.x,floorY,pose.z));
+      drill.update(rig.bones.core,dt,active);
       ground.position.copy(avatar.position);
       ground.rotation.y=facing;
       contacts.write(0,0,0,0,0,rig.bones);contacts.finish(1);
@@ -87,11 +89,13 @@
     return {
       arrive,positionCamera,
       setSmile(value){seerRobots.setExpression(rig,value?'smile':'neutral');},
-      leave(){active=false;avatar.visible=ground.visible=false;previous=null;sampled=null;},
+      setDrill(equipped){drill.set(equipped);},
+      workDrill(){drill.work();},
+      leave(){active=false;avatar.visible=ground.visible=false;drill.hide();previous=null;sampled=null;},
       setStyle(next){style=next==='eye'?'eye':'follow';sampled=null;},
       zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),2.4,6.6);sampled=null;},
       get style(){return style;},get facing(){return facing;},
       snapshot(){return {perspective:style,facing,boom:distance};},
-      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();}
+      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();drill.dispose();}
     };
   }

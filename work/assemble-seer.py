@@ -21,20 +21,22 @@ output = root / 'outputs'
 viz = work / 'seer-fragment.html'
 output.mkdir(exist_ok=True)
 viewer = root / 'src' / 'viewer'
+ship = root / 'src' / 'ship'
 habitat = root / 'src' / 'habitat'
 population = root / 'src' / 'population'
-scripts = [viewer/'start.js', viewer/'orbit-sky.js', viewer/'lighting.js', work/'livery.js', viewer/'primitives.js']
-scripts.extend(work/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
-scripts.extend([habitat/'exterior-scale.js', work/'interior.js', habitat/'registry.js', habitat/'kit.js'])
+scripts = [viewer/'start.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
+scripts.extend(ship/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
+scripts.extend([habitat/'exterior-scale.js', ship/'interior.js', habitat/'registry.js', habitat/'kit.js'])
 scripts.extend(habitat/name for name in ('engineering.js','science.js','civic.js','crew.js'))
 scripts.extend([population/'berths.js',habitat/'installation.js',habitat/'layout-record.js',
-                population/'robot.js',population/'population.js',population/'player.js',
+                population/'robot.js',population/'population.js',population/'mining-drill.js',population/'player.js',
                 population/'super-nono.js',population/'personal-flyer.js'])
 scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
+                viewer/'pilot-locker.js',viewer/'ship-map.js',viewer/'inventory.js',viewer/'flight-deck.js',
                 viewer/'boarding.js',viewer/'explore.js'])
 source = '\n'.join(path.read_text('utf-8') for path in scripts)
 publish_text(output/'seer-model.js',source)
-layout = (work/'seer-layout.html').read_text('utf-8')
+layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + '</style>'
 library = (work/'three-r128.min.js').read_text('utf-8').replace('</script','<\\/script')
 fragment = layout + '\n<script>\n' + library + '\n</script>\n<script>\n' + source + '\n</script>\n'
 publish_text(viz,fragment)
@@ -48,7 +50,8 @@ notices = '\n\n'.join(path.read_text(encoding='utf-8') for path in
 inner = f'{head}{title}<style>{style}</style><body>{fragment}</body></html>'
 document = (f'{head}{title}<style>html,body,iframe{{margin:0;border:0;width:100%;height:100%;'
             'display:block;background:#101723}}</style><body>'
-            '<iframe title="SEER 三维漫游" allowfullscreen '
+            '<iframe name="seer-portable" title="SEER 三维漫游" allowfullscreen '
             f'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
-            '</iframe><template id="licenses">' + escape(notices) + '</template></body></html>')
+            '</iframe><script>' + (viewer/'offline-locker-host.js').read_text('utf-8') +
+            '</script><template id="licenses">' + escape(notices) + '</template></body></html>')
 publish_text(output/'seer-starship.html',document)

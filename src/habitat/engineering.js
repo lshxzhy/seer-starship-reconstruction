@@ -519,6 +519,32 @@
     screen(-17,3.2,6.7,2.8,1.8,'装备目录',Math.PI/2);
     box(-17.5,1.45,6.7,1.3,2.9,3.5,C.ivory);
     block(-17.5,6.7,1.6,3.7);
+    // Three removable demonstration cores on individual cradles. Pieces are
+    // batched within their own sample group so collection can hide each one.
+    const rackX=-16,rackZ=5.9;
+    box(rackX,.72,rackZ,1.11,.14,3.0,C.edge);
+    box(rackX,.62,rackZ,1.03,.18,2.89,C.ivory);
+    for(const zz of [-1.20,1.20])for(const xx of [-.39,.39]){
+      box(rackX+xx,.32,rackZ+zz,.11,.56,.14,C.steel);
+    }
+    text(rackX+.566,.68,rackZ,'采矿训练',1.3,.16,C.dark,{ry:Math.PI/2});
+    block(rackX,rackZ,1.13,3.00);
+    root.userData.trainingSamples=[];
+    for(let i=0;i<3;i++){
+      const z=rackZ+(i-1)*.91;
+      box(rackX,.808,z,.79,.052,.78,C.dark);
+      const sample=new kit.T.Group();sample.name='黄晶矿训练样品 '+(i+1);
+      sample.position.set(rackX,.833,z);sample.rotation.y=i*.77-.22;root.add(sample);
+      root.userData.trainingSamples.push(sample);
+      // The three differently oriented prismatic tips grow from a rough bed.
+      cyl(0,.069,0,.26,.29,.14,0x736147,{segments:7,parent:sample});
+      for(const [x,dz,r,h,lean] of [[0,0,.134,.42,.10],[-.143,.08,.090,.215,-.31],[.107,-.115,.084,.245,.37]]){
+        const vein=new kit.T.Group();vein.position.set(x,.085,dz);vein.rotation.z=lean;
+        sample.add(vein);
+        cyl(0,h/2,0,r,r*.86,h,0xe5ad36,{segments:6,metalness:.21,roughness:.29,parent:vein});
+        cyl(0,h+r*.48,0,.011,r,r*.96,0xffcf54,{segments:6,glow:.08,roughness:.26,parent:vein});
+      }
+    }
     cabinet(-10.8,-12.45,4.1,3.9,'备件');
     cabinet(-5.4,-12.45,4.1,3.9,'工具');
     screen(.45,3.2,-13.05,3.5,2.0,'检修记录');

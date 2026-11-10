@@ -9,11 +9,11 @@
     const orientation=bay.side===1?-1:1;
     let parked={x:bay.center[0]+2.55*orientation,y:bay.center[1],
       z:bay.center[2]+8.5*orientation,level:bay.level};
-    let heading=bay.yawRad, mounted=false, landing=false;
+    let heading=bay.yawRad, mounted=false, landing=false, stored=false;
     let altitude=0, targetHeight=0, vx=0, vz=0;
 
     function reachable(p){
-      if(!p||p.level!==parked.level)return false;
+      if(stored||!p||p.level!==parked.level)return false;
       const dx=parked.x-p.x,dz=parked.z-p.z;
       if(Math.hypot(dx,dz)>clearance+1.65)return false;
       const end=habitat.move(p,dx,dz);
@@ -51,7 +51,7 @@
       if(!reachable(p)){
         const place=beside(p,yaw,clearance);
         if(!place)return {notice:'翼端净空不足。请到开阔地面取出滑翔翼。'};
-        parked=place;heading=yaw;
+        parked=place;heading=yaw;stored=false;
         return {notice:'滑翔翼已停在身旁，可以登乘。'};
       }
       if(population.nearest(parked,.88))return {notice:'有船员经过踏板，请稍后登乘。'};
@@ -91,12 +91,12 @@
       return {pose:next};
     }
     function draw(p,dt){
-      if(p.level!==parked.level){craft.hide();return null;}
+      if(stored||p.level!==parked.level){craft.hide();return null;}
       const footOffset=craft.update(parked,heading,{mounted,dt,speed:Math.hypot(vx,vz),altitude});
       return mounted?{footOffset,heading}:null;
     }
     function clearsParked(from,to){
-      if(mounted||to.level!==parked.level)return true;
+      if(stored||mounted||to.level!==parked.level)return true;
       const dist=Math.hypot(to.x-parked.x,to.z-parked.z);
       return dist>=clearance+.4||dist>=Math.hypot(from.x-parked.x,from.z-parked.z);
     }
@@ -106,12 +106,14 @@
         !habitat.canStand(saved.parked,clearance))return;
       parked={x:saved.parked.x,y:saved.parked.y,z:saved.parked.z,level:saved.parked.level};
       heading=Number.isFinite(saved.heading)?saved.heading:0;
-      mounted=saved.mounted===true&&p.level===parked.level&&Math.hypot(p.x-parked.x,p.z-parked.z)<.15;
+      stored=saved.stored===true;
+      mounted=!stored&&saved.mounted===true&&p.level===parked.level&&Math.hypot(p.x-parked.x,p.z-parked.z)<.15;
       if(mounted)altitude=targetHeight=T.MathUtils.clamp(Number.isFinite(saved.altitude)?saved.altitude:0,0,heightLimit(p));
     }
-    return {get mounted(){return mounted;},get altitude(){return altitude;},get landing(){return landing;},
+    return {get mounted(){return mounted;},get altitude(){return altitude;},get landing(){return landing;},get stored(){return stored;},
+      setStored(value){if(!mounted){stored=value===true;if(stored)craft.hide();}},
       reachable,interact,drive,draw,changeHeight,clearsParked,restore,stop,park,
       label:p=>mounted?(landing?'着陆中':'着陆下机'):reachable(p)?'驾驶滑翔翼':'取出滑翔翼',
-      snapshot:()=>({parked:{...parked},heading,mounted,altitude}),
+      snapshot:()=>({parked:{...parked},heading,mounted,altitude,stored}),
       leave(){craft.hide();stop();},dispose(){craft.dispose();}};
   }

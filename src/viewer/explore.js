@@ -35,6 +35,11 @@
   let selected=null, frame=0, lastTime=0, disposed=false;
   let stagedBoard=null, liveBoard=false, lastSaved='';
   const boarding=createBoardingController(requestDraw,save);
+  const cockpit=createFlightDeck(boarding,id=>{
+    Object.assign(state,{mode:'board',room:habitat.byId.has(id)?id:'',located:'',rotate:false,wire:false});
+    stagedBoard={roomId:id};
+    frameSelection();syncScene();save();
+  },requestDraw);
   const unitMetre=habitat.worldPosition(1,0,0).distanceTo(habitat.worldPosition(0,0,0));
   const unitBounds=new T.BoxGeometry(1,1,1);
   const locator=new T.LineSegments(new T.EdgesGeometry(unitBounds),new T.LineBasicMaterial({
@@ -115,14 +120,15 @@
         boarding.enter(stagedBoard?.roomId || state.room,stagedBoard);
       }else boarding.refresh();
       liveBoard=true;stagedBoard=null;
+      cockpit.sync(true);
       requestDraw();return;
     }
     if(liveBoard){boarding.leave();liveBoard=false;}
     habitat.setPreview(detailed?.id || null);
     camera.near=detailed ? Math.max(.0002,unitMetre*.12) : .1;
     camera.updateProjectionMatrix();
-    tag.hidden=!selected && !located;
-    tag.textContent=located?'实舱位置 · '+located.name:selected?.name||'';
+    tag.hidden=false;
+    tag.textContent=located?'实舱位置 · '+located.name:selected?.name||modes[state.mode];
     description.textContent=detailed?detailed.name+' · '+[detailed.spec.width,detailed.spec.depth,detailed.spec.height].join(' × ')+' 米 · '+(detailed.brief||selected.basis):
       selected?selected.name+' · 分区示意。'+selected.basis:
       single?'选择游戏舱室可查看拆顶实舱，并从入口登舰；其余功能区显示总体布置。':
@@ -130,6 +136,7 @@
       cut?'从近舷剖开，可看到三大层区、层间通道、塔楼和腹舱。舱区依据《飞船手册》，骨架与舱壁为工程布置方案。':
       '扩建方案长 795 米、宽 555 米、高 675 米。原作手册外廓为 530 × 370 × 450 米。';
     status.textContent=modes[state.mode]+(single?' · '+regions[state.deck].name:'')+(state.wire?' · 线框':'');
+    cockpit.sync(false);
     requestDraw();
   }
   function applySelection(mode,deck=state.deck,room='',located=''){
@@ -140,6 +147,7 @@
   function restore(saved){
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
+    boarding.restorePack(saved.pack);
     state.mode=saved.mode;
     state.located=habitat.byId.has(saved.located)?saved.located:'';
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
@@ -152,7 +160,7 @@
     state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
   }
   function save(){
-    const privateContent={version:3,...state,board:state.mode==='board'?boarding.snapshot():null};
+    const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null};
     lastSaved=JSON.stringify(privateContent);
     const room=state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
     const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
@@ -261,7 +269,7 @@
     requestDraw();clearTimeout(wheelTimer);wheelTimer=setTimeout(save,240);
   },{passive:false});
   root.addEventListener('keydown',e=>{
-    if(e.target.tagName==='SELECT')return;
+    if(cockpit.isOpen||e.target.tagName==='SELECT')return;
     if(state.mode==='board'){
       if(e.key==='Escape'){e.preventDefault();applySelection('section');}
       return;
@@ -290,7 +298,7 @@
   window.addEventListener('pagehide',e=>{
     if(e.persisted)return;
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
-    boarding.dispose();
+    cockpit.dispose();boarding.dispose();
     window.removeEventListener('openai:set_globals',loadHostState);
     const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
     scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});

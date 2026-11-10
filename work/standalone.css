@@ -1,30 +1,3 @@
-:root {
-  --background: #101723;
-  color-scheme: dark;
-  --foreground: #e5edf3;
-  font: 15px/1.45 "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: var(--foreground);
-  background: #101723;
-}
-* { box-sizing: border-box; }
-body { margin: 0 auto; max-width: 1800px; padding: clamp(8px, 1.4vw, 22px); }
-h2 { margin: 0; font-size: 1.45rem; letter-spacing: .1em; }
-button, select { font: inherit; color: inherit; }
-.btn, .form-select {
-  border: 1px solid #40526a;
-  border-radius: 5px;
-  padding: .35em .72em;
-  background: #1e2a39;
-}
-.btn { cursor: pointer; }
-.btn:hover, .form-select:hover { border-color: #7aaabb; }
-.btn[aria-pressed="true"] { color: #baf4fa; border-color: #67aab9; background: #194150; }
-:focus-visible { outline: 2px solid #93e3f0; outline-offset: 2px; }
-.text-small { font-size: .88rem; }
-.text-muted { color: #b3c1ce; }
-.viz-controls, .viz-row { display: flex; flex-wrap: wrap; gap: .35rem; }
-body #seer-starship-3d .seer-heading { padding: 0; }
-body #seer-starship-3d .seer-stage { height: clamp(300px, 71vh, 1050px); border-radius: 6px; }
-@media (max-height: 550px) {
-  body #seer-starship-3d .seer-stage { height: max(225px, 60vh); }
-}
+:root {color-scheme:dark;background:#101b24;color:#ebf2f2;font:15px/1.4 "Segoe UI","Microsoft YaHei",sans-serif}
+html,body {padding:0;margin:0;height:100%}
+body #seer-starship-3d .seer-stage {height:100vh;height:100dvh;min-height:240px}

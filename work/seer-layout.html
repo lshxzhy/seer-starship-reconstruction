@@ -1,75 +1,50 @@
 <div id="seer-starship-3d">
-  <div class="seer-heading">
-    <div><h2>SEER</h2><span class="text-small text-muted">SE–A015 扩建方案 · 舰长 795 米</span></div>
-    <div class="viz-controls">
-      <button class="btn" type="button" data-action="rotate" aria-pressed="false" hidden>自动旋转</button>
-      <button class="btn" type="button" data-action="wire" aria-pressed="false" hidden>线框</button>
-      <button class="btn" type="button" data-action="fullscreen" aria-pressed="false" hidden>全屏</button>
-    </div>
-  </div>
-  <div class="seer-toolbar">
-    <div class="viz-row" role="group" aria-label="查看方式">
-      <button type="button" class="btn" data-view="board" aria-pressed="true">登舰</button>
-      <button type="button" class="btn" data-view="exterior" aria-pressed="false">外观</button>
-      <button type="button" class="btn" data-view="section" aria-pressed="false">纵剖</button>
-      <button type="button" class="btn" data-view="deck" aria-pressed="false">分层</button>
-    </div>
-    <div class="seer-pickers" hidden>
-      <label>层区 <select class="form-select" data-deck></select></label>
-      <label>舱室 <select class="form-select" data-room></select></label>
-      <button type="button" class="btn" data-enter-room hidden>进入此舱</button>
-    </div>
-    <div class="seer-pickers seer-boarding" data-boarding-controls>
-      <label>目的地 <select class="form-select" data-jump-room></select></label>
-      <label>视角 <select class="form-select" data-perspective><option value="follow">跟随赛尔</option><option value="eye">第一人称</option></select></label>
-      <button type="button" class="btn" data-face-player>看正面</button>
-      <button type="button" class="btn" data-smile aria-pressed="false">微笑</button>
-      <button type="button" class="btn" data-nono>招呼超能 NoNo</button>
-      <button type="button" class="btn" data-flyer>驾驶滑翔翼</button>
-      <button type="button" class="btn" data-climb hidden>升高</button>
-      <button type="button" class="btn" data-descend hidden>降低</button>
-      <button type="button" class="btn" data-inspect-workstation hidden>近看设备</button>
-      <button type="button" class="btn" data-locate-room>全舰定位</button>
-      <label data-lift-control hidden>乘电梯 <select class="form-select" data-lift></select></label>
-    </div>
-  </div>
   <div class="seer-stage">
-    <canvas role="img" aria-label="点一下画面，用 WASD 或屏幕方向键移动。Shift 加速，拖动环视，V 切换视角。F 登乘或着陆，空格上升，C 下降。">需要 WebGL 才能显示三维模型。</canvas>
-    <span class="seer-tag" data-tag hidden></span>
-    <div class="seer-motion" data-move-pad role="group" aria-label="按住移动" hidden>
-      <button class="btn" type="button" data-step="KeyW" aria-label="前进">↑</button>
-      <button class="btn" type="button" data-step="KeyA" aria-label="向左平移">←</button>
-      <button class="btn" type="button" data-step="KeyS" aria-label="后退">↓</button>
-      <button class="btn" type="button" data-step="KeyD" aria-label="向右平移">→</button>
+    <canvas role="img" aria-label="赛尔号飞船模拟器。点击画面后用 WASD 移动，M 打开地图，B 打开背包。">需要 WebGL 才能显示三维模型。</canvas>
+    <header class="ship-ident">
+      <span class="ship-insignia" aria-hidden="true"></span>
+      <div><small>SEER <span>／ SE–A015</span></small><strong data-tag>传送舱</strong></div>
+    </header>
+    <div class="ship-telemetry"><i aria-hidden="true"></i><span data-status>玩家 SE-00001</span></div>
+    <div class="ship-actions">
+      <button type="button" class="ship-key" data-bench hidden>领取挖矿钻头</button>
+      <label class="ship-key" data-lift-control hidden>升降站 <select aria-label="选择停靠甲板" data-lift></select></label>
+      <button type="button" class="ship-key" data-flyer hidden>驾驶滑翔翼</button>
+      <button type="button" class="ship-key" data-climb hidden>升高</button>
+      <button type="button" class="ship-key" data-descend hidden>降低</button>
+    </div>
+    <div class="seer-motion" data-move-pad role="group" aria-label="移动" hidden>
+      <button type="button" data-step="KeyW" aria-label="前进">↑</button>
+      <button type="button" data-step="KeyA" aria-label="向左平移">←</button>
+      <button type="button" data-step="KeyS" aria-label="后退">↓</button>
+      <button type="button" data-step="KeyD" aria-label="向右平移">→</button>
+    </div>
+    <nav class="ship-dock" aria-label="赛尔导航条">
+      <button type="button" data-console="map" aria-label="地图（M）"><i class="dock-radar" aria-hidden="true"></i><span>地图</span><kbd>M</kbd></button>
+      <button type="button" data-console="bag" aria-label="背包（B）"><i class="dock-case" aria-hidden="true"></i><span>背包</span><kbd>B</kbd></button>
+      <button type="button" data-console="terminal"><i class="dock-terminal" aria-hidden="true"></i><span>终端</span></button>
+    </nav>
+    <div class="ship-notice" data-notice role="status" hidden></div>
+    <div class="ship-overlay" data-overlay hidden>
+      <section class="ship-window" role="dialog" aria-modal="true" aria-labelledby="ship-panel-title">
+        <header class="console-head"><div><small>SE–A015</small><h2 id="ship-panel-title" data-panel-title></h2></div><button type="button" class="ship-dismiss" data-dismiss aria-label="关闭窗口">×</button></header>
+        <div data-page="map" hidden></div>
+        <div data-page="bag" hidden></div>
+        <div data-page="terminal" class="ship-systems" hidden>
+          <section data-boarding-controls><h3>赛尔操控</h3><div class="ship-row">
+            <label>镜头 <select data-perspective><option value="follow">跟随</option><option value="eye">第一人称</option></select></label>
+            <button type="button" data-face-player>看正面</button><button type="button" data-smile aria-pressed="false">微笑</button><button type="button" data-nono>招呼超能 NoNo</button>
+            <button type="button" data-inspect-workstation hidden>近看设备</button><button type="button" data-comms>舰上通讯</button>
+          </div></section>
+          <section><h3>舰体观察</h3><div class="ship-row">
+            <button type="button" data-view="board" aria-pressed="true">登舰</button><button type="button" data-view="exterior" aria-pressed="false">外观</button><button type="button" data-view="section" aria-pressed="false">纵剖</button><button type="button" data-view="deck" aria-pressed="false">分层</button><button type="button" data-locate-room hidden>全舰定位</button>
+            <button type="button" data-action="rotate" hidden>自动旋转</button><button type="button" data-action="wire" hidden>线框</button><button type="button" data-action="fullscreen" hidden>全屏</button>
+          </div><div class="seer-pickers ship-row" hidden><label>层区 <select data-deck></select></label><label>舱室 <select data-room></select></label><button type="button" data-enter-room hidden>进入此舱</button></div></section>
+          <section class="ship-log"><h3>航行记录</h3><p data-detail></p><p data-population hidden></p><p data-controls-hint></p></section>
+          <small class="ship-credits">非官方同人三维复原。原创程序与文档采用 MIT 许可，原作名称、角色形象及游戏美术归相应权利人。</small>
+        </div>
+      </section>
     </div>
     <p class="seer-error" role="alert" hidden></p>
   </div>
-  <p class="seer-detail" data-detail aria-live="polite"></p>
-  <div class="seer-footer text-small text-muted"><span data-controls-hint>拖动转头 · W/A/S/D 移动 · Shift 快行</span><span data-status></span></div>
-  <p class="seer-manifest text-small text-muted" data-population hidden></p>
-  <p class="seer-manifest text-small text-muted">非官方同人三维复原。项目原创程序和文档采用 MIT 许可，原作名称、角色形象及游戏美术归相应权利人。</p>
 </div>
-<style>
-  #seer-starship-3d { width:100%; color:var(--foreground) }
-  #seer-starship-3d .seer-heading,#seer-starship-3d .seer-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.65em }
-  #seer-starship-3d .seer-heading { margin-bottom:.6em; padding-right:86px }
-  #seer-starship-3d .seer-stage { position:relative; width:100%; height:clamp(350px,68vw,550px); overflow:hidden; background:radial-gradient(ellipse at 82% 88%,#292739 0%,transparent 53%),radial-gradient(ellipse at 14% 32%,#1a394e 0%,transparent 58%),linear-gradient(135deg,#080f21,#10162c 65%,#0c1321) }
-  #seer-starship-3d canvas {display:block;width:100%;height:100%;touch-action:none;cursor:grab}
-  #seer-starship-3d canvas:active {cursor:grabbing}
-  #seer-starship-3d .seer-footer { margin-top:.5em }
-  #seer-starship-3d .seer-manifest {margin:.3em 0 0}
-  #seer-starship-3d .seer-toolbar,#seer-starship-3d .seer-pickers,#seer-starship-3d .seer-pickers label {display:flex;flex-wrap:wrap;align-items:center;gap:.55em}
-  #seer-starship-3d .seer-toolbar {margin:.6em 0}
-  #seer-starship-3d .seer-pickers select {width:auto;max-width:100%}
-  #seer-starship-3d .seer-motion {position:absolute;left:.7em;bottom:.7em;display:grid;grid-template-columns:repeat(3,minmax(34px,auto));gap:.22em;touch-action:none;user-select:none}
-  #seer-starship-3d [data-step="KeyW"] {grid-column:2}
-  #seer-starship-3d [data-step="KeyA"] {grid-column:1}
-  @media(pointer:coarse) { #seer-starship-3d .seer-motion {grid-template-columns:repeat(3,minmax(44px,auto));grid-auto-rows:minmax(44px,auto)} }
-  #seer-starship-3d [hidden] {display:none!important}
-  #seer-starship-3d .seer-detail {margin:.55em 0 0}
-  #seer-starship-3d:fullscreen {display:flex;flex-direction:column;box-sizing:border-box;overflow:auto;padding:.75em;background:var(--background,#101723)}
-  #seer-starship-3d:fullscreen .seer-stage {flex:1 1 auto;min-height:180px;height:auto}
-  #seer-starship-3d .seer-tag {position:absolute;left:.85em;top:.85em;pointer-events:none;color:#fff;background:#12263ee8;padding:.20em .55em;border-radius:.35em}
-  #seer-starship-3d .seer-error { position:absolute; inset:40% 10% auto; color:#fff }
-  @media(max-width:480px) { #seer-starship-3d .seer-heading {padding-right:0;padding-top:1.8em} }
-</style>

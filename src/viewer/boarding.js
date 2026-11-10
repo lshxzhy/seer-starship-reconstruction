@@ -1,12 +1,11 @@
   // The visitor's position is a foot point in ship-wide metres. Geometry and
   // collision use the same habitat layout. Only the camera uses render units.
   function createBoardingController(requestFrame, persist) {
-    const picker = root.querySelector('[data-jump-room]');
     const liftControl = root.querySelector('[data-lift-control]');
     const liftPicker = root.querySelector('[data-lift]');
     const movePad = root.querySelector('[data-move-pad]');
     const boardControls = root.querySelector('[data-boarding-controls]');
-    const boardButton = root.querySelector('[data-view="board"]');
+    const boardButton = root.querySelector('[data-console="terminal"]');
     const tag = root.querySelector('[data-tag]');
     const info = root.querySelector('[data-detail]');
     const hint = root.querySelector('[data-controls-hint]');
@@ -26,6 +25,46 @@
     const population=createSeerPopulation();
     const companion=createSuperNono(worldMetre);
     const flight=createPersonalFlight(worldMetre,population);
+    const benchButton=root.querySelector('[data-bench]');
+    const notice=root.querySelector('[data-notice]');
+    let noticeTimer=0,drillOwned=false,drillEquipped=false,samples=0;
+    const locker=createPilotLocker(restorePack);
+    function pack(){
+      return {version:1,drillOwned,drillEquipped,samples,flyerStored:flight.stored};
+    }
+    function updateSamples(){
+      const items=habitat.byId.get('machine')?.group?.userData.trainingSamples;
+      items?.forEach((item,index)=>{item.visible=index>=samples;});
+    }
+    function restorePack(p){
+      if(p?.version!==1)return;
+      drillOwned=p.drillOwned===true;drillEquipped=drillOwned&&p.drillEquipped===true;
+      samples=Number.isInteger(p.samples)?Math.max(0,Math.min(3,p.samples)):0;
+      flight.setStored(p.flyerStored===true);pilot.setDrill(drillEquipped);updateSamples();
+    }
+    function notifyPlayer(message){
+      clearTimeout(noticeTimer);notice.textContent=message;notice.hidden=false;
+      noticeTimer=setTimeout(()=>{notice.hidden=true;},3500);
+    }
+    function atBench(){
+      if(!active||currentRoomId!=='machine'||flight.mounted)return false;
+      const room=habitat.byId.get('machine'),sign=room.side===1?-1:1;
+      return Math.hypot((pose.x-room.center[0])*sign+15.8,(pose.z-room.center[2])*sign-6.3)<3.25;
+    }
+    function useBench(){
+      if(!atBench())return;
+      if(!drillOwned){drillOwned=true;notifyPlayer('已领取挖矿钻头。在背包中选择钻头即可装备。');}
+      else if(!drillEquipped){setDrill(true);return;}
+      else if(samples<3){samples++;pilot.workDrill();updateSamples();notifyPlayer('训练矿样已入包 · '+samples+' / 3');}
+      else return;
+      locker.write(pack());flightControls();focusFlightControls();requestFrame();persist();
+    }
+    function setDrill(on){
+      if(!drillOwned)return;
+      drillEquipped=on;pilot.setDrill(on);locker.write(pack());requestFrame();persist();
+      notifyPlayer(on?'已装备双臂挖矿钻头。':'挖矿钻头已放回背包。');
+    }
+    benchButton.addEventListener('click',useBench);
     const walkSpeed=3.6,runSpeed=6.8;
     let smiling=false;
     const crewDialogue=createCrewDialogue({
@@ -160,6 +199,7 @@
     // Each view is a visitor standing on the installed floor, not a detached
     // camera. Use the ordinary collision check and leave the player in control.
     const workstationViews={
+      machine:{floor:[-14.1,6.7],look:[-16.0,1.35,5.95]},
       teleport:{floor:[-2.1,-4.1],look:[-4.8,2.9,-9.8]},
       power:{floor:[3.7,4.6],look:[-.2,3.7,-3.4]},
       observation:{floor:[-2.5,3.4],look:[-6.9,4.35,-2.3]}
@@ -180,13 +220,8 @@
       }
       info.textContent='观景位置有船员经过，稍后可以再试。';
     });
-    picker.add(new Option('选择舱室',''));
-    for (const room of habitat.rooms) picker.add(new Option(room.name,room.id));
     const residentialStops=new Set(habitat.residences.deckSpecs.map(row=>Array.isArray(row)?row[0]:row.id));
-    const residenceOptions=document.createElement('optgroup');residenceOptions.label='驻舱与充能';
-    for(const deck of habitat.levels.filter(item=>residentialStops.has(item.id)))
-      residenceOptions.append(new Option(deck.name,deck.id));
-    picker.append(residenceOptions);
+    const wardIds=new Set(habitat.residences.zones.map(zone=>zone.id));
 
     function cameraStyle(style){
       crewDialogue.close();
@@ -221,8 +256,12 @@
     function flightControls(){
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
+      mount.hidden=!active||(!flight.mounted&&!flight.reachable(pose));
       mount.disabled=flight.landing;
-      climb.hidden=descend.hidden=!flight.mounted;
+      climb.hidden=descend.hidden=!active||!flight.mounted;
+      benchButton.hidden=!atBench();
+      benchButton.textContent=!drillOwned?'领取挖矿钻头':!drillEquipped?'装备钻头':samples<3?'钻取训练矿样':'矿样已采完';
+      benchButton.disabled=drillEquipped&&samples>=3;
       hint.textContent=flight.mounted?flyHint:walkHint;
       status.textContent=flight.mounted?'滑翔翼 · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
     }
@@ -231,7 +270,7 @@
       crewDialogue.close();clearInputs();
       const result=flight.interact(pose,yaw);
       if(result.pose){pose=result.pose;pilot.arrive(pose,yaw);habitat.updateLOD(pose);refreshPlace(true);}
-      info.textContent=result.notice;
+      info.textContent=result.notice;notifyPlayer(result.notice);locker.write(pack());
       flightControls();focusFlightControls();requestFrame();persist();
     }
     mount.addEventListener('click',operateFlyer);
@@ -282,7 +321,8 @@
       currentPlace = identity;
       currentRoomId = room?.id || null;
       detailVisit.hidden=!workstationViews[currentRoomId];
-      picker.value = currentRoomId || (residentialStops.has(pose.level)?pose.level:'');
+      detailVisit.textContent=currentRoomId==='machine'?'前往装备工位':'近看设备';
+      if(currentRoomId==='machine')updateSamples();
       root.querySelector('[data-locate-room]').hidden=!currentRoomId;
       const levelName = place.levelName || habitat.levels.find(l=>l.id===place.level)?.name || '';
       tag.hidden = false;
@@ -300,7 +340,7 @@
       crewDialogue.close();crewDialogue.setBoarded(true);
       active = true;
       clearInputs();
-      const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)) ? roomId :
+      const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)||wardIds.has(roomId)) ? roomId :
         habitat.byId.has('teleport') ? 'teleport' : habitat.rooms[0].id;
       const entry = habitat.spawn(id);
       const p = saved?.pose;
@@ -329,6 +369,7 @@
       if(typeof saved?.smiling==='boolean')setSmile(saved.smiling);
       companion.arrive(pose,yaw);flightControls();
       refreshPlace(true);
+      flightControls();
       requestFrame();
     }
     function leave() {
@@ -340,13 +381,14 @@
       habitat.setActive(false);
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
+      mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=notice.hidden=true;
       delete stage.dataset.boarded;
       hint.textContent='拖动旋转 · 滚轮或双指缩放';
     }
     function frame(time) {
       if (!active) return false;
       clearTimeout(idleClock.timer);
-      if(document.hidden||!inView||crewDialogue.isOpen){frameTime=0;return false;}
+      if(document.hidden||!inView||crewDialogue.isOpen||stage.hasAttribute('data-console-open')){frameTime=0;return false;}
       const dt = frameTime ? Math.min(Math.max(0,time-frameTime)/1000,.12) : 0;
       const moving=hasMotion();
       frameTime = time;
@@ -364,7 +406,7 @@
         pose=result.pose;
         if(result.steppedOff){pilot.arrive(pose,yaw);clearInputs();persist();}
         habitat.updateLOD(pose);refreshPlace();
-        if(result.notice)info.textContent=result.notice;
+        if(result.notice){info.textContent=result.notice;notifyPlayer(result.notice);}
       }else if(magnitude && dt){
         const step=dt*(boost?runSpeed:walkSpeed);
         pose=habitat.move(pose,dx*step,dz*step,.43,
@@ -383,10 +425,6 @@
       if(!moving)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
       return moving;
     }
-    picker.addEventListener('change',()=>{
-      if (!active || !picker.value) return;
-      enter(picker.value);persist();focusFlightControls();
-    });
     liftPicker.addEventListener('change',()=>{
       if (!active || !liftPicker.value) return;
       const arrival=habitat.takeLift(pose,liftPicker.value);
@@ -438,7 +476,7 @@
       frame(now);
     }
     function startKey(e){
-      if(!active || crewDialogue.isOpen || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey)return;
+      if(!active || crewDialogue.isOpen || stage.hasAttribute('data-console-open') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey)return;
       const target=e.target;
       if(target!==window && target!==document && target!==document.body && target!==document.documentElement &&
         !root.contains(target))return;
@@ -499,8 +537,22 @@
     document.addEventListener('visibilitychange',onHidden);
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
+      clearInputs,pack,restorePack,
+      get commsOpen(){return crewDialogue.isOpen;},
+      consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
+        nearFlyer:active&&flight.reachable(pose),flyerStored:flight.stored,landing:flight.landing,
+        hasMap:true,companionActive:active,drillOwned,drillEquipped,samples};},
+      useItem(id){
+        if(!active)return;
+        if(id==='flyer')operateFlyer();
+        else if(id==='drill')setDrill(!drillEquipped);
+        else if(id==='stowFlyer'&&!flight.mounted){
+          flight.setStored(true);locker.write(pack());flightControls();requestFrame();persist();
+          notifyPlayer('奥飞滑翔翼已收回储存箱。');
+        }
+      },
       get roomId(){return currentRoomId;},
       snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
-      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
+      dispose(){locker.dispose();clearTimeout(noticeTimer);crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

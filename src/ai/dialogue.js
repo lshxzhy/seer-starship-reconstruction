@@ -70,7 +70,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   const button=(parent,label,cls='')=>{
     const node=make('button','sc-btn '+cls,parent,label);node.type='button';return node;
   };
-  const launch=button(host,'舰上通讯','sc-launch');
+  const launch=root.querySelector('[data-comms]');
   const panel=make('section','sc-panel',host);
   panel.id=uid;panel.hidden=true;panel.setAttribute('role','dialog');
   panel.setAttribute('aria-label','舰上通讯');panel.setAttribute('aria-modal','false');
@@ -510,7 +510,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     if(currentKey)sessionFor().draft=input.value;
     cancelGeneration('回复已停止');abortConnect();stopMovement();
     panel.hidden=true;launch.hidden=false;launch.setAttribute('aria-expanded','false');
-    if(restoreFocus)launch.focus({preventScroll:true});
+    if(restoreFocus)root.querySelector('[data-console="terminal"]').focus({preventScroll:true});
     adapter.requestFrame?.();
   }
   launch.addEventListener('click',openPanel);

@@ -1,6 +1,12 @@
-# 接手一个舱室
+# 接手续建 SEER
 
-先运行 `python work/assemble-seer.py`，打开 `outputs/seer-starship.html`。在“分层”浏览时，选中已制作的房间并点“登舰”。点一下三维画面，按 W/A/S/D 移动，也可短点或按住屏幕方向键。进入后先从玩家视角看设备，再选“全舰定位”看舱室的安装位置。
+先运行 `python work/assemble-seer.py`，打开 `outputs/seer-starship.html`。点三维画面后按 WASD 移动，或点按屏幕方向键。按 M 打开舰内地图找舱室，按 B 查看背包，舰体观察工具归入终端。
+
+## 项目文件从哪里改
+
+- 游戏和飞船的源代码放在 `src/`；构建脚本列出离线包各个模块的装配顺序。游戏结构变更从所属源文件开始，构建命令见[项目首页](../README.md)。
+- `work/` 保留构建入口、随包的 Three.js 及开发工具。构建会合成 `outputs/seer-model.js`、供本机服务使用的 `work/seer-fragment.html` 和可双击的 `outputs/seer-starship.html`。下一次构建会重写这三个文件。
+- 发布页提供独立 HTML 和由该版 Git 提交导出的本地运行包。历次原项目截图、驾驶录像留在对应版本的发布附件。原游戏的第三方图片与录像请按[资料索引](SOURCES.md)回到出处。
 
 ## 各模块由谁负责
 
@@ -12,9 +18,13 @@
 |全舰总装| `src/habitat/installation.js`、`kit.js`、`layout-record.js` |甲板、公共门洞、通道、碰撞、坐标及交通；跨舱连通由此处统一处理|
 |赛尔与驻舱| `src/population/robot.js`、`population.js`、`player.js`、`berths.js` |机体、屏面和步态、船员近场实例、玩家镜头与充能位|
 |随行伙伴| `src/population/super-nono.js` |第一代初级超能 NoNo 的白壳、黑屏、青翼、伴行与致意|
+|机械室采样| `src/habitat/engineering.js`、`src/population/mining-drill.js`、`src/viewer/boarding.js` |机务舱布置领取工位和三块训练样品，角色模块装配双臂钻头，玩家靠近工位后领取或采集|
 |滑翔翼与驾驶| `src/population/personal-flyer.js`、`src/viewer/personal-flight.js` |前者负责实体、踏板高度和悬浮表现，后者负责取出、登乘、净空、升降、着陆和存档|
 |操控与视图| `src/viewer/boarding.js`、`explore.js`、`work/seer-layout.html` |登舰、视角、定位和全舰浏览|
-|舰体和装配| `work/hull-next.js`、`bridge-and-pod.js`、`machinery.js`、`src/habitat/exterior-scale.js`、`work/assemble-seer.py` |舰壳、外构件、米制标尺和离线构建|
+|舰载界面| `src/viewer/flight-deck.js`、`ship-map.js`、`inventory.js` |终端负责面板和入口，地图读取安装总图，背包读取玩家物品与装配状态|
+|舰体和装配| `src/ship/`、`src/habitat/exterior-scale.js`、`work/assemble-seer.py` |舰壳、外构件、涂装、舰内总体布局、米制标尺和离线构建|
+
+地图界面从 `habitat.plan` 读取房间、充能分区、门位和升降线，点击舱室后把稳定 ID 交回登舰控制器。改舱门或停靠层时，先更新总装数据。背包通过玩家状态取得座驾、钻头和训练矿样，并把穿戴、使用动作交回控制器。场景工位的可领取条件和矿样计数在 `boarding.js`，持久化接口在 `pilot-locker.js`。单文件版由 `offline-locker-host.js` 经外层页面保存这份小型装备记录。本机服务使用浏览器储存；聊天预览的状态随宿主保存能力恢复。浏览器限制储存时，仍可在当前页面内使用装备。
 
 ## 改动怎样接入成品
 
