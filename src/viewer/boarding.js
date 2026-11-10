@@ -17,7 +17,7 @@
       'ArrowLeft','ArrowRight','PageUp','PageDown','ShiftLeft','ShiftRight','Space','KeyC']);
     let active = false;
     let pose = null;
-    let yaw = 0, pitch = 0, frameTime = 0;
+    let yaw = 0, pitch = 0, frameTime = 0, inputStart = 0;
     let lookDrag = null, currentPlace = '', currentRoomId = null;
     const marker = new T.Vector3();
     const worldOrigin = habitat.worldPosition(0,0,0);
@@ -216,7 +216,7 @@
       if(!active)return;
       crewDialogue.close();companion.greet();focusFlightControls();requestFrame();
     });
-    const walkHint='W/A/S/D 行走 · Shift 快行 · 拖动环视 · V 切换视角';
+    const walkHint='点击画面后用 WASD 行走 · Shift 快行 · 拖动环视 · V 切换视角';
     const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
     function flightControls(){
       const label=flight.label(pose);
@@ -255,7 +255,7 @@
     function clearInputs() {
       keys.clear();
       touchKeys.clear();
-      frameTime = 0;
+      frameTime = inputStart = 0;
       lookDrag = null;
       flight.stop();
     }
@@ -401,6 +401,8 @@
     });
     canvas.addEventListener('pointerdown',e=>{
       if (!active || crewDialogue.isOpen || lookDrag || e.button!==0) return;
+      // Cancel the browser's subsequent mouse focus change to the document body.
+      e.preventDefault();
       focusFlightControls();canvas.setPointerCapture(e.pointerId);
       lookDrag={id:e.pointerId,x:e.clientX,y:e.clientY};
     });
@@ -415,34 +417,69 @@
       lookDrag=null;persist();
     }
     for (const name of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(name,finishLook);
-    const enabledKeys=e=>active && !e.ctrlKey && !e.metaKey && !e.altKey && keyCodes.has(e.code) && !/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName);
-    root.addEventListener('keydown',e=>{
-      if(crewDialogue.isOpen)return;
-      if(active&&e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)){
-        e.preventDefault();operateFlyer();return;
-      }
-      if(active&&e.code==='KeyV'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)){
-        e.preventDefault();cameraStyle(pilot.style==='follow'?'eye':'follow');requestFrame();persist();return;
-      }
-      if (!enabledKeys(e) || (!flight.mounted && (e.code==='Space'||e.code==='KeyC'))) return;
-      e.preventDefault();keys.add(e.code);requestFrame();
-    });
-    function endKey(e) {
-      if (!keys.delete(e.code)) return;
-      if (!hasMotion())frameTime=0;
-      persist();
+    function keyCode(e){
+      if(e.code && e.code!=='Unidentified')return e.code;
+      if(e.key===' ')return 'Space';
+      if(e.key==='Shift')return e.location===2?'ShiftRight':'ShiftLeft';
+      return /^[wasdcvf]$/i.test(e.key)?'Key'+e.key.toUpperCase():e.key;
     }
+    function beginHold(){
+      if(!hasMotion())frameTime=inputStart=performance.now();
+    }
+    function finishHold(code){
+      if(!hasMotion())return;
+      const now=performance.now();
+      // Integrate what was held before removing it. A short directional tap
+      // gets at least 55 ms of travel even when down/up fall between two frames.
+      if(inputStart && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown'].includes(code)){
+        frameTime-=Math.max(0,55-(now-inputStart));
+        inputStart=0;
+      }
+      frame(now);
+    }
+    function startKey(e){
+      if(!active || crewDialogue.isOpen || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey)return;
+      const target=e.target;
+      if(target!==window && target!==document && target!==document.body && target!==document.documentElement &&
+        !root.contains(target))return;
+      if(target.isContentEditable || target.closest?.('input,select,textarea,[role="textbox"]'))return;
+      const code=keyCode(e);
+      if(code==='KeyF'||code==='KeyV'){
+        e.preventDefault();
+        if(e.repeat)return;
+        if(code==='KeyF')operateFlyer();
+        else{cameraStyle(pilot.style==='follow'?'eye':'follow');requestFrame();persist();}
+        return;
+      }
+      if(!keyCodes.has(code) || ((code==='Space'||code==='KeyC')&&!flight.mounted))return;
+      if(code==='Space' && target.closest?.('button') && target!==boardButton)return;
+      e.preventDefault();
+      if(!keys.has(code)){beginHold();keys.add(code);}
+      requestFrame();
+    }
+    function endKey(e) {
+      const code=keyCode(e);
+      if(!keys.has(code))return;
+      finishHold(code);keys.delete(code);
+      if(!hasMotion())frameTime=inputStart=0;
+      requestFrame();persist();
+    }
+    window.addEventListener('keydown',startKey);
     window.addEventListener('keyup',endKey);
     for (const btn of movePad.querySelectorAll('[data-step]')) {
       btn.addEventListener('pointerdown',e=>{
         if (!active || crewDialogue.isOpen || e.button!==0) return;
-        e.preventDefault();btn.setPointerCapture(e.pointerId);
+        e.preventDefault();focusFlightControls();btn.setPointerCapture(e.pointerId);
+        beginHold();
         touchKeys.set(e.pointerId,btn.dataset.step);requestFrame();
       });
       const stop=e=>{
-        if(!touchKeys.delete(e.pointerId)) return;
-        if(!hasMotion()) frameTime=0;
-        persist();
+        const code=touchKeys.get(e.pointerId);
+        if(!code)return;
+        if(e.type==='pointerup')finishHold(code);
+        touchKeys.delete(e.pointerId);
+        if(!hasMotion())frameTime=inputStart=0;
+        requestFrame();persist();
       };
       for(const n of ['pointerup','pointercancel','lostpointercapture'])btn.addEventListener(n,stop);
       btn.addEventListener('click',e=>{
@@ -464,6 +501,6 @@
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       get roomId(){return currentRoomId;},
       snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
-      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
+      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

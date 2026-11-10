@@ -34,7 +34,7 @@
     </div>
   </div>
   <div class="seer-stage">
-    <canvas role="img" aria-label="操控赛尔 SE-00001。WASD 或屏幕方向键移动，Shift 加速，拖动环视，V 切换视角。F 登乘或着陆，空格上升，C 下降。可用按钮微笑或招呼超能 NoNo。">需要 WebGL 才能显示三维模型。</canvas>
+    <canvas role="img" aria-label="点一下画面，用 WASD 或屏幕方向键移动。Shift 加速，拖动环视，V 切换视角。F 登乘或着陆，空格上升，C 下降。">需要 WebGL 才能显示三维模型。</canvas>
     <span class="seer-tag" data-tag hidden></span>
     <div class="seer-motion" data-move-pad role="group" aria-label="按住移动" hidden>
       <button class="btn" type="button" data-step="KeyW" aria-label="前进">↑</button>
@@ -61,12 +61,10 @@
   #seer-starship-3d .seer-toolbar,#seer-starship-3d .seer-pickers,#seer-starship-3d .seer-pickers label {display:flex;flex-wrap:wrap;align-items:center;gap:.55em}
   #seer-starship-3d .seer-toolbar {margin:.6em 0}
   #seer-starship-3d .seer-pickers select {width:auto;max-width:100%}
-  #seer-starship-3d .seer-motion {display:none}
-  @media(pointer:coarse),(max-width:550px) {
-    #seer-starship-3d .seer-motion {position:absolute;left:.7em;bottom:.7em;display:grid;grid-template-columns:repeat(3,minmax(44px,auto));gap:.22em;touch-action:none;user-select:none}
-    #seer-starship-3d [data-step="KeyW"] {grid-column:2}
-    #seer-starship-3d [data-step="KeyA"] {grid-column:1}
-  }
+  #seer-starship-3d .seer-motion {position:absolute;left:.7em;bottom:.7em;display:grid;grid-template-columns:repeat(3,minmax(34px,auto));gap:.22em;touch-action:none;user-select:none}
+  #seer-starship-3d [data-step="KeyW"] {grid-column:2}
+  #seer-starship-3d [data-step="KeyA"] {grid-column:1}
+  @media(pointer:coarse) { #seer-starship-3d .seer-motion {grid-template-columns:repeat(3,minmax(44px,auto));grid-auto-rows:minmax(44px,auto)} }
   #seer-starship-3d [hidden] {display:none!important}
   #seer-starship-3d .seer-detail {margin:.55em 0 0}
   #seer-starship-3d:fullscreen {display:flex;flex-direction:column;box-sizing:border-box;overflow:auto;padding:.75em;background:var(--background,#101723)}
