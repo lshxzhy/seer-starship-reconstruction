@@ -1,6 +1,9 @@
 // Engineering interiors. Metres; origin at the common floor centre, +Z to door.
 // Evidence and inferred construction: references/habitat/engineering/来源与建模.md
 // All equipment is built once with kit primitives. No external assets are loaded.
+// The clear standing point between the central ore intake and the separate
+// foreground game control, in metres relative to the centre of the power room.
+const powerExchangePoint=Object.freeze({x:0,z:3.95});
 (function () {
   const C = {
     ivory: 0xe5ddc5, white: 0xf2ede0, edge: 0x9faaa9,
@@ -312,6 +315,24 @@
     }
     box(0,.9,.68,1.5,.08,1.26,P.cream);
     block(0,.87,4.5,3.55);
+
+    // Map 6's oreExchange responds on the central machine's open tongue.
+    // The scaled inlet occupies its existing footprint; the separate horned
+    // controller farther forward is not the resource exchange.
+    const intakeStart=root.children.length;
+    box(0,1.05,.65,1.72,.48,.74,P.trim,{...F.metal,name:'中央矿物接收口'});
+    box(0,1.02,1.032,1.44,.27,.045,P.black,F.grip);
+    for(const x of [-.79,.79]){
+      box(x,1.07,1.18,.10,.33,.50,P.cream);
+      box(x,1.24,1.19,.056,.035,.28,P.cyan,{glow:.25});
+    }
+    for(const zz of [1.13,1.29,1.45,1.61,1.77])
+      cyl(0,.91,zz,.056,.056,1.49,C.steel,{rz:Math.PI/2,segments:18});
+    box(0,1.42,.51,1.69,.32,.16,P.black,F.grip);
+    text(0,1.42,.60,'资源兑换',1.26,.22,P.cream);
+    box(0,.52,2.235,1.25,.24,.10,P.brown);
+    text(0,.53,2.293,'矿物投入口',1.03,.16,P.cream);
+    for(const part of root.children.slice(intakeStart))part.userData.oreIntake=true;
 
     // Separate low horn-crowned control pedestal visible in G04's foreground.
     // Its inclined round face and tapered foot stay below the main opening.

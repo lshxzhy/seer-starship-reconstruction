@@ -63,26 +63,6 @@
     for(const deck of [...decks.values()].reverse())picker.add(new Option(deck.name,deck.id));
     let level='lower',selected=null,opened=false,lastView='';
 
-    // Search floor-to-floor transfers. A single lift ride can reach any stop
-    // on that line. Between the service line and main line the route changes
-    // cars on the deck that really hosts both landing doors.
-    function connections(from,to){
-      if(from===to)return [];
-      const queue=[{floor:from,rides:[]}],seen=new Set([from]);
-      for(let index=0;index<queue.length;index++){
-        const item=queue[index];
-        for(const line of plan.lifts){
-          if(!line.stops.some(stop=>stop.level===item.floor))continue;
-          for(const stop of line.stops){
-            if(seen.has(stop.level))continue;
-            const rides=[...item.rides,{line,from:item.floor,to:stop.level}];
-            if(stop.level===to)return rides;
-            queue.push({floor:stop.level,rides});seen.add(stop.level);
-          }
-        }
-      }
-      return null;
-    }
     function walkingLeg(start,end){
       // Add inner approach points up to the doors, then use the branch and
       // spine centre lines; room furniture is negotiated by the visitor.
@@ -93,7 +73,7 @@
     function routeFrom(pose,goal){
       if(!pose||!goal)return null;
       const here=habitat.location(pose),inside=targets.get(here.roomId||here.wardId);
-      const rides=connections(pose.level,goal.level);
+      const rides=shipLiftRides(pose.level,goal.level);
       if(!rides)return null;
       if(inside?.id===goal.id)return {rides,legs:new Map(),arrived:true};
       const deck=decks.get(pose.level);

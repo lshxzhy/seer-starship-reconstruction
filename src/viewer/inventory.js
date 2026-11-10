@@ -56,7 +56,7 @@
           <button type="button" class="inv-action" data-inv-more>收回储存箱</button>
         </div></div>
       <div class="inv-rack" role="group" aria-label="已持有物品"></div>
-    </div><button type="button" class="inv-find" data-inv-find>在舰图定位钻头领取处 · 机械室</button>`;
+    </div><p class="inv-wallet" data-inv-wallet></p><button type="button" class="inv-find" data-inv-find>在舰图定位钻头领取处 · 机械室</button>`;
     box.prepend(style);
     container.append(box);
     const preview=box.querySelector('[data-inv-image]');
@@ -64,6 +64,7 @@
     const note=box.querySelector('[data-inv-note]'),use=box.querySelector('[data-inv-use]');
     const stow=box.querySelector('[data-inv-more]'),rack=box.querySelector('.inv-rack');
     const findDrill=box.querySelector('[data-inv-find]');
+    const wallet=box.querySelector('[data-inv-wallet]');
 
     // Paint inventory illustrations once, at double resolution. Each small
     // rack slot and the larger selected preview share the same image.
@@ -156,10 +157,11 @@
       if(!visible[selected])selected='flyer';
       const summary={flyer:s.mounted?'驾驶中':s.flyerStored?'已收纳':s.nearFlyer?'停在身旁':'停在舰内',
         map:'随身',drill:s.drillEquipped?'已装备':'已收纳',sample:'× '+(s.samples||0)};
-      const signature=JSON.stringify([visible,summary,selected,s.active,s.landing]);
+      const signature=JSON.stringify([visible,summary,selected,s.active,s.landing,s.credits]);
       if(last===signature)return;
       last=signature;
       findDrill.hidden=s.drillOwned;
+      wallet.textContent='赛尔豆余额　'+s.credits;
       for(const item of items){
         const slot=slots.get(item.id);
         slot.button.hidden=!visible[item.id];slot.status.textContent=summary[item.id];
@@ -170,7 +172,7 @@
       kind.textContent=item.type+' · '+summary[selected];note.textContent=item.note;
       const actions={flyer:s.landing?'正在着陆':s.mounted?'着陆下机':s.flyerStored?'取出滑翔翼':
         s.nearFlyer?'驾驶滑翔翼':'调到身旁',map:'打开舰图',drill:s.drillEquipped?'卸下钻头':'装备钻头'};
-      use.hidden=selected==='sample';use.textContent=actions[selected]||'';
+      use.hidden=false;use.textContent=selected==='sample'?'跟随路标交付':actions[selected]||'';
       use.disabled=!s.active || (selected==='flyer'&&s.landing===true);
       stow.hidden=selected!=='flyer'||s.mounted||s.flyerStored;
       stow.disabled=!s.active;
@@ -180,7 +182,7 @@
       if(!button || !box.contains(button)||button.disabled)return;
       if(button===findDrill)onUse('locateDrill');
       else if(button.dataset.invItem)selected=button.dataset.invItem;
-      else if(button===use)onUse(selected);
+      else if(button===use)onUse(selected==='sample'?'delivery':selected);
       else if(button===stow)onUse('stowFlyer');
       refresh();
     }

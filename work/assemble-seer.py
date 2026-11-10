@@ -32,7 +32,8 @@ scripts.extend([population/'berths.js',habitat/'installation.js',habitat/'layout
                 population/'robot.js',population/'population.js',population/'mining-drill.js',population/'player.js',
                 population/'super-nono.js',population/'personal-flyer.js'])
 scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
-                viewer/'pilot-locker.js',viewer/'ship-map.js',viewer/'inventory.js',viewer/'flight-deck.js',
+                viewer/'locker-record.js',viewer/'pilot-locker.js',viewer/'wayfinding.js',viewer/'ship-map.js',
+                viewer/'inventory.js',viewer/'exchange.js',viewer/'flight-deck.js',
                 viewer/'boarding.js',viewer/'explore.js'])
 source = '\n'.join(path.read_text('utf-8') for path in scripts)
 publish_text(output/'seer-model.js',source)
@@ -52,6 +53,7 @@ document = (f'{head}{title}<style>html,body,iframe{{margin:0;border:0;width:100%
             'display:block;background:#101723}}</style><body>'
             '<iframe name="seer-portable" title="SEER 三维漫游" allowfullscreen '
             f'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
-            '</iframe><script>' + (viewer/'offline-locker-host.js').read_text('utf-8') +
+            '</iframe><script>' + '\n'.join((viewer/name).read_text('utf-8') for name in
+                                           ('locker-record.js','pilot-locker.js','offline-locker-host.js')) +
             '</script><template id="licenses">' + escape(notices) + '</template></body></html>')
 publish_text(output/'seer-starship.html',document)

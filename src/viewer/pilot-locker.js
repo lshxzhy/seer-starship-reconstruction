@@ -1,25 +1,42 @@
-  // Only portable equipment is kept across visits. Position is managed by the viewer.
-  function createPilotLocker(onLoad){
-    const key='seer.pilot.locker.v1',portable=window.name==='seer-portable'&&parent!==window;
-    let edited=false;
-    function initial(p){
-      if(p?.version===1&&!edited)onLoad(p);
-    }
-    function receive(e){
-      if(e.source===parent&&e.data?.type==='seer.locker.initial')initial(e.data.pack);
-    }
-    if(portable){
-      window.addEventListener('message',receive);
-      parent.postMessage({type:'seer.locker.read'},'*');
-    }else if(!window.openai){
-      try{initial(JSON.parse(localStorage.getItem(key)));}catch(_){}
-    }
-    return {
-      write(pack){
-        edited=true;
-        if(portable){parent.postMessage({type:'seer.locker.write',pack},'*');return;}
-        if(!window.openai){try{localStorage.setItem(key,JSON.stringify(pack));}catch(_){}}
-      },
-      dispose(){window.removeEventListener('message',receive);}
-    };
+// Loopback and the outer document of the portable game use the same store.
+// A save from before a delivery cannot reinstate already exchanged samples.
+function openLocalPilotStore(onChange){
+  const key='seer.pilot.locker.v2',legacy='seer.pilot.locker.v1';
+  let writes=Promise.resolve();
+  function read(){
+    try{return normalizePilotPack(JSON.parse(localStorage.getItem(key)||localStorage.getItem(legacy)));}catch(_){return null;}
   }
+  function store(p){
+    const merged=mergePilotPacks(read(),p);
+    if(!merged)return;
+    try{localStorage.setItem(key,JSON.stringify(merged));}catch(_){return;}
+    if(JSON.stringify(merged)!==JSON.stringify(normalizePilotPack(p)))onChange(merged);
+  }
+  function write(p){
+    if(!navigator.locks){store(p);return;}
+    writes=writes.then(()=>navigator.locks.request(key,()=>store(p))).catch(()=>store(p));
+  }
+  function storage(e){if(e.key===key){const p=read();if(p)onChange(p);}}
+  window.addEventListener('storage',storage);
+  return {read,write,dispose(){window.removeEventListener('storage',storage);}};
+}
+function createPilotLocker(onLoad){
+  const portable=window.name==='seer-portable'&&parent!==window;
+  let local=null;
+  function receive(e){
+    if(e.source===parent&&e.data?.type==='seer.locker.initial'){
+      const p=normalizePilotPack(e.data.pack);if(p)onLoad(p);
+    }
+  }
+  if(portable){
+    window.addEventListener('message',receive);
+    parent.postMessage({type:'seer.locker.read'},'*');
+  }else if(!window.openai){
+    local=openLocalPilotStore(onLoad);
+    const saved=local.read();if(saved)onLoad(saved);
+  }
+  return {write(pack){
+    if(portable)parent.postMessage({type:'seer.locker.write',pack},'*');
+    else local?.write(pack);
+  },dispose(){local?.dispose();window.removeEventListener('message',receive);}};
+}

@@ -3,20 +3,22 @@
     const title=overlay.querySelector('[data-panel-title]'),dismiss=overlay.querySelector('[data-dismiss]');
     const dock=root.querySelector('.ship-dock'),triggers=[...dock.querySelectorAll('[data-console]')];
     const pages=new Map([...overlay.querySelectorAll('[data-page]')].map(p=>[p.dataset.page,p]));
-    const labels={map:'舰内地图',bag:'背包 · 储存箱',terminal:'舰载终端'};
+    const labels={map:'舰内地图',bag:'背包 · 储存箱',terminal:'舰载终端',exchange:'动力室 · 能源兑换台'};
     let current=null,opener=null;
     const getState=()=>boarding.consoleState();
+    const exchange=createSupplyExchange({container:pages.get('exchange'),getState,onDeliver:boarding.deliver,onClose:close});
+    root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
     const map=createShipMap({container:pages.get('map'),getState,onTravel:id=>{close(false);onTravel(id);focusPilot();},onClose:close});
     const inventory=createPilotInventory({container:pages.get('bag'),getState,onUse:id=>{
       if(id==='map'||id==='locateDrill'){open('map',id==='locateDrill'?'machine':null);return;}
       boarding.useItem(id);
-      if(id==='flyer'||id==='stowFlyer'||id==='drill')close();
+      if(id==='flyer'||id==='stowFlyer'||id==='drill'||id==='delivery')close();
       else inventory.refresh();
     },onClose:close});
     function focusPilot(){dock.querySelector('[data-console="terminal"]').focus({preventScroll:true});}
     function close(focus=true){
       if(!current)return;
-      map.close();inventory.close();current=null;
+      map.close();inventory.close();exchange.close();current=null;
       overlay.hidden=true;delete stage.dataset.consoleOpen;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded','false');
       if(focus)(opener||triggers[0]).focus({preventScroll:true});
@@ -25,15 +27,17 @@
     function open(key,target=null){
       if(!pages.has(key)||boarding.commsOpen)return;
       if(key==='bag'&&!getState().active)return;
+      if(key==='exchange'&&!getState().atExchange)return;
       if(current===key){close();return;}
       if(!current)opener=triggers.find(b=>b.dataset.console===key);
-      map.close();inventory.close();boarding.clearInputs();
+      map.close();inventory.close();exchange.close();boarding.clearInputs();
       current=key;stage.dataset.consoleOpen=key;
       for(const [id,page] of pages)page.hidden=key!==id;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded',String(trigger.dataset.console===key));
       overlay.hidden=false;title.textContent=labels[key];
       if(key==='map')map.open(target);
       if(key==='bag')inventory.open();
+      if(key==='exchange')exchange.open();
       dismiss.focus({preventScroll:true});
     }
     for(const trigger of triggers){
@@ -74,13 +78,18 @@
       if(key){e.preventDefault();e.stopPropagation();if(!e.repeat)open(key);}
     }
     window.addEventListener('keydown',onKey,true);
+    function refreshPack(){
+      if(current==='bag')inventory.refresh();
+      if(current==='exchange')exchange.refresh();
+    }
+    stage.addEventListener('seer-pack-change',refreshPack);
     return {
       get isOpen(){return current!==null;},
       sync(aboard){
         dock.querySelector('[data-console="bag"]').hidden=!aboard;
-        if(!aboard&&current==='bag')close(false);
+        if(!aboard&&(current==='bag'||current==='exchange'))close(false);
         if(current==='map')map.refresh();if(current==='bag')inventory.refresh();
       },
-      dispose(){window.removeEventListener('keydown',onKey,true);map.dispose();inventory.dispose();}
+      dispose(){window.removeEventListener('keydown',onKey,true);stage.removeEventListener('seer-pack-change',refreshPack);map.dispose();inventory.dispose();exchange.dispose();}
     };
   }

@@ -6,7 +6,9 @@
       <div><small>SEER <span>／ SE–A015</span></small><strong data-tag>传送舱</strong></div>
     </header>
     <div class="ship-telemetry"><i aria-hidden="true"></i><span data-status>玩家 SE-00001</span></div>
+    <div class="ship-route-hint" data-route-hint hidden></div>
     <div class="ship-actions">
+      <button type="button" class="ship-key" data-exchange hidden>能源兑换台</button>
       <button type="button" class="ship-key" data-bench hidden>领取挖矿钻头</button>
       <label class="ship-key" data-lift-control hidden>升降站 <select aria-label="选择停靠甲板" data-lift></select></label>
       <button type="button" class="ship-key" data-flyer hidden>驾驶滑翔翼</button>
@@ -30,12 +32,14 @@
         <header class="console-head"><div><small>SE–A015</small><h2 id="ship-panel-title" data-panel-title></h2></div><button type="button" class="ship-dismiss" data-dismiss aria-label="关闭窗口">×</button></header>
         <div data-page="map" hidden></div>
         <div data-page="bag" hidden></div>
+        <div data-page="exchange" hidden></div>
         <div data-page="terminal" class="ship-systems" hidden>
           <section data-boarding-controls><h3>赛尔操控</h3><div class="ship-row">
             <label>镜头 <select data-perspective><option value="follow">跟随</option><option value="eye">第一人称</option></select></label>
             <button type="button" data-face-player>看正面</button><button type="button" data-smile aria-pressed="false">微笑</button><button type="button" data-nono>招呼超能 NoNo</button>
             <button type="button" data-inspect-workstation hidden>近看设备</button><button type="button" data-comms>舰上通讯</button>
-          </div></section>
+          </div><h3 class="ship-job-title">动力室物资交接</h3><p class="ship-job-record" data-delivery-record></p>
+          <button type="button" data-delivery-track>引导至机械室矿架</button></section>
           <section><h3>舰体观察</h3><div class="ship-row">
             <button type="button" data-view="board" aria-pressed="true">登舰</button><button type="button" data-view="exterior" aria-pressed="false">外观</button><button type="button" data-view="section" aria-pressed="false">纵剖</button><button type="button" data-view="deck" aria-pressed="false">分层</button><button type="button" data-locate-room hidden>全舰定位</button>
             <button type="button" data-action="rotate" hidden>自动旋转</button><button type="button" data-action="wire" hidden>线框</button><button type="button" data-action="fullscreen" hidden>全屏</button>
