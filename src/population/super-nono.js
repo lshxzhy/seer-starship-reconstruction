@@ -93,7 +93,7 @@
     const shadow=part(root,'低悬投影',new T.PlaneGeometry(1,1).rotateX(-Math.PI/2),shadowMaterial);
     const radius=.54;
     let current=null,goal=null,previousOwner=null,elapsed=0,salute=0,hover=1.0,heading=0;
-    let sampleDue=0,formation=null,retracing=false,stalled=0;
+    let sampleDue=0,formation=null,retracing=false,stalled=0,previousCar=null;
     const trail=[];
     const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
     function formationPoint(p,yaw,style,mounted){
@@ -118,16 +118,54 @@
     }
     function arrive(p,yaw=0){
       current=formationPoint(p,yaw,'follow',false);goal=current;previousOwner={...p};
+      previousCar=null;
       hover=1;heading=yaw+Math.PI;body.rotation.set(0,heading,0);salute=0;
       trail.length=0;trail.push({...p});retracing=false;stalled=0;formation=null;sampleDue=0;
       root.visible=true;
       root.position.copy(habitat.worldPosition(current.x,current.y+contactFloor(current),current.z));
       body.position.y=hover;
     }
-    function update(p,yaw,dt,style='follow',mounted=false,rideHeight=0){
+    function insideCar(cabin){
+      if(!current||!cabin)return false;
+      const {center,bounds}=cabin;
+      return Math.abs(current.x-center.x)<=bounds.halfWidth-radius &&
+        Math.abs(current.z-center.z)<=bounds.halfDepth-radius && Math.abs(current.y-center.y)<.15;
+    }
+    function cabinSlot(p,cabin){
+      const {center,bounds}=cabin;
+      const dx=p.x-center.x;
+      return {x:center.x+T.MathUtils.clamp(dx+(dx>.15?-1.05:1.05),-.98,.98),
+        y:center.y,z:center.z+T.MathUtils.clamp(p.z-center.z+.48,-bounds.halfDepth+.8,bounds.halfDepth-.8),level:p.level};
+    }
+    function restoreInCar(p,yaw,cabin){
+      current=cabinSlot(p,cabin);previousCar={...cabin.center};goal=current;previousOwner={...p};
+      heading=yaw+Math.PI;hover=1.02;root.visible=true;trail.length=0;formation=null;
+    }
+    function updateInCar(p,yaw,dt,style,cabin){
+      const {center,bounds}=cabin;
+      if(previousCar&&cabin.carried){
+        current.x+=center.x-previousCar.x;current.z+=center.z-previousCar.z;
+      }
+      current.y=center.y;current.level=p.level;previousCar={...center};
+      const slot=cabinSlot(p,cabin);
+      // Enter through the open door before taking up an escort position.
+      let target=slot;
+      const sill=center.z-bounds.halfDepth;
+      if(current.z<sill+radius && Math.abs(current.x-center.x)>.48)
+        target={x:center.x,z:Math.min(current.z,sill-.62)};
+      const gap=distance(current,target),fraction=gap>.001?Math.min(1,dt*9,.01+9*dt/gap):0;
+      const dx=(target.x-current.x)*fraction,dz=(target.z-current.z)*fraction;
+      if(cabin.carried){current.x+=dx;current.z+=dz;}
+      else current=habitat.move(current,dx,dz,radius);
+      trail.length=0;retracing=false;formation=null;previousOwner={...p};
+      drawCompanion(p,yaw,dt,style,0,0,bounds.height,0,Math.hypot(dx,dz));
+    }
+    function update(p,yaw,dt,style='follow',mounted=false,rideHeight=0,cabin=null){
       if(!current)return;
-      if(current.level!==p.level||Math.abs(current.y-p.y)>.8)arrive(p,yaw);
       dt=T.MathUtils.clamp(dt,0,.10);elapsed+=dt;salute=Math.max(0,salute-dt);
+      if(cabin){updateInCar(p,yaw,dt,style,cabin);return;}
+      previousCar=null;
+      if(current.level!==p.level||Math.abs(current.y-p.y)>.8)arrive(p,yaw);
       sampleDue-=dt;
       const ownerSpeed=previousOwner&&dt?distance(previousOwner,p)/dt:0;
       previousOwner={...p};
@@ -175,6 +213,9 @@
         ceiling+=Math.max(0,room.spec.height-3.1)*T.MathUtils.smoothstep(margin,.45,1.8);
       }
       const lift=mounted&&Number.isFinite(rideHeight)?Math.max(0,rideHeight):0;
+      drawCompanion(p,yaw,dt,style,lift,floor,ceiling,ownerSpeed,travel);
+    }
+    function drawCompanion(p,yaw,dt,style,lift,floor,ceiling,ownerSpeed,travel){
       const desired=1.02+lift+.054*Math.sin(elapsed*2.65)+.13*Math.sin(Math.PI*salute/1.8);
       const limit=ceiling-floor-.77;
       hover=Math.min(limit,hover+(Math.min(limit,desired)-hover)*(1-Math.exp(-9*dt)));
@@ -200,7 +241,7 @@
       shadow.position.y=.006;shadow.scale.setScalar(.78+.18*hover);
       shadowMaterial.uniforms.strength.value=.36/(.65+hover);
     }
-    function leave(){current=goal=previousOwner=formation=null;root.visible=false;trail.length=0;salute=0;}
+    function leave(){current=goal=previousOwner=formation=previousCar=null;root.visible=false;trail.length=0;salute=0;}
     function dispose(){
       leave();scene.remove(root);
       const geometries=new Set(),materials=new Set();
@@ -208,5 +249,5 @@
       for(const g of geometries)g.dispose();
       for(const m of materials)m.dispose();
     }
-    return {arrive,update,greet(){if(!current)return false;salute=1.8;return true;},leave,dispose};
+    return {arrive,update,insideCar,restoreInCar,greet(){if(!current)return false;salute=1.8;return true;},leave,dispose};
   }

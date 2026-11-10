@@ -68,3 +68,9 @@
 .inv-wallet{margin:10px 0 0;color:#efda9e;font-size:13px}
 [data-console-open] .ship-route-hint{visibility:hidden}
 @container(max-width:530px){.ship-route-hint{left:7px;top:53px;max-width:78%;font-size:12px}}
+.ship-car-display{position:absolute;right:14px;top:60px;z-index:2;display:grid;gap:4px;padding:7px 11px;border-right:3px solid #e7bc60;border-radius:5px 0 0 5px;color:#edf5eb;background:#15262def;text-align:right;font-size:13px;pointer-events:none}
+.ship-car-display [data-car-height]{font:12px/1.4 Consolas,monospace;color:#e5c685;font-variant-numeric:tabular-nums}
+.ship-car-display progress{width:100%;height:4px;accent-color:#f3cb6f}
+[data-lift-travel] .ship-dock,[data-lift-travel] .ship-actions{visibility:hidden}
+[data-console-open] .ship-car-display{visibility:hidden}
+@container(max-width:540px){.ship-car-display{right:7px;left:7px;top:auto;bottom:114px;width:fit-content;max-width:90%;margin-left:auto;font-size:12px}[data-lift-travel] .ship-car-display{bottom:12px}}

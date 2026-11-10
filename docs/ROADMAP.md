@@ -9,6 +9,10 @@
 3. **扩展自然资源兑换。** 当前柜台接收舰内实际开采的训练矿样，矿架初始有三份。待有可登陆的星球及其采集点，再按同版本资料建立黄晶矿、甲烷等物品与各自单价，沿用实物扣减、确认和回执流程。[动力室兑换图证](动力室物资兑换图证.md)
 4. **补机械室和资料室的抵达画面。** 舱室制作人把去、回程落点与站立方向记录下来，更新第一个工位旁的门标或设备。其他舱按下文安排接续，跨年代的新入口单列。[路线实勘 #2](https://github.com/lshxzhy/seer-starship-reconstruction/issues/2) · [机械室与资料室 #3](https://github.com/lshxzhy/seer-starship-reconstruction/issues/3)
 
+## 甲板间的实际运送
+
+人员换层已纳入轿厢运行和门联锁，矿样交付路线按召车、进厢、斜行、平层出厢接续。后续若增加机务物资推车，先按本版车门净宽、转弯空间和站点入口布置装卸位置，再设计推入、固定及卸载动作。[实体升降舱阶段](https://github.com/lshxzhy/seer-starship-reconstruction/issues/9)
+
 ## 已有版本与依据
 
 v0.4.1 修复了登舰键盘焦点和快速点按；机械室经底层主廊走到传送舱的线路已实际走通。[键盘修补版](https://github.com/lshxzhy/seer-starship-reconstruction/releases/tag/v0.4.1)

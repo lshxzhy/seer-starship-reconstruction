@@ -21,21 +21,25 @@
     function roomFor(pose){
       return habitat.byId.get(habitat.location(pose).roomId);
     }
-    function positionCamera(pose,yaw,pitch,dt,eyeHeight,ride=null){
-      const dx=previous?pose.x-previous.x:0,dz=previous?pose.z-previous.z:0;
+    function positionCamera(pose,yaw,pitch,dt,eyeHeight,ride=null,cabin=null){
+      let dx=previous?pose.x-previous.x:0,dz=previous?pose.z-previous.z:0;
+      if(cabin?.carried){
+        dx=previous?.carX==null?0:dx-(cabin.center.x-previous.carX);
+        dz=previous?.carZ==null?0:dz-(cabin.center.z-previous.carZ);
+      }
       const travelled=Math.hypot(dx,dz);
       const speed=!ride && dt>0 && travelled<1.5?travelled/dt:0;
       if(ride)facing=ride.heading;
-      else if(travelled>.0001 && travelled<1.5){
+      else if(speed>0){
         const direction=Math.atan2(-dx,-dz);
         const difference=Math.atan2(Math.sin(direction-facing),Math.cos(direction-facing));
         facing+=difference*(1-Math.exp(-16*dt));
       }
-      previous={x:pose.x,z:pose.z};
+      previous={x:pose.x,z:pose.z,carX:cabin?.center.x,carZ:cabin?.center.z};
       phase+=seerRobots.phaseStep(speed,dt);
       avatar.rotation.y=facing;
       seerRobots.animate(rig,phase,speed,dt,Boolean(ride));
-      const floorY=pose.y+(ride?ride.footOffset:contactFloor(pose));
+      const floorY=cabin?cabin.center.y:pose.y+(ride?ride.footOffset:contactFloor(pose));
       avatar.position.copy(habitat.worldPosition(pose.x,floorY,pose.z));
       drill.update(rig.bones.core,dt,active);
       ground.position.copy(avatar.position);
@@ -56,7 +60,15 @@
       // companion as soon as the player boards, retaining wheel zoom.
       const boom=distance + (ride ? 1.30 : 0);
       const want=boom*Math.cos(angle);
-      if(!sampled || sampled.level!==pose.level || Math.abs(sampled.x-pose.x)+Math.abs(sampled.z-pose.z)>.012 ||
+      let ceiling;
+      if(cabin){
+        // Clip the camera boom against the moving car in its own frame.
+        const {center,bounds}=cabin;
+        const localX=pose.x-center.x,localZ=pose.z-center.z;
+        const reachX=Math.abs(sin)<1e-6?Infinity:(bounds.halfWidth-.13-Math.sign(sin)*localX)/Math.abs(sin);
+        const reachZ=Math.abs(cos)<1e-6?Infinity:(bounds.halfDepth-.13-Math.sign(cos)*localZ)/Math.abs(cos);
+        available=Math.max(0,Math.min(want,reachX,reachZ));ceiling=bounds.height;sampled=null;
+      }else if(!sampled || sampled.level!==pose.level || Math.abs(sampled.x-pose.x)+Math.abs(sampled.z-pose.z)>.012 ||
          Math.abs(sampled.yaw-yaw)+Math.abs(sampled.pitch-pitch)>.003 || sampled.distance!==boom){
         available=0;
         for(let test=.18;test<want+.18;test+=.18){
@@ -67,16 +79,16 @@
         const current=roomFor(pose);
         const behind=roomFor({...pose,x:pose.x+sin*available,z:pose.z+cos*available});
         // Door lintels are lower than either room's ceiling.
-        const ceiling=current&&current===behind?current.spec.height:3.10;
+        ceiling=current&&current===behind?current.spec.height:3.10;
         sampled={x:pose.x,z:pose.z,level:pose.level,yaw,pitch,distance:boom,ceiling};
-      }
+      }else ceiling=sampled.ceiling;
       avatar.visible=active&&available>.76;ground.visible=avatar.visible&&!ride;
       if(!avatar.visible){
         camera.position.copy(head);
         camera.lookAt(head.clone().add(new T.Vector3(-sin*Math.cos(pitch),Math.sin(pitch),-cos*Math.cos(pitch))));
         return {x:pose.x,y:floorY+seatedEye,z:pose.z};
       }
-      const cy=T.MathUtils.clamp(1.12+floorY-pose.y+Math.tan(angle)*available,.43,sampled.ceiling-.32);
+      const cy=T.MathUtils.clamp(1.12+floorY-pose.y+Math.tan(angle)*available,.43,ceiling-.32);
       camera.position.copy(habitat.worldPosition(pose.x+sin*available,pose.y+cy,pose.z+cos*available));
       // Aim slightly past the player's shoulder from behind. The swept boom
       // stays in the safe path and the front inspection angle stays centred.

@@ -7,10 +7,12 @@
     </header>
     <div class="ship-telemetry"><i aria-hidden="true"></i><span data-status>玩家 SE-00001</span></div>
     <div class="ship-route-hint" data-route-hint hidden></div>
+    <div class="ship-car-display" data-lift-readout hidden><span data-car-message></span><span data-car-height></span><progress data-car-progress max="1" value="0" aria-label="升降行程"></progress></div>
     <div class="ship-actions">
       <button type="button" class="ship-key" data-exchange hidden>能源兑换台</button>
       <button type="button" class="ship-key" data-bench hidden>领取挖矿钻头</button>
-      <label class="ship-key" data-lift-control hidden>升降站 <select aria-label="选择停靠甲板" data-lift></select></label>
+      <button type="button" class="ship-key" data-lift-call hidden>呼叫轿厢</button>
+      <label class="ship-key" data-lift-control hidden>轿厢选层 <select aria-label="选择停靠甲板" data-lift></select></label>
       <button type="button" class="ship-key" data-flyer hidden>驾驶滑翔翼</button>
       <button type="button" class="ship-key" data-climb hidden>升高</button>
       <button type="button" class="ship-key" data-descend hidden>降低</button>

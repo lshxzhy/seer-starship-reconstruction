@@ -272,15 +272,18 @@
     }
     function wayfinding(parent,text,x,y,z,width,height,yaw,color) {
       const canvas=document.createElement('canvas');
-      canvas.width=640;canvas.height=104;
+      canvas.height=104;
+      canvas.width=width/height<3?Math.max(120,Math.round(104*width/height)):640;
       const ctx=canvas.getContext('2d');
-      ctx.fillStyle='#13293c';ctx.fillRect(0,0,640,104);
-      ctx.fillStyle=color;ctx.fillRect(0,0,13,104);
+      const w=canvas.width;
+      ctx.fillStyle='#13293c';ctx.fillRect(0,0,w,104);
+      ctx.fillStyle=color;ctx.fillRect(0,0,Math.max(5,Math.round(w*.02)),104);
       ctx.fillStyle='#e8f3f0';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.font='500 53px "Microsoft YaHei", sans-serif';ctx.fillText(text,325,52,580);
+      ctx.font='600 53px "Microsoft YaHei", sans-serif';
+      ctx.fillText(text,w*.51,52,w*.91);
       const map=new T.CanvasTexture(canvas);map.encoding=T.sRGBEncoding;
       const m=new T.Mesh(new T.PlaneGeometry(width,height),new T.MeshBasicMaterial({map,toneMapped:false}));
-      m.position.set(x,y,z);m.rotation.y=yaw;parent.add(m);
+      m.position.set(x,y,z);m.rotation.y=yaw;parent.add(m);return m;
     }
     const passagePaint={
       skin:metal(0x90969d), cover:metal(0xe8d8ac), edge:metal(0x57616b),
@@ -544,54 +547,14 @@
       }
       floorRect(deck,x-room.spec.width/2,x+room.spec.width/2,room.center[2]-room.spec.depth/2,room.center[2]+room.spec.depth/2);
     }
-    function buildLift(stop){
-      const {deck,x,z,line}=stop,g=deck.group,w=4.48,d=5.38,h=3.75;
-      const back=z+d/2;
-      floorRect(deck,x-1.52,x+1.52,halfAisle-.03,z-d/2+.10);
-      floorRect(deck,x-w/2,x+w/2,z-d/2,back);
-      plate(g,paint.base,x,-.13,(halfAisle+back)/2,w+.35,.26,back-halfAisle);
-      plate(g,paint.floor,x,.001,z,w,.034,d);
-      plate(g,paint.ceiling,x,h+.07,(halfAisle+back)/2,w+.35,.20,back-halfAisle);
-      for(const side of [-1,1]){
-        plate(g,paint.trim,x+side*(w/2+.10),h/2,(halfAisle+back)/2,.20,h,back-halfAisle);
-        plate(g,metal(deck.accent),x+side*(w/2-.02),1.36,z,.08,.16,d);
-        plate(g,paint.silver,x+side*(w/2-.025),1.04,z,.10,.09,d);
-        const wing=(w-3.05)/2;
-        plate(g,paint.skin,x+side*(1.525+wing/2),h/2,halfAisle+.23,wing,h,.55);
-      }
-      plate(g,paint.skin,x,h/2,back+.11,w+.3,h,.22);
-      plate(g,paint.light,x,h-.045,z,w-1.20,.08,1.15);
-      const displayX=x+.79;
-      plate(g,paint.trim,displayX,1.53,back-.12,.60,.90,.15);
-      plate(g,paint.light,displayX,1.64,back-.206,.38,.30,.018);
-      wayfinding(g,line.name,x,2.65,back-.03,3.27,.5,Math.PI,'#efbd66');
-      // Directional floor chevrons identify the boarding threshold.
-      for(let i=0;i<7;i++)plate(g,i%2?paint.orange:paint.base,x-1.20+i*.4,.025,halfAisle+.60,.36,.02,.19);
-    }
     for(const deck of levels){
       buildSpine(deck);
       for(const room of rooms.filter(r=>r.level===deck.id))buildBranch(deck,room);
-      for(const stop of deck.stops)buildLift(stop);
       for(const zone of crewBerths.byLevel.get(deck.id)||[]){
         wardGroups.set(zone.id,installCrewWard(deck,zone,{plate,metal,paint,floorRect,wayfinding}));
       }
     }
-    // Both lifts have real full-length guide rails. Geometry is attached to
-    // the ship; the occupied landing geometry is revealed at its destination.
-    const shaftFrame=new T.Group();shaftFrame.name='升降导轨与索道';installation.add(shaftFrame);
-    for(const line of liftLines)for(let i=1;i<line.stops.length;i++){
-      const a=line.stops[i-1],b=line.stops[i];
-      for(const x of [-2.70,2.70])for(const z of [-1.9,2.8]){
-        const start=new T.Vector3(a.x+x,a.deck.floorY+.10,a.z+z);
-        const end=new T.Vector3(b.x+x,b.deck.floorY-.10,b.z+z);
-        const diff=end.clone().sub(start);
-        const rail=new T.Mesh(cube,paint.base);
-        rail.position.copy(start).addScaledVector(diff,.5);
-        rail.scale.set(.20,diff.length(),.25);
-        rail.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),diff.normalize());
-        shaftFrame.add(rail);
-      }
-    }
+    const liftPlant=createLiftPlant({installation,lines:liftLines,halfAisle,floorRect,plate,metal,paint,wayfinding});
     flush();
 
     function floorFor(p){
@@ -608,6 +571,7 @@
       const deck=floorFor(p);
       if(!deck || !Number.isFinite(p.x)||!Number.isFinite(p.z)||!Number.isFinite(p.y)||Math.abs(p.y-deck.floorY)>.8)return false;
       if(!footprintDirections.every(([ox,oz])=>deck.rects.some(r=>within(r,p.x+ox*radius,p.z+oz*radius))))return false;
+      if(!liftPlant.allows(p,radius))return false;
       const ward=crewBerths.zoneAt(p);
       if(ward && !crewBerths.clearsPedestal(p,ward,radius))return false;
       const room=roomAt(deck,p.x,p.z);
@@ -653,7 +617,8 @@
       return next;
     }
     function atLift(deck,p) {
-      return deck.stops.find(stop=>Math.abs(p.x-stop.x)<=1.86&&p.z>=4.12&&p.z<=stop.z+2.18);
+      const access=liftPlant.station(p);
+      return access?deck.stops.find(s=>s.line.id===access.lineId):null;
     }
     function location(p){
       const deck=floorFor(p);
@@ -667,15 +632,6 @@
     function liftStops(p) {
       const deck=floorFor(p),stop=deck&&atLift(deck,p);
       return stop?stop.line.stops.filter(s=>s.deck!==deck).map(s=>({id:s.deck.id,name:s.deck.name,floorY:s.deck.floorY})):[];
-    }
-    function takeLift(p,destination){
-      const deck=floorFor(p),stop=deck&&atLift(deck,p);
-      const target=stop?.line.stops.find(s=>s.deck.id===destination && s.deck!==deck);
-      return target?{...p,x:target.x,y:target.deck.floorY,z:target.z,level:target.deck.id,yaw:0}:null;
-    }
-    function elevator(p,direction){
-      const stops=liftStops(p).filter(s=>direction>0?s.floorY>p.y:s.floorY<p.y).sort((a,b)=>Math.abs(a.floorY-p.y)-Math.abs(b.floorY-p.y));
-      return stops.length?takeLift(p,stops[0].id):null;
     }
     function worldPosition(x,y,z){
       // The metric root counteracts the exterior's anisotropic scale.
@@ -699,7 +655,7 @@
       if(!room){setActive(false);return null;}
       buildRoom(room);
       installation.visible=true;
-      shaftFrame.visible=false;
+      liftPlant.hide();
       for(const deck of levels){
         deck.group.visible=deck.id===room.level;
         for(const part of deck.group.children)part.visible=part===room.group;
@@ -725,7 +681,17 @@
         if(visible)buildRoom(room);
         room.group.visible=visible;
       }
-      shaftFrame.visible=false;
+      liftPlant.view(null,p);
+    }
+    function updateLiftLOD(lineId,height){
+      const line=liftLines.find(l=>l.id===lineId);
+      if(!line)return;
+      // Through a moving car's windows, only nearby fixed stops can be seen.
+      // Restore ordinary room and crew culling once the passenger walks out.
+      for(const d of levels)d.group.visible=line.stops.some(s=>s.deck===d)&&Math.abs(d.floorY-height)<10;
+      for(const room of rooms)room.group.visible=false;
+      for(const ward of wardGroups.values())ward.visible=false;
+      liftPlant.view(lineId);
     }
     // The drawing, room picker and walking controller read these same anchor
     // points. The serializable export omits renderer objects and walking state.
@@ -750,6 +716,6 @@
     };
     ship.updateMatrixWorld(true);
     return {root:installation,rooms,byId,levels,plan,residences:crewBerths,metresPerRenderUnit,lengthMetres,
-      spawn,move,canStand,location,locate:location,liftStops,takeLift,elevator,worldPosition,
+      spawn,move,canStand,location,locate:location,liftStops,worldPosition,liftPlant,updateLiftLOD,
       toWorld:p=>worldPosition(p.x,p.y,p.z),setActive,setPreview,updateLOD};
   })();

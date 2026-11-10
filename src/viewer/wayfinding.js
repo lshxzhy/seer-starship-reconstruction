@@ -195,7 +195,8 @@
         if(nearest.kind==='spine')add(project(p,nearest.from,nearest.to),'主廊');
         if(nearest!==target)add(target.from,following,{kind:'junction',name:following});
         if(finalLift){
-          add(target.to,liftName,{kind:'lift',name:decks.get(finalLift.to).name});
+          // End the walking route in the landing, outside both door sills.
+          add({x:target.to.x,z:target.to.z-3.50},liftName,{kind:'lift',name:decks.get(finalLift.to).name});
         }else{
           add(target.to,dest.name,{kind:'door',name:terminal,side:Math.sign(target.to.z)});
         }
@@ -232,9 +233,8 @@
           z+=side*(out ? .58 : -.68);yaw=out?(side>0?0:Math.PI):(side>0?Math.PI:0);
           y=deck.floorY+2.77;roof=deck.floorY+3.15;action=out?'由此出舱':'由此进舱';
         }else if(kind==='lift'){
-          // Hang the route plate just below the existing station name on the rear wall.
-          z+=2.48;y=deck.floorY+1.97;roof=y;yaw=Math.PI;
-          glyph=decks.get(finalLift.to).floorY>deck.floorY?'up':'down';action='站内选择停靠层';
+          z+=.72;y=deck.floorY+2.94;roof=deck.floorY+3.4;yaw=Math.PI;
+          glyph=decks.get(finalLift.to).floorY>deck.floorY?'up':'down';action='乘此线换层';
         }else if(c&&len>.1){
           const turn=(-dz*(c.x-b.x)+dx*(c.z-b.z))/(len*Math.max(.001,distance(b,c)));
           glyph=turn>.55?'right':turn<-.55?'left':'straight';
@@ -259,8 +259,12 @@
         rebuild(p,goal);return;
       }
       const end=route[route.length-1],terminal=goal==='mine'?'机械室采样工位':'动力室能源兑换台';
-      if(finalLift&&habitat.liftStops(p).some(s=>s.id===finalLift.to)){
-        hint='在升降站选择「'+decks.get(finalLift.to).name+'」';return;
+      const landing=finalLift&&habitat.liftPlant.station(p);
+      if(landing&&landing.lineId===finalLift.line.id){
+        const car=habitat.liftPlant.getCar(landing.lineId);
+        hint=landing.inside?'在轿厢内选择「'+decks.get(finalLift.to).name+'」':
+          car.dockedLevel===p.level&&car.door>=.97?'沿门槛走入轿厢':'在此候梯 · 车到开门后进入';
+        return;
       }
       if(!finalLift&&distance(p,end)<1.55){hint='已到'+terminal;return;}
       let i=segment||1;

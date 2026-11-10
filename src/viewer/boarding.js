@@ -3,6 +3,10 @@
   function createBoardingController(requestFrame, persist) {
     const liftControl = root.querySelector('[data-lift-control]');
     const liftPicker = root.querySelector('[data-lift]');
+    const callButton=root.querySelector('[data-lift-call]');
+    const liftReadout=root.querySelector('[data-lift-readout]');
+    const carMessage=root.querySelector('[data-car-message]'),carHeight=root.querySelector('[data-car-height]');
+    const carProgress=root.querySelector('[data-car-progress]');
     const movePad = root.querySelector('[data-move-pad]');
     const boardControls = root.querySelector('[data-boarding-controls]');
     const boardButton = root.querySelector('[data-console="terminal"]');
@@ -25,6 +29,11 @@
     const population=createSeerPopulation();
     const companion=createSuperNono(worldMetre);
     const flight=createPersonalFlight(worldMetre,population);
+    const lifts=createLiftRide(habitat.plan.lifts,habitat.liftPlant);
+    let liftSelectionKey='',tripSaveKey='',lastLiftReadout=-Infinity;
+    function cabinFor(s){
+      return s?.inside&&!flight.mounted?{center:s.center,bounds:habitat.liftPlant.cabinBounds,carried:lifts.riding}:null;
+    }
     const benchButton=root.querySelector('[data-bench]');
     const exchangeButton=root.querySelector('[data-exchange]');
     const pickRay=new T.Raycaster(),pickPoint=new T.Vector2();
@@ -296,7 +305,7 @@
     function flightControls(){
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
-      mount.hidden=!active||(!flight.mounted&&!flight.reachable(pose));
+      mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
       mount.disabled=flight.landing;
       climb.hidden=descend.hidden=!active||!flight.mounted;
       benchButton.hidden=!atBench();
@@ -310,10 +319,11 @@
       if(batches.length)record+='。'+batches.map((n,i)=>'回执 '+(i+1)+'（'+n+' 份，'+n*trainingTerms.unitReward+' 豆）').join('，');
       if(jobRecord.textContent!==record)jobRecord.textContent=record;
       hint.textContent=flight.mounted?flyHint:walkHint;
-      status.textContent=flight.mounted?'滑翔翼 · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
+      if(!lifts.riding)status.textContent=flight.mounted?'滑翔翼 · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
     }
     function operateFlyer(){
-      if(!active||flight.landing)return;
+      if(!active||flight.landing||lifts.riding)return;
+      if(lifts.status(pose)?.inside){notifyPlayer('请先走出轿厢，再取出滑翔翼。');return;}
       crewDialogue.close();clearInputs();
       const result=flight.interact(pose,yaw);
       if(result.pose){pose=result.pose;pilot.arrive(pose,yaw);habitat.updateLOD(pose);refreshPlace(true);}
@@ -378,10 +388,39 @@
       const words = room ? room.brief || room.spec.basis || '' : '沿走廊进入舱门，可在升降站换层。';
       info.textContent = [dimensions,words].filter(Boolean).join('　');
       status.textContent = '玩家 SE-00001';
-      const stops = place.lift ? habitat.liftStops(pose) : [];
-      liftPicker.replaceChildren(new Option('选择停靠层',''));
-      for (const stop of stops) if (stop.id!==place.level) liftPicker.add(new Option(stop.name,stop.id));
-      liftControl.hidden = liftPicker.options.length<2;
+    }
+    function showLift(s){
+      const cabin=cabinFor(s),carried=lifts.riding;
+      callButton.hidden=!s?.canCall||flight.mounted;
+      liftControl.hidden=!s?.canDepart||!cabin||carried;
+      if(!liftControl.hidden){
+        const key=s.lineId+'/'+s.level;
+        if(key!==liftSelectionKey){
+          liftPicker.replaceChildren(new Option('选择停靠层',''));
+          for(const d of s.destinations)liftPicker.add(new Option(d.name,d.id));
+          liftSelectionKey=key;
+        }
+        liftPicker.disabled=!companion.insideCar(cabin);
+      }
+      liftReadout.hidden=!s;
+      if(!s)return;
+      const travelling=s.phase==='moving';
+      carProgress.hidden=!carried;
+      if(carried)carProgress.value=s.progress;
+      let message;
+      if(carried){
+        const phase={closing:'关门',moving:s.direction>0?'上行':'下行',opening:'已平层，正在开门',idle:'已开门'};
+        message=phase[s.phase]+' · '+s.targetName;
+        tag.textContent=s.name;
+        status.textContent='SE-00001 · 乘梯';
+      }else if(flight.mounted)message='请在站外着陆下机';
+      else if(s.inside)message=companion.insideCar(cabin)?'已入厢 · 请选择停靠层':'等待超能 NoNo 入厢';
+      else if(s.canCall)message='轿厢停在'+s.targetName+' · 可呼梯';
+      else if(s.phase==='idle')message='轿厢已开门 · 向前走入厢内';
+      else message=s.phase==='opening'?'轿厢平层 · 正在开门':'候梯 · 轿厢驶向'+s.targetName;
+      if(carMessage.textContent!==message)carMessage.textContent=message;
+      carHeight.hidden=!carried;
+      if(carried)carHeight.textContent='标高 '+s.center.y.toFixed(1)+' m'+(travelling?'　'+s.speed.toFixed(1)+' m/s':'');
     }
     function enter(roomId, saved) {
       crewDialogue.close();crewDialogue.setBoarded(true);
@@ -390,8 +429,11 @@
       const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)||wardIds.has(roomId)) ? roomId :
         habitat.byId.has('teleport') ? 'teleport' : habitat.rooms[0].id;
       const entry = habitat.spawn(id);
+      if(saved?.lifts)lifts.restore(saved.lifts);
+      const passenger=lifts.passengerPose();
       const p = saved?.pose;
-      if (p && [p.x,p.y,p.z].every(Number.isFinite) && habitat.canStand(p)) pose={...p};
+      if(passenger)pose=passenger;
+      else if (p && [p.x,p.y,p.z].every(Number.isFinite) && habitat.canStand(p)) pose={...p};
       else pose=habitat.move(entry,-Math.sin(entry.yaw||0)*3.45,-Math.cos(entry.yaw||0)*3.45);
       const room=habitat.byId.get(id);
       let initialYaw=entry.yaw||0,initialPitch=.02;
@@ -417,6 +459,13 @@
       companion.arrive(pose,yaw);flightControls();
       refreshPlace(true);
       flightControls();
+      if(passenger){
+        const s=lifts.status(pose);
+        flight.park();
+        companion.restoreInCar(pose,yaw,cabinFor(s));
+        beginPassengerView(s);
+      }
+      showLift(lifts.status(pose));
       requestFrame();
     }
     function leave() {
@@ -428,6 +477,7 @@
       habitat.setActive(false);
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
+      callButton.hidden=liftReadout.hidden=true;delete stage.dataset.liftTravel;
       mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=exchangeButton.hidden=routeHint.hidden=notice.hidden=true;
       guide.hide();
       delete stage.dataset.boarded;
@@ -440,6 +490,14 @@
       const dt = frameTime ? Math.min(Math.max(0,time-frameTime)/1000,.12) : 0;
       const moving=hasMotion();
       frameTime = time;
+      lifts.tick(dt);
+      const arrival=lifts.consumeArrival();
+      if(arrival){
+        pose=arrival;delete stage.dataset.liftTravel;movePad.hidden=false;
+        habitat.updateLOD(pose);population.setActive(true);
+        refreshPlace(true);clearInputs();tripSaveKey='';
+        notifyPlayer('已平层开门，可以走出轿厢。');persist();
+      }
       yaw += ((has('ArrowLeft')?1:0)-(has('ArrowRight')?1:0))*1.4*dt;
       pitch = T.MathUtils.clamp(pitch+((has('PageUp')?1:0)-(has('PageDown')?1:0))*dt,-1.29,1.29);
       let forward = Number(has('KeyW')||has('ArrowUp'))-Number(has('KeyS')||has('ArrowDown'));
@@ -448,7 +506,14 @@
       const sin=Math.sin(yaw),cos=Math.cos(yaw),norm=magnitude||1;
       const dx=(strafe*cos-forward*sin)/norm,dz=(-strafe*sin-forward*cos)/norm;
       const boost=has('ShiftLeft')||has('ShiftRight');
-      if(flight.mounted){
+      if(lifts.riding){
+        if(magnitude)lifts.movePassenger(dx*walkSpeed*dt,dz*walkSpeed*dt);
+        pose=lifts.passengerPose();
+        const s=lifts.status(pose);
+        habitat.updateLiftLOD(s.lineId,s.center.y);
+        const savedPhase=s.phase+'/'+Math.floor(s.progress*4);
+        if(savedPhase!==tripSaveKey){tripSaveKey=savedPhase;persist();}
+      }else if(flight.mounted){
         flight.changeHeight((Number(has('Space'))-Number(has('KeyC')))*2.2*dt,pose);
         const result=flight.drive(pose,dx,dz,boost,dt);
         pose=result.pose;
@@ -462,32 +527,45 @@
         habitat.updateLOD(pose);
         refreshPlace();
       }
-      const ride=flight.draw(pose,dt);
-      companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0);
+      const station=lifts.status(pose),cabin=cabinFor(station);
+      const ride=lifts.riding?null:flight.draw(pose,dt);
+      companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0,cabin);
       marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight+(ride?.footOffset||0),pose.z));
       nearFill.position.copy(marker);nearFill.position.y+=.35*worldMetre;
-      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride);
+      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride,cabin);
       pose.yaw=pilot.facing;
-      population.update(pose,dt,sight);
-      guide.update(pose,goal(),active);
+      if(!lifts.riding)population.update(pose,dt,sight);
+      guide.update(pose,goal(),active&&!lifts.riding);
       const direction=guide.hint||'';
       if(routeHint.textContent!==direction)routeHint.textContent=direction;
       routeHint.hidden=!goal()||!direction;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
-      if(!moving)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
-      return moving;
+      if(time-lastLiftReadout>90||arrival){showLift(station);lastLiftReadout=time;}
+      const animate=moving||lifts.moving;
+      if(!animate)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
+      return animate;
+    }
+    function beginPassengerView(s){
+      clearInputs();crewDialogue.close();flight.leave();
+      population.setActive(false);guide.hide();routeHint.hidden=true;
+      stage.dataset.liftTravel='true';
+      habitat.updateLiftLOD(s.lineId,s.center.y);
+      showLift(s);requestFrame();
+    }
+    callButton.addEventListener('click',()=>{
+      if(!active||flight.mounted||!lifts.call(pose))return;
+      showLift(lifts.status(pose));focusFlightControls();requestFrame();persist();
+    });
+    function selectLiftFloor(dest){
+      if(!active||!dest||flight.mounted||lifts.riding)return;
+      const cabin=cabinFor(lifts.status(pose));
+      if(cabin&&!companion.insideCar(cabin)){notifyPlayer('等待超能 NoNo 入厢。');return;}
+      if(cabin&&lifts.depart(pose,dest)){
+        beginPassengerView(lifts.status(pose));focusFlightControls();persist();
+      }
     }
     liftPicker.addEventListener('change',()=>{
-      if (!active || !liftPicker.value) return;
-      const arrival=habitat.takeLift(pose,liftPicker.value);
-      if (arrival) {
-        crewDialogue.close();
-        flight.park();clearInputs();pose=arrival;
-        if (Number.isFinite(arrival.yaw)) yaw=arrival.yaw;
-        pilot.arrive(pose,yaw);companion.arrive(pose,yaw);population.update(pose,0);
-        habitat.updateLOD(pose);refreshPlace(true);requestFrame();persist();
-      }
-      liftPicker.value='';focusFlightControls();
+      const dest=liftPicker.value;liftPicker.value='';selectLiftFloor(dest);
     });
     canvas.addEventListener('pointerdown',e=>{
       if (!active || crewDialogue.isOpen || lookDrag || e.button!==0) return;
@@ -507,13 +585,19 @@
       if (lookDrag?.id!==e.pointerId) return;
       const tap=e.type==='pointerup' && lookDrag.travel<5;
       lookDrag=null;
-      if(tap&&atExchange()){
+      if(tap&&!lifts.riding&&(atExchange()||lifts.station(pose))){
         const r=canvas.getBoundingClientRect();
         pickPoint.set(2*(e.clientX-r.left)/r.width-1,1-2*(e.clientY-r.top)/r.height);
         pickRay.setFromCamera(pickPoint,camera);
-        const room=habitat.byId.get('power').group;
-        const hit=pickRay.intersectObjects(room.children,true).find(h=>h.object.visible);
-        if(hit?.object.userData.oreIntake)exchangeButton.click();
+        if(atExchange()){
+          const room=habitat.byId.get('power').group;
+          const hit=pickRay.intersectObjects(room.children,true).find(h=>h.object.visible);
+          if(hit?.object.userData.oreIntake)exchangeButton.click();
+        }else{
+          const key=pickRay.intersectObjects(habitat.liftPlant.buttonsAt(pose),false)[0]?.object.userData;
+          if(key?.liftAction==='floor')selectLiftFloor(key.liftLevel);
+          if(key?.liftAction==='call'&&!callButton.hidden)callButton.click();
+        }
       }
       persist();
     }
@@ -589,6 +673,9 @@
         const along=btn.dataset.step==='KeyW'?.65:btn.dataset.step==='KeyS'?-.65:0;
         const across=btn.dataset.step==='KeyD'?.65:btn.dataset.step==='KeyA'?-.65:0;
         const dx=across*Math.cos(yaw)-along*Math.sin(yaw),dz=-across*Math.sin(yaw)-along*Math.cos(yaw);
+        if(lifts.riding){
+          lifts.movePassenger(dx,dz);pose=lifts.passengerPose();requestFrame();persist();return;
+        }
         if(flight.mounted)pose=flight.drive(pose,dx/.65,dz/.65,false,.12).pose;
         else pose=habitat.move(pose,dx,dz,.43,(from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
         habitat.updateLOD(pose);refreshPlace();requestFrame();persist();
@@ -601,6 +688,7 @@
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       clearInputs,pack,restorePack,deliver,
+      get inTransit(){return lifts.riding;},
       get commsOpen(){return crewDialogue.isOpen;},
       consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
         nearFlyer:active&&flight.reachable(pose),flyerStored:flight.stored,landing:flight.landing,
@@ -608,7 +696,7 @@
         credits:delivered()*trainingTerms.unitReward,unitReward:trainingTerms.unitReward,atExchange:atExchange(),
         receipts:batches.map((count,index)=>({number:index+1,count,reward:count*trainingTerms.unitReward}))};},
       useItem(id){
-        if(!active)return;
+        if(!active||lifts.riding)return;
         if(id==='delivery'){trackRoute(true);notifyPlayer('已开启动力室交付路标。');}
         else if(id==='flyer')operateFlyer();
         else if(id==='drill')setDrill(!drillEquipped);
@@ -618,7 +706,7 @@
         }
       },
       get roomId(){return currentRoomId;},
-      snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
+      snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
       dispose(){guide.dispose();locker.dispose();clearTimeout(noticeTimer);crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

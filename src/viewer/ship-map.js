@@ -198,7 +198,7 @@
       else if(!pose)text.textContent=target.kind==='lift'
         ?'可停靠'+target.line.stops.map(s=>decks.get(s.level).name).join('、')
         :decks.get(target.level).name+' · '+target.width+' × '+target.depth+' 米';
-      else if(route?.arrived)text.textContent=target.kind==='lift'?'已在升降站，可在站内选择停靠层。':'你已在这里。';
+      else if(route?.arrived)text.textContent=target.kind==='lift'?'已到升降站。等车门打开后进厢选层。':'你已在这里。';
       else if(!route)text.textContent='这两个标高之间尚无升降通路。';
       else{
         const directions=route.rides.map(r=>'乘'+r.line.name+'至'+decks.get(r.to).name);

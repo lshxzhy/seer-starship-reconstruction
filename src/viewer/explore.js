@@ -34,6 +34,7 @@
   const raycaster=new T.Raycaster();
   let selected=null, frame=0, lastTime=0, disposed=false;
   let stagedBoard=null, liveBoard=false, lastSaved='';
+  const recentSaves=[];
   const boarding=createBoardingController(requestDraw,save);
   const cockpit=createFlightDeck(boarding,id=>{
     Object.assign(state,{mode:'board',room:habitat.byId.has(id)?id:'',located:'',rotate:false,wire:false});
@@ -140,6 +141,7 @@
     requestDraw();
   }
   function applySelection(mode,deck=state.deck,room='',located=''){
+    if(boarding.inTransit)return;
     if(mode==='board' && !liveBoard)room=boardable()?.id||room||boarding.roomId||'teleport';
     Object.assign(state,{mode,deck,room,located,rotate:false,wire:mode==='board'?false:state.wire});
     frameSelection();syncScene();save();
@@ -162,6 +164,10 @@
   function save(){
     const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null};
     lastSaved=JSON.stringify(privateContent);
+    if(window.openai?.setWidgetState){
+      recentSaves.push(lastSaved);
+      if(recentSaves.length>24)recentSaves.shift();
+    }
     const room=state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
     const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
     promise?.catch?.(()=>{});
@@ -286,7 +292,8 @@
     e.preventDefault();requestDraw();save();
   });
   function loadHostState(e){
-    const saved=e.detail?.globals?.widgetState?.privateContent;if(!saved || saved.version!==3 || JSON.stringify(saved)===lastSaved)return;
+    const saved=e.detail?.globals?.widgetState?.privateContent;
+    if(!saved||saved.version!==3||boarding.inTransit||recentSaves.includes(JSON.stringify(saved)))return;
     restore(saved);syncScene();resize();
   }
   ship.updateMatrixWorld(true);
