@@ -24,6 +24,15 @@
     const worldMetre = habitat.worldPosition(1,0,0).distanceTo(worldOrigin);
     const pilot=createSeerPilot(worldMetre);
     const population=createSeerPopulation();
+    const crewDialogue=createCrewDialogue({
+      context:()=>({roomId:currentRoomId,location:tag.textContent,
+        nearby:active&&pose?population.nearest(pose,4):null}),
+      inRange:id=>{
+        const member=active&&pose?population.getById(id)?.position:null;
+        return Boolean(member&&member.level===pose.level&&Math.hypot(member.x-pose.x,member.z-pose.z)<=4);
+      },
+      stopMovement:clearInputs,requestFrame
+    });
     const perspective=root.querySelector('[data-perspective]');
     const inspect=root.querySelector('[data-face-player]');
     const detailVisit=root.querySelector('[data-inspect-workstation]');
@@ -172,6 +181,7 @@
     picker.append(residenceOptions);
 
     function cameraStyle(style){
+      crewDialogue.close();
       pilot.setStyle(style);
       perspective.value=pilot.style;
       inspect.hidden=pilot.style==='eye';
@@ -181,6 +191,7 @@
     });
     inspect.addEventListener('click',()=>{
       if(!active)return;
+      crewDialogue.close();
       yaw=pilot.facing+Math.PI;pitch=0;requestFrame();focusFlightControls();persist();
     });
     canvas.addEventListener('wheel',e=>{
@@ -241,6 +252,7 @@
       liftControl.hidden = liftPicker.options.length<2;
     }
     function enter(roomId, saved) {
+      crewDialogue.close();crewDialogue.setBoarded(true);
       active = true;
       clearInputs();
       const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)) ? roomId :
@@ -274,6 +286,7 @@
     }
     function leave() {
       if (!active) return;
+      crewDialogue.setBoarded(false);
       active=false;clearInputs();restoreExteriorRig();clearTimeout(idleClock.timer);
       pilot.leave();population.setActive(false);populationText.hidden=true;
       habitat.setActive(false);
@@ -285,7 +298,7 @@
     function frame(time) {
       if (!active) return false;
       clearTimeout(idleClock.timer);
-      if(document.hidden||!inView){frameTime=0;return false;}
+      if(document.hidden||!inView||crewDialogue.isOpen){frameTime=0;return false;}
       const dt = frameTime ? Math.min(Math.max(0,time-frameTime)/1000,.12) : 0;
       const moving=hasMotion();
       frameTime = time;
@@ -320,6 +333,7 @@
       if (!active || !liftPicker.value) return;
       const arrival=habitat.takeLift(pose,liftPicker.value);
       if (arrival) {
+        crewDialogue.close();
         clearInputs();pose=arrival;
         if (Number.isFinite(arrival.yaw)) yaw=arrival.yaw;
         pilot.arrive(pose,yaw);population.update(pose,0);
@@ -328,7 +342,7 @@
       liftPicker.value='';focusFlightControls();
     });
     canvas.addEventListener('pointerdown',e=>{
-      if (!active || lookDrag || e.button!==0) return;
+      if (!active || crewDialogue.isOpen || lookDrag || e.button!==0) return;
       focusFlightControls();canvas.setPointerCapture(e.pointerId);
       lookDrag={id:e.pointerId,x:e.clientX,y:e.clientY};
     });
@@ -345,6 +359,7 @@
     for (const name of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(name,finishLook);
     const enabledKeys=e=>active && !e.ctrlKey && !e.metaKey && !e.altKey && keyCodes.has(e.code) && !/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName);
     root.addEventListener('keydown',e=>{
+      if(crewDialogue.isOpen)return;
       if(active&&e.code==='KeyV'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)){
         e.preventDefault();cameraStyle(pilot.style==='follow'?'eye':'follow');requestFrame();persist();return;
       }
@@ -359,7 +374,7 @@
     window.addEventListener('keyup',endKey);
     for (const btn of movePad.querySelectorAll('[data-step]')) {
       btn.addEventListener('pointerdown',e=>{
-        if (!active || e.button!==0) return;
+        if (!active || crewDialogue.isOpen || e.button!==0) return;
         e.preventDefault();btn.setPointerCapture(e.pointerId);
         touchKeys.set(e.pointerId,btn.dataset.step);requestFrame();
       });
@@ -370,7 +385,7 @@
       };
       for(const n of ['pointerup','pointercancel','lostpointercapture'])btn.addEventListener(n,stop);
       btn.addEventListener('click',e=>{
-        if (!active || e.detail!==0) return;
+        if (!active || crewDialogue.isOpen || e.detail!==0) return;
         // A keyboard-activated movement button advances one short step.
         const along=btn.dataset.step==='KeyW'?.65:btn.dataset.step==='KeyS'?-.65:0;
         const across=btn.dataset.step==='KeyD'?.65:btn.dataset.step==='KeyA'?-.65:0;
@@ -387,6 +402,6 @@
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       get roomId(){return currentRoomId;},
       snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
-      dispose(){clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
+      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

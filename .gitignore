@@ -4,12 +4,14 @@
 !/LICENSE
 !/licenses/
 !/README.md
+!/启动舰上通讯.cmd
 !/src/
 !/docs/
 /docs/*
 !/docs/HANDOFF.md
 !/docs/ROADMAP.md
 !/docs/SOURCES.md
+!/docs/舰上组织与角色.md
 !/work/
 /work/*
 !/work/assemble-seer.py
@@ -22,3 +24,5 @@
 !/work/machinery.js
 !/work/scene-finish.js
 !/work/interior.js
+__pycache__/
+*.pyc
