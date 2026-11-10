@@ -1,0 +1,67 @@
+<div id="seer-starship-3d">
+  <div class="seer-heading">
+    <div><h2>赛尔号</h2><span class="text-small text-muted">SE–A015 扩建方案 · 舰长 795 米</span></div>
+    <div class="viz-controls">
+      <button class="btn" type="button" data-action="rotate" aria-pressed="false" hidden>自动旋转</button>
+      <button class="btn" type="button" data-action="wire" aria-pressed="false" hidden>线框</button>
+    </div>
+  </div>
+  <div class="seer-toolbar">
+    <div class="viz-row" role="group" aria-label="查看方式">
+      <button type="button" class="btn" data-view="board" aria-pressed="true">登舰</button>
+      <button type="button" class="btn" data-view="exterior" aria-pressed="false">外观</button>
+      <button type="button" class="btn" data-view="section" aria-pressed="false">纵剖</button>
+      <button type="button" class="btn" data-view="deck" aria-pressed="false">分层</button>
+    </div>
+    <div class="seer-pickers" hidden>
+      <label>层区 <select class="form-select" data-deck></select></label>
+      <label>舱室 <select class="form-select" data-room></select></label>
+      <button type="button" class="btn" data-enter-room hidden>进入此舱</button>
+    </div>
+    <div class="seer-pickers seer-boarding" data-boarding-controls>
+      <label>目的地 <select class="form-select" data-jump-room></select></label>
+      <label>视角 <select class="form-select" data-perspective><option value="follow">跟随赛尔</option><option value="eye">第一人称</option></select></label>
+      <button type="button" class="btn" data-face-player>看正面</button>
+      <button type="button" class="btn" data-locate-room>全舰定位</button>
+      <label data-lift-control hidden>乘电梯 <select class="form-select" data-lift></select></label>
+    </div>
+  </div>
+  <div class="seer-stage">
+    <canvas role="img" aria-label="操控玩家赛尔 SE-00001。WASD 或屏幕方向键行走，拖动环视，V 切换跟随与第一人称；驻舱层可通过目的地列表或主升降机抵达。">需要 WebGL 才能显示三维模型。</canvas>
+    <span class="seer-tag" data-tag hidden></span>
+    <div class="seer-motion" data-move-pad role="group" aria-label="按住移动" hidden>
+      <button class="btn" type="button" data-step="KeyW" aria-label="前进">↑</button>
+      <button class="btn" type="button" data-step="KeyA" aria-label="向左平移">←</button>
+      <button class="btn" type="button" data-step="KeyS" aria-label="后退">↓</button>
+      <button class="btn" type="button" data-step="KeyD" aria-label="向右平移">→</button>
+    </div>
+    <p class="seer-error" role="alert" hidden></p>
+  </div>
+  <p class="seer-detail" data-detail aria-live="polite"></p>
+  <div class="seer-footer text-small text-muted"><span data-controls-hint>拖动转头 · W/A/S/D 移动 · Shift 快行</span><span data-status></span></div>
+  <p class="seer-manifest text-small text-muted" data-population hidden></p>
+</div>
+<style>
+  #seer-starship-3d { width:100%; color:var(--foreground) }
+  #seer-starship-3d .seer-heading,#seer-starship-3d .seer-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.65em }
+  #seer-starship-3d .seer-heading { margin-bottom:.6em; padding-right:86px }
+  #seer-starship-3d .seer-stage { position:relative; width:100%; height:clamp(350px,68vw,550px); overflow:hidden; background:radial-gradient(ellipse at 80% 54%,#3c3b62 0%,transparent 52%),radial-gradient(ellipse at 18% 38%,#244864 0%,transparent 54%),linear-gradient(135deg,#081429,#151c35 65%,#101628) }
+  #seer-starship-3d canvas {display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  #seer-starship-3d canvas:active {cursor:grabbing}
+  #seer-starship-3d .seer-footer { margin-top:.5em }
+  #seer-starship-3d .seer-manifest {margin:.3em 0 0}
+  #seer-starship-3d .seer-toolbar,#seer-starship-3d .seer-pickers,#seer-starship-3d .seer-pickers label {display:flex;flex-wrap:wrap;align-items:center;gap:.55em}
+  #seer-starship-3d .seer-toolbar {margin:.6em 0}
+  #seer-starship-3d .seer-pickers select {width:auto;max-width:100%}
+  #seer-starship-3d .seer-motion {display:none}
+  @media(pointer:coarse),(max-width:550px) {
+    #seer-starship-3d .seer-motion {position:absolute;left:.7em;bottom:.7em;display:grid;grid-template-columns:repeat(3,minmax(44px,auto));gap:.22em;touch-action:none;user-select:none}
+    #seer-starship-3d [data-step="KeyW"] {grid-column:2}
+    #seer-starship-3d [data-step="KeyA"] {grid-column:1}
+  }
+  #seer-starship-3d [hidden] {display:none!important}
+  #seer-starship-3d .seer-detail {margin:.55em 0 0}
+  #seer-starship-3d .seer-tag {position:absolute;left:.85em;top:.85em;pointer-events:none;color:#fff;background:#12263ee8;padding:.20em .55em;border-radius:.35em}
+  #seer-starship-3d .seer-error { position:absolute; inset:40% 10% auto; color:#fff }
+  @media(max-width:480px) { #seer-starship-3d .seer-heading {padding-right:0;padding-top:1.8em} }
+</style>

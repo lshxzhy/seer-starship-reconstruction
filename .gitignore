@@ -1,0 +1,24 @@
+# Only named public inputs belong in this repository.
+/*
+!/.gitignore
+!/LICENSE
+!/licenses/
+!/README.md
+!/src/
+!/docs/
+/docs/*
+!/docs/HANDOFF.md
+!/docs/ROADMAP.md
+!/docs/SOURCES.md
+!/work/
+/work/*
+!/work/assemble-seer.py
+!/work/standalone.css
+!/work/seer-layout.html
+!/work/three-r128.min.js
+!/work/livery.js
+!/work/hull-next.js
+!/work/bridge-and-pod.js
+!/work/machinery.js
+!/work/scene-finish.js
+!/work/interior.js

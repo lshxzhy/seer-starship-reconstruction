@@ -1,0 +1,280 @@
+  // Original and clipped materials are kept separately. Exterior paint can
+  // be shared with interior fixtures, so clipping must not change that paint.
+  renderer.localClippingEnabled=true;
+  const cutPlane=new T.Plane(new T.Vector3(0,0,-1),.015);
+  const sectionMats=new Map();
+  const outerMeshes=[];
+  const exterior=ship.children.filter(child=>child!==interiorModel.root && child!==habitat.root);
+  for(const group of exterior) group.traverse(part=>{
+    if(!part.isMesh)return;
+    const source=part.material;
+    if(!source.isShaderMaterial && !sectionMats.has(source)){
+      const cut=source.clone();
+      cut.clippingPlanes=[cutPlane];
+      cut.clipShadows=true;
+      cut.side=T.DoubleSide;
+      sectionMats.set(source,cut);
+    }
+    outerMeshes.push({part,source});
+  });
+  const modes={board:'登舰',exterior:'外观',section:'纵剖',deck:'分层'};
+  const regions=interiorModel.deckData;
+  const deckSelect=root.querySelector('[data-deck]');
+  const roomSelect=root.querySelector('[data-room]');
+  const pickers=root.querySelector('.seer-pickers');
+  const tag=root.querySelector('[data-tag]');
+  const description=root.querySelector('[data-detail]');
+  const enterRoomButton=root.querySelector('[data-enter-room]');
+  const viewButtons=[...root.querySelectorAll('[data-view]')];
+  for(const [i,deck] of regions.entries())deckSelect.add(new Option(deck.name,String(i)));
+  const state={mode:'board',deck:1,room:'',located:'',rotate:false,wire:false,
+    azimuth:-.16,elevation:.20,distance:18.7};
+  const target=new T.Vector3();
+  const raycaster=new T.Raycaster();
+  let selected=null, frame=0, lastTime=0, disposed=false;
+  let stagedBoard=null, liveBoard=false, lastSaved='';
+  const boarding=createBoardingController(requestDraw,save);
+  const unitMetre=habitat.worldPosition(1,0,0).distanceTo(habitat.worldPosition(0,0,0));
+  const unitBounds=new T.BoxGeometry(1,1,1);
+  const locator=new T.LineSegments(new T.EdgesGeometry(unitBounds),new T.LineBasicMaterial({
+    color:0xffb94a,toneMapped:false,depthTest:false,transparent:true,opacity:.98
+  }));
+  unitBounds.dispose();locator.visible=false;locator.renderOrder=20;scene.add(locator);
+  const boardable=()=>selected && habitat.byId.get(selected.id);
+  function frameSelection(){
+    const deck=regions[state.deck];
+    selected=state.mode==='deck'?deck.rooms.find(room=>room.id===state.room)||null:null;
+    const detailed=boardable();
+    if(detailed){
+      const [x,y,z]=detailed.center;
+      target.copy(habitat.worldPosition(x,y+detailed.spec.height*.18,z));
+      state.distance=Math.max(detailed.spec.width,detailed.spec.depth)*unitMetre*2.15;
+      state.azimuth=-.24;state.elevation=1.16;
+    }else if(selected){
+      target.fromArray(selected.center);
+      ship.localToWorld(target);
+      const span=Math.abs(selected.xMax-selected.xMin)||1.9;
+      state.distance=T.MathUtils.clamp(span*2.1+1.4,4.1,8.4);
+      state.azimuth=-.32;state.elevation=.86;
+    }else if(state.mode==='deck'){
+      target.set((deck.xMin+deck.xMax)/2,deck.floorY+.06,0);
+      ship.localToWorld(target);
+      state.azimuth=-.10;state.elevation=1.18;state.distance=13.4;
+    }else{
+      target.set(0,.66,0);
+      state.azimuth=state.mode==='section'?-.16:-.58;
+      state.elevation=state.mode==='section'?.20:.17;
+      state.distance=state.mode==='section'?18.7:19.75;
+    }
+  }
+  function syncScene(){
+    const aboard=state.mode==='board', cut=state.mode==='section', single=state.mode==='deck';
+    const detailed=boardable();
+    const located=cut && habitat.byId.get(state.located);
+    locator.visible=Boolean(located);
+    if(located){
+      const {width,height,depth}=located.spec;
+      const [x,y,z]=located.center;
+      locator.position.copy(habitat.worldPosition(x,y+height*.5,z));
+      locator.scale.set(width*unitMetre,height*unitMetre,depth*unitMetre);
+    }
+    for(const g of exterior)g.visible=!single && !aboard;
+    for(const {part,source} of outerMeshes){
+      part.visible=!single && !aboard && !(cut && source.isShaderMaterial);
+      part.material=cut?(sectionMats.get(source)||source):source;
+    }
+    interiorModel.root.visible=(cut || single) && !detailed;
+    interiorModel.structure.visible=!single;
+    interiorModel.vertical.visible=!single;
+    interiorModel.decks.forEach((deck,i)=>{
+      deck.visible=!single||i===state.deck;
+      for(const element of deck.children)element.visible=!selected || element===selected.group;
+    });
+    if(!aboard)ship.traverse(part=>{
+      if(part.parent===habitat.root)return;
+      if(part.isMesh && !part.material.transparent && 'wireframe' in part.material)
+        part.material.wireframe=state.wire;
+    });
+    for(const b of viewButtons)b.setAttribute('aria-pressed',String(b.dataset.view===state.mode));
+    rotateButton.setAttribute('aria-pressed',String(state.rotate));
+    rotateButton.textContent=state.rotate?'暂停旋转':'自动旋转';
+    wireButton.setAttribute('aria-pressed',String(state.wire));
+    rotateButton.hidden=wireButton.hidden=aboard;
+    pickers.hidden=!single;
+    deckSelect.value=String(state.deck);
+    roomSelect.replaceChildren(new Option('整层',''));
+    for(const r of regions[state.deck].rooms)roomSelect.add(new Option(r.name,r.id));
+    roomSelect.value=state.room;
+    enterRoomButton.hidden=!detailed;
+    if(aboard){
+      if(!liveBoard || stagedBoard){
+        // A former cutaway may have enabled wireframe on shared materials.
+        habitat.root.traverse(part=>{if(part.isMesh && 'wireframe' in part.material)part.material.wireframe=false;});
+        boarding.enter(stagedBoard?.roomId || state.room,stagedBoard);
+      }else boarding.refresh();
+      liveBoard=true;stagedBoard=null;
+      requestDraw();return;
+    }
+    if(liveBoard){boarding.leave();liveBoard=false;}
+    habitat.setPreview(detailed?.id || null);
+    camera.near=detailed ? Math.max(.0002,unitMetre*.12) : .1;
+    camera.updateProjectionMatrix();
+    tag.hidden=!selected && !located;
+    tag.textContent=located?'实舱位置 · '+located.name:selected?.name||'';
+    description.textContent=detailed?detailed.name+' · '+[detailed.spec.width,detailed.spec.depth,detailed.spec.height].join(' × ')+' 米 · '+(detailed.brief||selected.basis):
+      selected?selected.name+' · 分区示意。'+selected.basis:
+      single?'选择游戏舱室可查看拆顶实舱，并从入口登舰；其余功能区显示总体布置。':
+      located?'金色轮廓表示'+located.name+'在全舰中的实际安装位置与净尺寸。':
+      cut?'从近舷剖开，可看到三大层区、层间通道、塔楼和腹舱。舱区依据《飞船手册》，骨架与舱壁为工程布置方案。':
+      '扩建方案长 795 米、宽 555 米、高 675 米。原作手册外廓为 530 × 370 × 450 米。';
+    status.textContent=modes[state.mode]+(single?' · '+regions[state.deck].name:'')+(state.wire?' · 线框':'');
+    requestDraw();
+  }
+  function applySelection(mode,deck=state.deck,room='',located=''){
+    if(mode==='board' && !liveBoard)room=boardable()?.id||room||boarding.roomId||'teleport';
+    Object.assign(state,{mode,deck,room,located,rotate:false,wire:mode==='board'?false:state.wire});
+    frameSelection();syncScene();save();
+  }
+  function restore(saved){
+    if(!saved||saved.version!==3)return;
+    if(!Object.hasOwn(modes,saved.mode))return;
+    state.mode=saved.mode;
+    state.located=habitat.byId.has(saved.located)?saved.located:'';
+    state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
+    state.room=(state.mode==='board'?habitat.byId.has(saved.room):regions[state.deck].rooms.some(r=>r.id===saved.room))?saved.room:'';
+    stagedBoard=state.mode==='board' ? saved.board || {roomId:state.room} : null;
+    frameSelection();
+    for(const k of ['azimuth','elevation','distance'])if(Number.isFinite(saved[k]))state[k]=saved[k];
+    state.elevation=T.MathUtils.clamp(state.elevation,-1.3,1.48);
+    state.distance=T.MathUtils.clamp(state.distance,boardable()?unitMetre*3:2.1,52);
+    state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
+  }
+  function save(){
+    const privateContent={version:3,...state,board:state.mode==='board'?boarding.snapshot():null};
+    lastSaved=JSON.stringify(privateContent);
+    const room=state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
+    const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
+    promise?.catch?.(()=>{});
+  }
+  function draw(time){
+    frame=0;if(disposed)return;
+    if(state.mode==='board'){
+      const walking=boarding.frame(time);
+      renderer.render(scene,camera);
+      if(walking)requestDraw();
+      return;
+    }
+    if(state.rotate && lastTime)state.azimuth+=Math.min(time-lastTime,75)*.00015;
+    lastTime=state.rotate?time:0;
+    const distance=state.distance*Math.max(1,1.24/camera.aspect);
+    const horizontal=distance*Math.cos(state.elevation);
+    camera.position.set(target.x+Math.sin(state.azimuth)*horizontal,
+      target.y+Math.sin(state.elevation)*distance,target.z+Math.cos(state.azimuth)*horizontal);
+    camera.lookAt(target);
+    renderer.render(scene,camera);
+    if(state.rotate)requestDraw();
+  }
+  function requestDraw(){if(!disposed && !frame)frame=requestAnimationFrame(draw);}
+  function resize(){
+    const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+    renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestDraw();
+  }
+  for(const btn of viewButtons)btn.addEventListener('click',()=>applySelection(btn.dataset.view));
+  enterRoomButton.addEventListener('click',()=>applySelection('board',state.deck,state.room));
+  root.querySelector('[data-locate-room]').addEventListener('click',()=>{
+    if(boarding.roomId)applySelection('section',state.deck,'',boarding.roomId);
+  });
+  deckSelect.addEventListener('change',()=>applySelection('deck',Number(deckSelect.value)));
+  roomSelect.addEventListener('change',()=>applySelection('deck',state.deck,roomSelect.value));
+  rotateButton.addEventListener('click',()=>{state.rotate=!state.rotate;syncScene();save();});
+  wireButton.addEventListener('click',()=>{state.wire=!state.wire;syncScene();save();});
+  const pointers=new Map();
+  let pinch=0,tap=null;
+  canvas.addEventListener('pointerdown',e=>{
+    if(state.mode==='board')return;
+    canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,[e.clientX,e.clientY]);
+    tap=pointers.size===1?[e.clientX,e.clientY]:null;
+    if(pointers.size===2){const [a,b]=pointers.values();pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);}
+  });
+  canvas.addEventListener('pointermove',e=>{
+    if(state.mode==='board')return;
+    const prev=pointers.get(e.pointerId);if(!prev)return;
+    const x=e.clientX,y=e.clientY;pointers.set(e.pointerId,[x,y]);
+    if(tap && Math.hypot(x-tap[0],y-tap[1])>4)tap=null;
+    if(pointers.size===1){state.azimuth-=(x-prev[0])*.007;state.elevation=T.MathUtils.clamp(state.elevation+(y-prev[1])*.006,-1.3,1.48);}
+    if(pointers.size===2){
+      const [a,b]=pointers.values(),gap=Math.hypot(a[0]-b[0],a[1]-b[1]);
+      if(gap && pinch)state.distance=T.MathUtils.clamp(state.distance*pinch/gap,boardable()?unitMetre*3:2.1,52);pinch=gap;
+    }
+    requestDraw();
+  });
+  function pickRoom(e){
+    if(state.mode==='exterior')return false;
+    const bounds=canvas.getBoundingClientRect();
+    raycaster.setFromCamera(new T.Vector2(2*(e.clientX-bounds.left)/bounds.width-1,1-2*(e.clientY-bounds.top)/bounds.height),camera);
+    const selectable=[];
+    ship.traverseVisible(obj=>{if(obj.isMesh && !obj.material.transparent)selectable.push(obj);});
+    const hit=raycaster.intersectObjects(selectable,false).find(h=>
+      !h.object.material.clippingPlanes?.some(p=>p.distanceToPoint(h.point)<0));
+    if(!hit)return false;
+    for(let part=hit.object;part;part=part.parent){
+      for(let i=0;i<regions.length;i++){
+        const room=regions[i].rooms.find(r=>r.group===part);
+        if(room){applySelection('deck',i,room.id);return true;}
+      }
+    }
+    return false;
+  }
+  function release(e){
+    if(!pointers.delete(e.pointerId))return;
+    if(tap && e.type==='pointerup')pickRoom(e);
+    tap=null;pinch=0;save();
+  }
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,release);
+  let wheelTimer;
+  canvas.addEventListener('wheel',e=>{
+    if(state.mode==='board')return;
+    e.preventDefault();
+    const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?stage.clientHeight:1);
+    state.distance=T.MathUtils.clamp(state.distance*Math.exp(T.MathUtils.clamp(delta,-180,180)*.0015),boardable()?unitMetre*3:2.1,52);
+    requestDraw();clearTimeout(wheelTimer);wheelTimer=setTimeout(save,240);
+  },{passive:false});
+  root.addEventListener('keydown',e=>{
+    if(e.target.tagName==='SELECT')return;
+    if(state.mode==='board'){
+      if(e.key==='Escape'){e.preventDefault();applySelection('section');}
+      return;
+    }
+    switch(e.key){
+      case 'ArrowLeft':state.azimuth-=.12;break;
+      case 'ArrowRight':state.azimuth+=.12;break;
+      case 'ArrowUp':state.elevation=Math.min(1.48,state.elevation+.10);break;
+      case 'ArrowDown':state.elevation=Math.max(-1.3,state.elevation-.10);break;
+      case '+':case '=':state.distance=Math.max(boardable()?unitMetre*3:2.1,state.distance*.90);break;
+      case '-':state.distance=Math.min(52,state.distance*1.10);break;
+      default:return;
+    }
+    e.preventDefault();requestDraw();save();
+  });
+  function loadHostState(e){
+    const saved=e.detail?.globals?.widgetState?.privateContent;if(!saved || saved.version!==3 || JSON.stringify(saved)===lastSaved)return;
+    restore(saved);syncScene();
+  }
+  ship.updateMatrixWorld(true);
+  frameSelection();
+  restore(window.openai?.widgetState?.privateContent);
+  window.addEventListener('openai:set_globals',loadHostState);
+  const observer=new ResizeObserver(resize);observer.observe(stage);
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();showError('图形上下文已中断，请重新打开模型。');});
+  window.addEventListener('pagehide',e=>{
+    if(e.persisted)return;
+    disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
+    boarding.dispose();
+    window.removeEventListener('openai:set_globals',loadHostState);
+    const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
+    scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});
+    geometries.forEach(g=>g.dispose());materials.forEach(m=>{if(m.map)textures.add(m.map);m.dispose();});textures.forEach(t=>t.dispose());
+    renderer.dispose();
+  },{once:true});
+  syncScene();resize();
+})();
