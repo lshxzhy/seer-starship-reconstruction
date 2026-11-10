@@ -40,13 +40,13 @@ publish_text(viz,fragment)
 head = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">')
 style = (work / 'standalone.css').read_text(encoding='utf-8')
-title = '<title>赛尔号 · SE–A015 舰内漫游</title>'
+title = '<title>SEER · SE–A015 舰内漫游</title>'
 notices = '\n\n'.join(path.read_text(encoding='utf-8') for path in
                      [root / 'LICENSE', root / 'licenses' / 'three-r128.txt'])
 inner = f'{head}{title}<style>{style}</style><body>{fragment}</body></html>'
 document = (f'{head}{title}<style>html,body,iframe{{margin:0;border:0;width:100%;height:100%;'
             'display:block;background:#101723}}</style><body>'
-            '<iframe title="赛尔号三维漫游" allowfullscreen '
+            '<iframe title="SEER 三维漫游" allowfullscreen '
             f'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
             '</iframe><template id="licenses">' + escape(notices) + '</template></body></html>')
 publish_text(output/'seer-starship.html',document)

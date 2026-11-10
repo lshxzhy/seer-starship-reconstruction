@@ -263,7 +263,7 @@ class CrewHandler(BaseHTTPRequestHandler):
                 css = (PROJECT / 'work' / 'standalone.css').read_text(encoding='utf-8')
                 body = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
                         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-                        '<title>赛尔号 · 舰上通讯</title><style>' + css + '</style><body>' +
+                        '<title>SEER · 舰上通讯</title><style>' + css + '</style><body>' +
                         fragment + '</body></html>').encode('utf-8')
                 self._headers(200, 'text/html; charset=utf-8', len(body))
                 self.wfile.write(body)
@@ -399,7 +399,7 @@ class CrewHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='赛尔号本地角色通讯，使用已安装的 Ollama 模型')
+    parser = argparse.ArgumentParser(description='SEER 本地角色通讯，使用已安装的 Ollama 模型')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--ollama', default=os.environ.get('OLLAMA_HOST', 'http://127.0.0.1:11434'))
     parser.add_argument('--model', default=DEFAULT_MODEL)
