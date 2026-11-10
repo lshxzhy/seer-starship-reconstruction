@@ -1,6 +1,13 @@
 /* Shared by the offline game, loopback play page and embedded simulator. */
 #seer-starship-3d {--ink:#12232b;--panel:#12232df9;--ice:#96e2df;--edge:#527582;--paper:#eff5f1;color:#edf5f5;font:15px/1.4 "Segoe UI","Microsoft YaHei",sans-serif;width:100%;color-scheme:dark}
 #seer-starship-3d * {box-sizing:border-box}
+.seer-stage[data-domain="planet"] .ship-dock:not(.planetary-dock){display:none}
+.planet-atlas .atlas-body{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(155px,1fr);align-items:center;overflow:auto}
+.planet-atlas svg{display:block;width:100%;height:auto;background:#142e33}
+.planet-atlas svg text{font:600 12px "Microsoft YaHei",sans-serif;fill:#eff9ee;paint-order:stroke;stroke:#122c30;stroke-width:3px;stroke-linejoin:round}
+.atlas-controls{padding:12px 14px;font-size:14px}.atlas-controls p{color:#c3d7cf}.atlas-controls label{display:block;color:#b0cfc7}
+.atlas-controls select{display:block;width:100%;margin-top:5px;border:1px solid #6a9190;background:#203e45;color:#eff9ee;padding:6px;border-radius:5px}
+@container(max-width:540px){.planet-atlas .atlas-body{grid-template-columns:1fr}.planet-atlas svg{max-height:220px}.atlas-controls{padding:7px 11px}.atlas-controls p{margin:4px 0}}
 #seer-starship-3d [hidden]{display:none!important}
 .seer-stage {width:100%;height:clamp(390px,70vw,650px);position:relative;isolation:isolate;overflow:hidden;background:#101923;container-type:inline-size}
 .seer-stage>canvas {display:block;width:100%;height:100%;touch-action:none;cursor:grab}

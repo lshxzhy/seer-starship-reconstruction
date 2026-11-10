@@ -35,6 +35,7 @@
       return s?.inside&&!flight.mounted?{center:s.center,bounds:habitat.liftPlant.cabinBounds,carried:lifts.riding}:null;
     }
     const benchButton=root.querySelector('[data-bench]');
+    const embarkButton=root.querySelector('[data-embark]');
     const exchangeButton=root.querySelector('[data-exchange]');
     const pickRay=new T.Raycaster(),pickPoint=new T.Vector2();
     const routeButton=root.querySelector('[data-delivery-track]');
@@ -255,7 +256,20 @@
     };
     detailVisit.addEventListener('click',()=>{
       const room=habitat.byId.get(currentRoomId),view=workstationViews[currentRoomId];
-      if(!active || !room || !view)return;
+      if(!active || !room)return;
+      const ports=shipTransporters.ports(room);
+      if(ports.length){
+        if(flight.mounted)return;
+        const order=ports.slice(1).concat(ports.slice(0,1));
+        for(const port of order){
+          const p=shipTransporters.boardingPose(room,port.id);
+          if(!p||!habitat.canStand(p)||population.nearest(p,.92))continue;
+          enter(room.id,{...snapshot(),pose:p,yaw:p.yaw,facing:p.yaw,pitch:.045});
+          focusFlightControls();persist();return;
+        }
+        notifyPlayer('传送位有船员经过，请稍后靠近地面亮框。');return;
+      }
+      if(!view)return;
       const sign=room.side===1?-1:1;
       for(const [offsetX,offsetZ] of [[0,0],[.95,0],[-.95,0],[0,.95],[1.8,.95],[-1.8,.95]]){
         const p={level:room.level,y:room.center[1],x:room.center[0]+sign*(view.floor[0]+offsetX),
@@ -303,6 +317,9 @@
     const walkHint='点击画面后用 WASD 行走 · Shift 快行 · 拖动环视 · V 切换视角';
     const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
     function flightControls(){
+      const berth=currentBerth();
+      embarkButton.hidden=!berth;
+      if(berth)embarkButton.textContent=berth.name+' · 前往'+berth.destinationName;
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
@@ -377,8 +394,8 @@
       if(force || currentRoomId!==(room?.id||null) || !room)placeCabinLamps(room);
       currentPlace = identity;
       currentRoomId = room?.id || null;
-      detailVisit.hidden=!workstationViews[currentRoomId];
-      detailVisit.textContent=currentRoomId==='machine'?'前往装备工位':'近看设备';
+      detailVisit.hidden=!workstationViews[currentRoomId]&&!shipTransporters.ports(room).length;
+      detailVisit.textContent=shipTransporters.ports(room).length?'前往传送位':currentRoomId==='machine'?'前往装备工位':'近看设备';
       if(currentRoomId==='machine')updateSamples();
       root.querySelector('[data-locate-room]').hidden=!currentRoomId;
       const levelName = place.levelName || habitat.levels.find(l=>l.id===place.level)?.name || '';
@@ -478,7 +495,7 @@
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
       callButton.hidden=liftReadout.hidden=true;delete stage.dataset.liftTravel;
-      mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=exchangeButton.hidden=routeHint.hidden=notice.hidden=true;
+      mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=exchangeButton.hidden=embarkButton.hidden=routeHint.hidden=notice.hidden=true;
       guide.hide();
       delete stage.dataset.boarded;
       hint.textContent='拖动旋转 · 滚轮或双指缩放';
@@ -536,9 +553,12 @@
       pose.yaw=pilot.facing;
       if(!lifts.riding)population.update(pose,dt,sight);
       guide.update(pose,goal(),active&&!lifts.riding);
-      const direction=guide.hint||'';
+      const ports=shipTransporters.ports(habitat.byId.get(currentRoomId));
+      const berth=ports.length?currentBerth():null;
+      const direction=(goal()?guide.hint:'') || (berth?'已进入 '+berth.name+'　／　按 E 出发':
+        ports.length&&!flight.mounted?'前往克洛斯星 · 走到任一编号机位的地面亮框，按 E 启动。':'');
       if(routeHint.textContent!==direction)routeHint.textContent=direction;
-      routeHint.hidden=!goal()||!direction;
+      routeHint.hidden=!direction||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
       if(time-lastLiftReadout>90||arrival){showLift(station);lastLiftReadout=time;}
       const animate=moving||lifts.moving;
@@ -585,11 +605,18 @@
       if (lookDrag?.id!==e.pointerId) return;
       const tap=e.type==='pointerup' && lookDrag.travel<5;
       lookDrag=null;
-      if(tap&&!lifts.riding&&(atExchange()||lifts.station(pose))){
+      const berth=tap?currentBerth():null;
+      if(tap&&!lifts.riding&&(berth||atExchange()||lifts.station(pose))){
         const r=canvas.getBoundingClientRect();
         pickPoint.set(2*(e.clientX-r.left)/r.width-1,1-2*(e.clientY-r.top)/r.height);
         pickRay.setFromCamera(pickPoint,camera);
-        if(atExchange()){
+        if(berth){
+          const room=habitat.byId.get(currentRoomId).group;
+          const hits=pickRay.intersectObjects(room.children,true);
+          let part=hits.find(hit=>hit.object.visible&&!hit.object.material?.transparent)?.object;
+          while(part&&part!==room&&!part.userData.shipTransporterPort)part=part.parent;
+          if(part?.userData.shipTransporterPort===berth.id)embarkButton.click();
+        }else if(atExchange()){
           const room=habitat.byId.get('power').group;
           const hit=pickRay.intersectObjects(room.children,true).find(h=>h.object.visible);
           if(hit?.object.userData.oreIntake)exchangeButton.click();
@@ -629,6 +656,9 @@
         !root.contains(target))return;
       if(target.isContentEditable || target.closest?.('input,select,textarea,[role="textbox"]'))return;
       const code=keyCode(e);
+      if((code==='KeyE'||e.key.toLowerCase()==='e')&&currentBerth()){
+        e.preventDefault();if(!e.repeat)embarkButton.click();return;
+      }
       if(code==='KeyF'||code==='KeyV'){
         e.preventDefault();
         if(e.repeat)return;
@@ -685,6 +715,11 @@
     function onHidden(){if (document.hidden){onBlur();clearTimeout(idleClock.timer);}else if(active){frameTime=0;requestFrame();}}
     window.addEventListener('blur',onBlur);
     document.addEventListener('visibilitychange',onHidden);
+    function currentBerth(){
+      const room=habitat.byId.get(currentRoomId);
+      return active&&room&&!flight.mounted&&!lifts.riding?shipTransporters.nearby(room,pose):null;
+    }
+    function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       clearInputs,pack,restorePack,deliver,
@@ -706,7 +741,7 @@
         }
       },
       get roomId(){return currentRoomId;},
-      snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
+      snapshot,station:currentBerth,
       dispose(){guide.dispose();locker.dispose();clearTimeout(noticeTimer);crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

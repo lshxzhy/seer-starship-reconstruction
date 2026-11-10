@@ -14,9 +14,8 @@
         return {...stop,distance,name:deckNames.get(stop.level)||stop.level};
       });
       const byLevel=new Map(stops.map(stop=>[stop.level,stop]));
-      const home=byLevel.get('lower')||stops[0];
-      if(!home)continue;
-      const car={line,stops,byLevel,from:home,to:home,phase:'idle',elapsed:0,profile:null,
+      const home=byLevel.get(line.homeLevel);
+      const car={line,stops,byLevel,home,from:home,to:home,phase:'idle',elapsed:0,profile:null,
         center:{...home.center},dockedLevel:home.level,door:1,speed:0,progress:1};
       cars.set(line.id,car);present(car);
     }
@@ -25,7 +24,7 @@
       const length=Math.abs(to.distance-from.distance);
       // A half-cosine speed ramp starts and ends with zero acceleration. Short
       // adjacent-deck trips use a lower peak speed and no cruising interval.
-      const service=car.line.id==='service',speedLimit=service?16:24,accelerationLimit=service?4.5:4.2;
+      const {speedLimit,accelerationLimit}=car.line;
       const peak=Math.min(speedLimit,Math.sqrt(2*length*accelerationLimit/Math.PI));
       const ramp=peak*Math.PI/(2*accelerationLimit);
       const cruise=Math.max(0,length/peak-ramp);
@@ -150,7 +149,7 @@
         phase:car.phase,elapsed:car.elapsed})),rider:rider?{...rider}:null};
     }
     function restore(saved){
-      if(saved?.version!==1||!Array.isArray(saved.cars)||saved.cars.length!==cars.size)return false;
+      if(saved?.version!==1||!Array.isArray(saved.cars)||!saved.cars.length||saved.cars.length>cars.size)return false;
       const states=new Map();
       for(const s of saved.cars){
         const car=cars.get(s?.id),from=car?.byLevel.get(s?.from),to=car?.byLevel.get(s?.to);
@@ -161,9 +160,14 @@
         states.set(s.id,{from,to,profile,phase:s.phase,elapsed:Math.min(end,s.elapsed)});
       }
       const r=saved.rider;
-      if(r!=null&&(!cars.has(r.lineId)||![r.dx,r.dz,r.yaw].every(Number.isFinite)||
+      if(r!=null&&(!states.has(r.lineId)||![r.dx,r.dz,r.yaw].every(Number.isFinite)||
         Math.abs(r.dx)>plant.cabinBounds.halfWidth||Math.abs(r.dz)>plant.cabinBounds.halfDepth))return false;
-      for(const [id,s] of states){const car=cars.get(id);Object.assign(car,s);present(car);}
+      // A newer ship may have another line. Place only cars absent from the
+      // saved fleet at their installed home stops, and retain existing journeys.
+      for(const [id,car] of cars){
+        const state=states.get(id)||{from:car.home,to:car.home,profile:null,phase:'idle',elapsed:0};
+        Object.assign(car,state);present(car);
+      }
       rider=r?{lineId:r.lineId,dx:r.dx,dz:r.dz,yaw:r.yaw}:null;return true;
     }
     return {station,status,call,depart,tick,movePassenger,passengerPose,consumeArrival,snapshot,restore,

@@ -202,10 +202,16 @@
     // Main lift shaft lies directly below the tower. The shorter service
     // line follows the sloping neck of the underslung engineering pod.
     const liftLines=[
-      {id:'main',name:'塔桥主升降机',stations:[['lower',-1.46],...crewBerths.deckSpecs.map(d=>[d.id,-1.46]),['central',-1.46],['upper',-1.46],['crown',-1.46]]},
-      {id:'service',name:'动力舱检修升降机',stations:[['pod',-2.48],['lower',-2.10]]}
+      {id:'main',name:'塔桥主升降机',stationName:'塔桥升降站',carName:'塔桥客梯',symbol:'lift',
+        homeLevel:'lower',speedLimit:24,accelerationLimit:4.2,
+        stations:[['lower',-1.46],...crewBerths.deckSpecs.map(d=>[d.id,-1.46]),
+          ['central',-1.46],['upper',-1.46],['crown',-1.46]]},
+      {id:'service',name:'动力舱检修升降机',stationName:'检修升降站',carName:'动力舱检修车',symbol:'power',
+        homeLevel:'lower',speedLimit:16,accelerationLimit:4.5,stations:[['pod',-2.48],['lower',-2.10]]}
     ];
     for(const line of liftLines){
+      if(![line.speedLimit,line.accelerationLimit].every(value=>Number.isFinite(value)&&value>0))
+        throw new Error(line.name+'的速度和加速度上限必须为正数');
       line.stops=line.stations.map(([id,stationX])=>{
         const deck=levelById.get(id),stop={deck,line,x:stationX*scaledAxis.x,z:6.45};
         deck.stops.push(stop);
@@ -436,7 +442,7 @@
           emitWall(deck,s,cursor,a);
           const classic=deck.id==='lower'||deck.id==='pod';
           if(classic){
-            const kind=p.stop?(p.stop.line.id==='service'?'power':'lift'):p.room?.id||'lift';
+            const kind=p.stop?p.stop.line.symbol:p.room?.id||'lift';
             classicDoor(deck,p.x,s*halfAisle,s,p.width,3.55,h,kind);
           }else{
           plate(g,paint.base,p.x,3.99,s*(halfAisle+.11),p.width,.82,.40);
@@ -711,7 +717,7 @@
         ]})),
       crew:{capacity:crewBerths.capacity,rowsPerZone:crewBerths.rows,berthsPerRow:crewBerths.columns,
         zones:crewBerths.zones.map(q=>({...q,door:xyz(q.cx,q.floorY,q.side*q.front)}))},
-      lifts:liftLines.map(l=>({id:l.id,name:l.name,stops:l.stops.map(s=>({
+      lifts:liftLines.map(({stations,stops,...line})=>({...line,stops:stops.map(s=>({
         level:s.deck.id,center:xyz(s.x,s.deck.floorY,s.z)}))}))
     };
     ship.updateMatrixWorld(true);

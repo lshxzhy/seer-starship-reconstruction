@@ -17,7 +17,7 @@
     }
     outerMeshes.push({part,source});
   });
-  const modes={board:'登舰',exterior:'外观',section:'纵剖',deck:'分层'};
+  const modes={board:'登舰',exterior:'外观',section:'纵剖',deck:'分层',planet:'克洛斯星'};
   const regions=interiorModel.deckData;
   const deckSelect=root.querySelector('[data-deck]');
   const roomSelect=root.querySelector('[data-room]');
@@ -41,6 +41,23 @@
     stagedBoard={roomId:id};
     frameSelection();syncScene();save();
   },requestDraw);
+  let stagedExpedition=null;
+  const expedition=createPlanetExpedition(requestDraw,save,origin=>{
+    const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
+    habitat.spawn(roomId);
+    const berth=shipTransporters.returnPose(habitat.byId.get(roomId),origin?.berthId);
+    stagedBoard={...origin?.board,roomId};
+    if(berth)Object.assign(stagedBoard,{pose:berth,yaw:berth.yaw,facing:berth.yaw,pitch:.025});
+    Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
+    syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
+  });
+  root.querySelector('[data-embark]').addEventListener('click',()=>{
+    const berth=boarding.station();
+    if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
+    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'orbit'};
+    Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
+    syncScene();root.querySelector('[data-land]').focus({preventScroll:true});save();
+  });
   const unitMetre=habitat.worldPosition(1,0,0).distanceTo(habitat.worldPosition(0,0,0));
   const unitBounds=new T.BoxGeometry(1,1,1);
   const locator=new T.LineSegments(new T.EdgesGeometry(unitBounds),new T.LineBasicMaterial({
@@ -75,6 +92,13 @@
     }
   }
   function syncScene(){
+    if(state.mode==='planet'){
+      cockpit.close(false);
+      if(liveBoard){boarding.leave();liveBoard=false;}
+      if(stagedExpedition){expedition.open(stagedExpedition);stagedExpedition=null;}
+      requestDraw();return;
+    }
+    expedition.hide();
     const aboard=state.mode==='board', cut=state.mode==='section', single=state.mode==='deck';
     const detailed=boardable();
     const located=cut && habitat.byId.get(state.located);
@@ -141,7 +165,7 @@
     requestDraw();
   }
   function applySelection(mode,deck=state.deck,room='',located=''){
-    if(boarding.inTransit)return;
+    if(boarding.inTransit||expedition.active)return;
     if(mode==='board' && !liveBoard)room=boardable()?.id||room||boarding.roomId||'teleport';
     Object.assign(state,{mode,deck,room,located,rotate:false,wire:mode==='board'?false:state.wire});
     frameSelection();syncScene();save();
@@ -155,6 +179,10 @@
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
     state.room=(state.mode==='board'?habitat.byId.has(saved.room):regions[state.deck].rooms.some(r=>r.id===saved.room))?saved.room:'';
     stagedBoard=state.mode==='board' ? saved.board || {roomId:state.room} : null;
+    if(state.mode==='planet'){
+      stagedExpedition=saved.expedition?.origin?saved.expedition:null;
+      if(!stagedExpedition){state.mode='board';stagedBoard={roomId:'teleport'};}
+    }
     frameSelection();
     for(const k of ['azimuth','elevation','distance'])if(Number.isFinite(saved[k]))state[k]=saved[k];
     state.elevation=T.MathUtils.clamp(state.elevation,-1.3,1.48);
@@ -162,18 +190,20 @@
     state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
   }
   function save(){
-    const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null};
+    const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
+      expedition:state.mode==='planet'?expedition.snapshot():null};
     lastSaved=JSON.stringify(privateContent);
     if(window.openai?.setWidgetState){
       recentSaves.push(lastSaved);
       if(recentSaves.length>24)recentSaves.shift();
     }
-    const room=state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
+    const room=state.mode==='planet'?tag.textContent:state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
     const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
     promise?.catch?.(()=>{});
   }
   function draw(time){
     frame=0;if(disposed)return;
+    if(state.mode==='planet'){if(expedition.draw(time))requestDraw();return;}
     if(state.mode==='board'){
       const walking=boarding.frame(time);
       finishing.render(unitMetre*.68);
@@ -226,13 +256,13 @@
   const pointers=new Map();
   let pinch=0,tap=null;
   canvas.addEventListener('pointerdown',e=>{
-    if(state.mode==='board')return;
+    if(state.mode==='board'||expedition.active)return;
     canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,[e.clientX,e.clientY]);
     tap=pointers.size===1?[e.clientX,e.clientY]:null;
     if(pointers.size===2){const [a,b]=pointers.values();pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);}
   });
   canvas.addEventListener('pointermove',e=>{
-    if(state.mode==='board')return;
+    if(state.mode==='board'||expedition.active)return;
     const prev=pointers.get(e.pointerId);if(!prev)return;
     const x=e.clientX,y=e.clientY;pointers.set(e.pointerId,[x,y]);
     if(tap && Math.hypot(x-tap[0],y-tap[1])>4)tap=null;
@@ -268,14 +298,14 @@
   for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,release);
   let wheelTimer;
   canvas.addEventListener('wheel',e=>{
-    if(state.mode==='board')return;
+    if(state.mode==='board'||expedition.active)return;
     e.preventDefault();
     const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?stage.clientHeight:1);
     state.distance=T.MathUtils.clamp(state.distance*Math.exp(T.MathUtils.clamp(delta,-180,180)*.0015),boardable()?unitMetre*3:2.1,52);
     requestDraw();clearTimeout(wheelTimer);wheelTimer=setTimeout(save,240);
   },{passive:false});
   root.addEventListener('keydown',e=>{
-    if(cockpit.isOpen||e.target.tagName==='SELECT')return;
+    if(expedition.active||cockpit.isOpen||e.target.tagName==='SELECT')return;
     if(state.mode==='board'){
       if(e.key==='Escape'){e.preventDefault();applySelection('section');}
       return;
@@ -305,7 +335,7 @@
   window.addEventListener('pagehide',e=>{
     if(e.persisted)return;
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
-    cockpit.dispose();boarding.dispose();
+    expedition.dispose();cockpit.dispose();boarding.dispose();
     window.removeEventListener('openai:set_globals',loadHostState);
     const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
     scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});

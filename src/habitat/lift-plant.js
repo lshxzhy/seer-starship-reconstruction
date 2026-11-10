@@ -105,7 +105,8 @@
       wayfinding(g,line.name,x,3.18,lip-.18,2.62,.31,Math.PI,'#93dccc');
       return doors(g,line.id,deck.id,x,lip,false);
     }
-    function buildCabin(parent,lineId,slope,stops){
+    function buildCabin(parent,line,slope,stops){
+      const lineId=line.id;
       const car=group(parent,'升降轿厢 · '+lineId);
       Object.assign(car.userData,{liftPart:'car',liftLine:lineId});
       const C=(mat,x,y,z,w,h,d)=>plate(car,mat,x,y,z,w,h,d);
@@ -139,7 +140,7 @@
       for(const x of [-2.09,0,2.09])C(enamel,x,1.83,2.43,.1,2.20,.14);
       C(rail,0,.69,2.33,4.15,.066,.072);
       C(blue,0,3.03,front,4.38,.25,.22);
-      wayfinding(car,lineId==='service'?'动力舱检修车':'塔桥客梯',0,3.04,front+.12,2.42,.18,0,'#efc770');
+      wayfinding(car,line.carName,0,3.04,front+.12,2.42,.18,0,'#efc770');
       // A cabinet on the front return carries the floor controls. Large
       // windows either side reveal the shaft lamps and the fixed brackets.
       const keys=[],rows=Math.ceil(stops.length/2),top=1.83;
@@ -176,9 +177,16 @@
     }
     function buildLine(line){
       const stops=[...line.stops].sort((a,b)=>a.deck.floorY-b.deck.floorY);
+      if(stops.length<2)throw new Error(line.name+'至少需要两个站台');
+      const home=stops.find(stop=>stop.deck.id===line.homeLevel);
+      if(!home)throw new Error(line.name+'的初始层缺少停靠站');
       const lo=stops[0],hi=stops[stops.length-1],base=lo.deck.floorY;
+      if(hi.deck.floorY<=base)throw new Error(line.name+'的站台需要不同标高');
       const slope=(hi.x-lo.x)/(hi.deck.floorY-base);
       const at=y=>lo.x+(y-base)*slope;
+      if(stops.some((stop,i)=>Math.abs(stop.x-at(stop.deck.floorY))>.001||Math.abs(stop.z-lo.z)>.001||
+        (i>0&&stop.deck.floorY===stops[i-1].deck.floorY)))
+        throw new Error(line.name+'的各站门槛须按不同标高沿同一直线导轨安装');
       const assembly=group(root,line.name+' · 井架');
       const shaft=group(assembly,'齿轨与承力井架 · '+line.id);
       const z=lo.z,low=base-2.0,high=hi.deck.floorY+5.15;
@@ -240,8 +248,8 @@
         roller(shaft,rubber,at(low)+s*1.35,low+.75,z,.36,.13,'y');
       }
       const dockDoors=new Map(stops.map(stop=>[stop.deck.id,landing(stop)]));
-      const carBody=buildCabin(assembly,line.id,slope,stops);
-      linePlants.set(line.id,{assembly,stops,dockDoors,...carBody,slope,base,
+      const carBody=buildCabin(assembly,line,slope,stops);
+      linePlants.set(line.id,{assembly,stops,home,dockDoors,...carBody,slope,base,
         center:{x:0,y:0,z:0},dockedLevel:null,door:0});
     }
     for(const line of lines)buildLine(line);
@@ -257,8 +265,8 @@
       p.center={...center};p.dockedLevel=dockedLevel;p.door=aperture;
     }
     for(const [id,p] of linePlants){
-      const home=p.stops.find(s=>s.deck.id==='lower');
-      setCar(id,{center:{x:home.x,y:home.deck.floorY,z:home.z},dockedLevel:'lower',door:1});
+      const {home}=p;
+      setCar(id,{center:{x:home.x,y:home.deck.floorY,z:home.z},dockedLevel:home.deck.id,door:1});
     }
     function nearStation(p){
       if(!p||!p.level)return null;

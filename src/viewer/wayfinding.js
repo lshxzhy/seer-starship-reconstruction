@@ -156,7 +156,7 @@
       const target=deck.corridors.find(c=>c.leadsTo===(liftId||destId));
       if(!target)return;
       const terminal=goal==='mine'?'采样工位':'能源兑换台';
-      const liftName=liftId==='service'?'检修升降站':'塔桥升降站';
+      const liftName=finalLift?.line.stationName;
       const following=finalLift?liftName:dest.name;
       const targetPoint=goal==='mine'?local(dest,-14.1,6.7):local(dest,powerExchangePoint.x,powerExchangePoint.z);
       function add(point,name,mark=null){

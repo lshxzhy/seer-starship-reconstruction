@@ -25,7 +25,7 @@
       opener=null;requestFrame();
     }
     function open(key,target=null){
-      if(!pages.has(key)||boarding.commsOpen||boarding.inTransit)return;
+      if(stage.dataset.domain==='planet'||!pages.has(key)||boarding.commsOpen||boarding.inTransit)return;
       if(key==='bag'&&!getState().active)return;
       if(key==='exchange'&&!getState().atExchange)return;
       if(current===key){close();return;}
@@ -58,7 +58,7 @@
       if(e.target.matches('[data-perspective]')){close();focusPilot();}
     });
     function onKey(e){
-      if(boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+      if(stage.dataset.domain==='planet'||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
       const el=e.target;
       if(el!==window&&el!==document&&el!==document.body&&el!==document.documentElement&&!root.contains(el))return;
       if(current&&e.key==='Tab'){
@@ -84,6 +84,7 @@
     }
     stage.addEventListener('seer-pack-change',refreshPack);
     return {
+      close,
       get isOpen(){return current!==null;},
       sync(aboard){
         dock.querySelector('[data-console="bag"]').hidden=!aboard;

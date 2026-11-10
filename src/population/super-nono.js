@@ -1,9 +1,9 @@
   // The blue twin-bladed NoNo is the player's one companion. Coordinates
   // passed to habitat remain on the deck even while its body is hovering.
-  function createSuperNono(worldMetre) {
+  function createSuperNono(worldMetre,world=scene) {
     const root=new T.Group(),body=new T.Group();
     root.name='超能 NoNo · 玩家伙伴';root.visible=false;
-    root.scale.setScalar(worldMetre);root.add(body);scene.add(root);
+    root.scale.setScalar(worldMetre);root.add(body);world.add(root);
     const shell=new T.MeshPhysicalMaterial({color:0xeaf4f5,metalness:.13,roughness:.30,clearcoat:.54});
     const seal=new T.MeshStandardMaterial({color:0x223846,metalness:.38,roughness:.43});
     const glass=new T.MeshPhysicalMaterial({color:0x07151c,emissive:0x061117,metalness:.14,roughness:.24,clearcoat:.65});
@@ -243,11 +243,17 @@
     }
     function leave(){current=goal=previousOwner=formation=previousCar=null;root.visible=false;trail.length=0;salute=0;}
     function dispose(){
-      leave();scene.remove(root);
+      leave();world.remove(root);
       const geometries=new Set(),materials=new Set();
       root.traverse(o=>{if(o.isMesh){geometries.add(o.geometry);materials.add(o.material);}});
       for(const g of geometries)g.dispose();
       for(const m of materials)m.dispose();
     }
-    return {arrive,update,insideCar,restoreInCar,greet(){if(!current)return false;salute=1.8;return true;},leave,dispose};
+    function followOnPlanet(x,y,z,yaw,dt){
+      elapsed+=dt;root.visible=true;root.position.set(x,y,z);
+      body.position.y=1.02+.054*Math.sin(elapsed*2.65);
+      body.rotation.set(.025*Math.sin(elapsed*2.65),yaw,.022*Math.sin(elapsed*1.8));
+      shadow.position.y=.012;
+    }
+    return {arrive,update,followOnPlanet,insideCar,restoreInCar,greet(){if(!current)return false;salute=1.8;return true;},leave,dispose};
   }

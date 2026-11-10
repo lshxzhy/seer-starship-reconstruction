@@ -1,6 +1,6 @@
   // Player equipment. The 2009 equip portrait shows paired red trunnions,
   // gold motor cases, green dials and a tapered steel cutter on each flank.
-  function createMiningDrill() {
+  function createMiningDrill(world=scene) {
     const root=new T.Group(),heads=[],motors=[];
     root.name='挖矿钻头 · 两侧挂装';root.visible=false;root.matrixAutoUpdate=false;
     const paint=(color,roughness,metalness)=>new T.MeshStandardMaterial({
@@ -66,7 +66,7 @@
       const bit=new T.Group();bit.name='螺旋切削刃';bit.position.y=-.157;motor.add(bit);heads.push(bit);
       mount(bit,core,materials.steel);mount(bit,flight,materials.blade);
     }
-    scene.add(root);
+    world.add(root);
     let equipped=false,timeLeft=0;
     return {
       set(value){
@@ -89,6 +89,6 @@
         }
       },
       hide(){root.visible=false;timeLeft=0;},
-      dispose(){scene.remove(root);for(const g of owned)g.dispose();for(const m of Object.values(materials))m.dispose();}
+      dispose(){world.remove(root);for(const g of owned)g.dispose();for(const m of Object.values(materials))m.dispose();}
     };
   }

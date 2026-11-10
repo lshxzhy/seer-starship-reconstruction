@@ -27,14 +27,15 @@ population = root / 'src' / 'population'
 scripts = [viewer/'start.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
 scripts.extend(ship/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
 scripts.extend([habitat/'exterior-scale.js', ship/'interior.js', habitat/'registry.js', habitat/'kit.js'])
-scripts.extend(habitat/name for name in ('engineering.js','science.js','civic.js','crew.js'))
+scripts.extend(habitat/name for name in ('engineering.js','science.js','transporter.js','civic.js','crew.js'))
 scripts.extend([population/'berths.js',habitat/'lift-plant.js',habitat/'installation.js',habitat/'layout-record.js',
                 population/'robot.js',population/'population.js',population/'mining-drill.js',population/'player.js',
                 population/'super-nono.js',population/'personal-flyer.js'])
 scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
                 viewer/'locker-record.js',viewer/'pilot-locker.js',viewer/'wayfinding.js',viewer/'ship-map.js',
                 viewer/'inventory.js',viewer/'exchange.js',viewer/'flight-deck.js',viewer/'lift-ride.js',
-                viewer/'boarding.js',viewer/'explore.js'])
+                viewer/'boarding.js',root/'src'/'galaxy'/'klose-scenery.js',root/'src'/'galaxy'/'klose-surface.js',
+                root/'src'/'galaxy'/'expedition.js',viewer/'explore.js'])
 source = '\n'.join(path.read_text('utf-8') for path in scripts)
 publish_text(output/'seer-model.js',source)
 layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + '</style>'
