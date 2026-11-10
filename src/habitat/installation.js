@@ -603,13 +603,13 @@
     function roomAt(deck,x,z){
       return rooms.find(r=>r.level===deck.id&&Math.abs(x-r.center[0])<=r.spec.width/2&&Math.abs(z-r.center[2])<=r.spec.depth/2);
     }
-    const bodySamples=Array.from({length:12},(_,i)=>[Math.cos(i*Math.PI/6)*bodyRadius,Math.sin(i*Math.PI/6)*bodyRadius]);
-    function canStand(p){
+    const footprintDirections=Array.from({length:12},(_,i)=>[Math.cos(i*Math.PI/6),Math.sin(i*Math.PI/6)]);
+    function canStand(p,radius=bodyRadius){
       const deck=floorFor(p);
       if(!deck || !Number.isFinite(p.x)||!Number.isFinite(p.z)||!Number.isFinite(p.y)||Math.abs(p.y-deck.floorY)>.8)return false;
-      if(!bodySamples.every(([ox,oz])=>deck.rects.some(r=>within(r,p.x+ox,p.z+oz))))return false;
+      if(!footprintDirections.every(([ox,oz])=>deck.rects.some(r=>within(r,p.x+ox*radius,p.z+oz*radius))))return false;
       const ward=crewBerths.zoneAt(p);
-      if(ward && !crewBerths.clearsPedestal(p,ward,bodyRadius))return false;
+      if(ward && !crewBerths.clearsPedestal(p,ward,radius))return false;
       const room=roomAt(deck,p.x,p.z);
       if(room){
         buildRoom(room);
@@ -617,7 +617,7 @@
         const lx=(p.x-room.center[0])*orientation,lz=(p.z-room.center[2])*orientation;
         for(const block of room.group.userData.blocks||[]){
           const dx=Math.max(0,Math.abs(lx-block.x)-block.w/2),dz=Math.max(0,Math.abs(lz-block.z)-block.d/2);
-          if(dx*dx+dz*dz < bodyRadius*bodyRadius)return false;
+          if(dx*dx+dz*dz < radius*radius)return false;
         }
       }
       return true;
@@ -635,7 +635,7 @@
       }
       throw new Error(room.name+'入口净空不足');
     }
-    function move(p,dx,dz){
+    function move(p,dx,dz,radius=bodyRadius,allow=null){
       const deck=floorFor(p);
       if(!deck||!Number.isFinite(dx)||!Number.isFinite(dz))return p;
       const next={...p,y:deck.floorY,level:deck.id};
@@ -643,11 +643,12 @@
       if(distance<1e-7)return next;
       // Divide a long frame step into much shorter segments than a door jamb.
       const steps=Math.max(1,Math.ceil(distance/.26));
+      const clear=q=>canStand(q,radius)&&(!allow||allow(next,q));
       for(let i=0;i<steps;i++){
         const x=next.x+dx/steps,z=next.z+dz/steps;
-        if(canStand({...next,x,z})){next.x=x;next.z=z;continue;}
-        if(canStand({...next,x}))next.x=x;
-        if(canStand({...next,z}))next.z=z;
+        if(clear({...next,x,z})){next.x=x;next.z=z;continue;}
+        if(clear({...next,x}))next.x=x;
+        if(clear({...next,z}))next.z=z;
       }
       return next;
     }

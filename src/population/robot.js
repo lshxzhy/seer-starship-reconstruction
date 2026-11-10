@@ -4,22 +4,66 @@
     const PI = Math.PI, TAU = PI * 2;
     const restCoreY = .955, ankleY = .177, hipX = .249, hipY = .539;
     const restLegLength = hipY - ankleY, faceAxisY = .051;
+    const glassZ = -.555, glassRadius = .349, glassDepth = .085;
     const paint = '$paint';
     const bronze = 0xc88b39, gold = 0xf1bf65, graphite = 0x35383d;
     const dark = 0x181b21, rubber = 0x23242a, steel = 0x8e9399;
     const hex = value => new T.Color(value).convertSRGBToLinear();
     const clamp = T.MathUtils.clamp;
+    // The portrait graphics are drawn once per expression and shared across rigs.
+    const faceMaterials=new Map();
+    function faceMaterial(frame) {
+      if (faceMaterials.has(frame)) return faceMaterials.get(frame);
+      const canvas=document.createElement('canvas');
+      canvas.width=canvas.height=512;
+      const ctx=canvas.getContext('2d');
+      ctx.scale(2,2);
+      const panel=ctx.createRadialGradient(108,91,12,128,128,134);
+      panel.addColorStop(0,'#20242b');
+      panel.addColorStop(.80,'#11151b');
+      panel.addColorStop(1,'#080b10');
+      ctx.fillStyle=panel;
+      ctx.fillRect(0,0,256,256);
+      const white=ctx.createLinearGradient(0,-82,0,82);
+      white.addColorStop(0,'#fffdf6');
+      white.addColorStop(.65,'#f7f7f2');
+      white.addColorStop(1,'#c1c8ca');
+      const half=frame==='half' || frame==='halfSmile';
+      const opening=frame==='closed'?.055:half?.53:1;
+      for (const sign of [-1,1]) {
+        ctx.save();
+        ctx.translate(128+sign*51,131);
+        ctx.scale(1,opening);
+        ctx.fillStyle=white;
+        ctx.beginPath();ctx.ellipse(0,0,48,82,0,0,TAU);ctx.fill();
+        if (frame!=='closed') {
+          ctx.translate(-sign*6,-10);
+          ctx.fillStyle='#11141a';
+          ctx.beginPath();
+          if (frame==='smile' || frame==='halfSmile') {
+            // The 2014 dialogue keeps the whites open and bends the dark pupils.
+            ctx.moveTo(-24,17);
+            ctx.bezierCurveTo(-20,-36,19,-38,24,17);
+            ctx.bezierCurveTo(12,-6,-8,-9,-24,17);
+            ctx.closePath();
+          } else ctx.ellipse(0,0,20,38,0,0,TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+      const map=new T.CanvasTexture(canvas);
+      map.encoding=T.sRGBEncoding;
+      const material=new T.MeshBasicMaterial({map,toneMapped:false});
+      faceMaterials.set(frame,material);
+      return material;
+    }
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: new T.MeshStandardMaterial({vertexColors:true, roughness:.33, metalness:.28}),
-      optic: new T.MeshStandardMaterial({vertexColors:true, roughness:.24, metalness:.07, envMapIntensity:.45}),
-      signal: new T.MeshBasicMaterial({vertexColors:true, toneMapped:false}),
       alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.34, metalness:.78}),
       machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
       gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
-      display: new T.MeshStandardMaterial({vertexColors:true, roughness:.37, metalness:.05, envMapIntensity:.28}),
-      phosphor: new T.MeshStandardMaterial({vertexColors:true, roughness:.58, metalness:.02,
-        emissive:hex(0xb9c0c0), emissiveIntensity:.54}),
+      screen: faceMaterial('neutral'),
       // A single near-only glass surface catches the environment above the display stack.
       glass: new T.MeshPhysicalMaterial({vertexColors:true, roughness:.085, metalness:.05,
         clearcoat:1, clearcoatRoughness:.065, reflectivity:.59, envMapIntensity:.8,
@@ -58,10 +102,9 @@
         const sampled=spline.getPoints((points.length-1)*4);
         return profile([points[0],...sampled.map(p=>[Math.max(0,p.x),p.y])],88);
       }
-      const orb = new T.SphereGeometry(1,simple?12:64,simple?8:40);
       const drum = new T.CylinderGeometry(1,1,1,segments);
       const cube = new T.BoxGeometry(1,1,1);
-      primitives.push(orb,drum,cube);
+      primitives.push(drum,cube);
       const pose = new T.Object3D(), normalMatrix = new T.Matrix3();
       const point = new T.Vector3(), normal = new T.Vector3();
       function cast(bone,geometry,x,y,z,w,h,d,color,mode,rx=0,ry=0,rz=0) {
@@ -155,12 +198,10 @@
         }
       }
 
-      // The eyes are patches on the convex glass rather than separate eyeballs.
-      const faceY = faceAxisY, glassZ = -.555, glassRadius = .349, glassDepth = .085;
+      const faceY = faceAxisY;
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
         [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]],simple?segments:88);
       coreShape(bezel,0,faceY,-.498,graphite,-PI/2);
-      cast('core',orb,0,faceY,glassZ,glassRadius,glassRadius,glassDepth,0x0c1017,simple?'optic':'display');
       if (!simple) {
         const lip=profile([[.338,.067],[.350,.067],[.353,.070],[.352,.075],
           [.348,.077],[.343,.077],[.339,.074],[.338,.067]],88);
@@ -183,40 +224,11 @@
         primitives.push(cover);
         cast('core',cover,0,faceY,glassZ,glassRadius,glassRadius,glassDepth+.031,0x12181b,'glass');
       }
-      function lensMark(cx,cy,rx,ry,clearance,color,mode) {
-        const positions=[], indices=[], colors=[];
-        const sides=simple?16:40, rings=simple?3:7;
-        function vertex(x,y,r) {
-          const dome=Math.sqrt(Math.max(0,1-(x*x+y*y)/(glassRadius*glassRadius)));
-          const relief=simple?0:(1-r*r)*.005;
-          positions.push(x,faceY+y,glassZ-glassDepth*dome-clearance-relief);
-          if (!simple) {
-            const shade=1-.28*r*r*r*r;
-            colors.push(shade,shade,Math.min(1,shade+.012));
-          }
-        }
-        vertex(cx,cy,0);
-        for(let row=1;row<=rings;row++) {
-          for(let i=0;i<sides;i++) {
-            const a=i*TAU/sides, r=row/rings;
-            vertex(cx+rx*r*Math.cos(a),cy+ry*r*Math.sin(a),r);
-            const outer=1+(row-1)*sides+i, next=1+(row-1)*sides+(i+1)%sides;
-            if(row===1) indices.push(0,next,outer);
-            else indices.push(outer-sides,next,outer,next-sides,next,outer-sides);
-          }
-        }
-        const geometry=new T.BufferGeometry();
-        geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
-        if (colors.length) geometry.setAttribute('color',new T.Float32BufferAttribute(colors,3));
-        geometry.setIndex(indices);
-        geometry.computeVertexNormals();
-        primitives.push(geometry);
-        cast('core',geometry,0,0,0,1,1,1,color,mode);
-      }
-      for (const sign of [-1,1]) {
-        lensMark(sign*.139,-.009,.131,.223,.003,0xfaf9f3,simple?'signal':'phosphor');
-        lensMark(sign*.121,.018,.054,.103,simple?.006:.013,0x101216,simple?'optic':'display');
-      }
+      const screen=new T.SphereGeometry(1,simple?12:48,simple?8:32,PI,PI);
+      const pos=screen.getAttribute('position'), uv=screen.getAttribute('uv');
+      for (let i=0;i<pos.count;i++) uv.setXY(i,(1-pos.getX(i))/2,(1+pos.getY(i))/2);
+      screen.scale(glassRadius,glassRadius,glassDepth);
+      screen.translate(0,faceY,glassZ);
 
       const sole = profile([[0,0],[.94,0],[1,.022],[1,.032],[.94,.05],[0,.05]]);
       const shoe = smoothProfile([[0,0],[.95,0],[1,.018],[.99,.044],[.91,.075],[.72,.101],
@@ -254,6 +266,7 @@
         entries.push({bone:entry.bone,family:entry.family,geometry});
       }
       for (const geometry of primitives) geometry.dispose();
+      entries.push({bone:'core',family:'screen',geometry:screen});
       templates.set(simple,entries);
       return entries;
     }
@@ -271,13 +284,17 @@
     const down = new T.Vector3(0,-1,0), axis = new T.Vector3();
     function stepLength(speed) {return .68+.22*clamp(Math.abs(speed)/3.2,0,1);}
     function phaseStep(speed,dt) {return TAU*Math.abs(speed)*dt/stepLength(speed);}
-    function applyPose(rig,phase,speed,idleTime) {
+    function applyPose(rig,phase,speed,idleTime,riding=false) {
       const v=Math.abs(speed), weight=clamp(v/.38,0,1), run=clamp((v-1.5)/2.5,0,1);
       const stance=.55-.085*run, reach=stepLength(speed)*stance*.5;
       const bones=rig.bones, core=bones.core;
       core.position.set(0,restCoreY+.006*Math.sin(idleTime*2)*(1-weight)-.014*Math.cos(phase*2)*weight,0);
       core.rotation.set(-.042*run*weight,rig.turn+.014*Math.sin(idleTime*.74)*(1-weight),
         .019*Math.sin(phase)*weight);
+      if(riding){
+        core.position.y-=.11;
+        core.position.z=.055;
+      }
       for(const sign of [-1,1]) {
         const side=sign<0?'L':'R', leg=bones['leg'+side], foot=bones['foot'+side];
         const t=((phase/TAU+(sign>0?.5:0))%1+1)%1;
@@ -285,7 +302,7 @@
         const blend=swing*swing*swing*(10+swing*(-15+6*swing));
         const z=(t<stance?-reach+2*reach*t/stance:reach*(1-2*blend))*weight;
         const lift=Math.sin(PI*swing)*(.070+.035*run)*weight;
-        foot.position.set(sign*hipX,ankleY+lift,z);
+        foot.position.set(sign*hipX,ankleY+lift,riding?-.11:z);
         foot.rotation.set(-.10*Math.sin(TAU*swing)*weight,-sign*.13,0);
         // The sleeve spans both endpoints while the grounded shoe is stationary.
         leg.position.set(sign*hipX,hipY-restCoreY,0).applyQuaternion(core.quaternion).add(core.position);
@@ -297,23 +314,48 @@
     function create(color=0xcb4d3a,options={}){
       const rig=skeleton();
       rig.root.name=options.name||'赛尔机器人';
+      rig.expression='neutral';
+      rig.faceFrame='neutral';
       for(const entry of template(options.simple===true)){
         const m=entry.family==='paint'?suitMaterial(color,options.simple===true):skinMaterials[entry.family];
         const mesh=new T.Mesh(entry.geometry,m);
-        mesh.castShadow=options.castShadow!==false && entry.family!=='glass';
-        mesh.receiveShadow=entry.family!=='glass';
+        const opaqueBody=entry.family!=='glass' && entry.family!=='screen';
+        mesh.castShadow=options.castShadow!==false && opaqueBody;
+        mesh.receiveShadow=opaqueBody;
+        if (entry.family==='screen') {
+          mesh.name='赛尔面盘 · 曲面显示屏';
+          rig.screen=mesh;
+        }
         rig.bones[entry.bone].add(mesh);
       }
       applyPose(rig,0,0,0);return rig;
     }
-    function animate(rig,phase,speed,dt=1/60){
+    function showFaceFrame(rig,frame){
+      if (rig.faceFrame===frame) return;
+      rig.screen.material=faceMaterial(frame);
+      rig.faceFrame=frame;
+    }
+    function setExpression(rig,expression){
+      if (!rig || !rig.screen || (expression!=='neutral' && expression!=='smile')) return false;
+      rig.expression=expression;
+      showFaceFrame(rig,expression);
+      return true;
+    }
+    function animate(rig,phase,speed,dt=1/60,riding=false){
       const step=clamp(Number.isFinite(dt)?dt:0,0,.12);
       const yaw=rig.root.rotation.y;
       const angle=Math.atan2(Math.sin(yaw-rig.lastYaw),Math.cos(yaw-rig.lastYaw));
       const target=step>0?clamp(angle/step*.07,-.23,.23):0;
       rig.turn+=(target-rig.turn)*(1-Math.exp(-step*12));
       rig.lastYaw=yaw;rig.clock+=step;
-      applyPose(rig,phase,speed,rig.clock);
+      applyPose(rig,phase,speed,rig.clock,riding);
+      const blink=rig.clock%4.3;
+      let frame=rig.expression;
+      if (blink>=3.80 && blink<3.98) {
+        if (blink>=3.84 && blink<3.93) frame='closed';
+        else frame=rig.expression==='smile'?'halfSmile':'half';
+      }
+      showFaceFrame(rig,frame);
     }
     function createBatch(capacity){
       const root=new T.Group(),rig=skeleton();
@@ -326,7 +368,7 @@
           mesh.setColorAt(0,new T.Color(1,1,1));
           mesh.instanceColor.setUsage(T.DynamicDrawUsage);
         }
-        mesh.count=0;mesh.frustumCulled=false;mesh.receiveShadow=true;
+        mesh.count=0;mesh.frustumCulled=false;mesh.receiveShadow=entry.family!=='screen';
         mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);root.add(mesh);
         return {mesh,bone:rig.bones[entry.bone],tinted:entry.family==='paint'};
       });
@@ -353,5 +395,5 @@
       }
       return {root,write,finish,capacity};
     }
-    return {create,animate,createBatch,phaseStep,height:1.70,eyeHeight:restCoreY+faceAxisY};
+    return {create,animate,createBatch,phaseStep,setExpression,height:1.70,eyeHeight:restCoreY+faceAxisY};
   })();

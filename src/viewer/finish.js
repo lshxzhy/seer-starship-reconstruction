@@ -70,8 +70,8 @@
     triangle.setAttribute('position',new T.Float32BufferAttribute([-1,-1,0,3,-1,0,-1,3,0],3));
     const mesh=new T.Mesh(triangle,material);mesh.frustumCulled=false;fullscreen.add(mesh);
     let target=null;
-    function render(fine,radius) {
-      if(!supported || !fine){renderer.render(scene,camera);return;}
+    function render(radius) {
+      if(!supported){renderer.render(scene,camera);return;}
       renderer.getDrawingBufferSize(size);
       if(!target) {
         target=new T.WebGLRenderTarget(size.x,size.y,{minFilter:T.LinearFilter,magFilter:T.LinearFilter,

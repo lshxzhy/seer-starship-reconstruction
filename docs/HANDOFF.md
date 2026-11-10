@@ -10,7 +10,9 @@
 |科研与指挥| `src/habitat/science.js` |船长室、实验室、资料室、瞭望舱|
 |动力与检修| `src/habitat/engineering.js` |动力室、机械室、发明室|
 |全舰总装| `src/habitat/installation.js`、`kit.js`、`layout-record.js` |甲板、公共门洞、通道、碰撞、坐标及交通；跨舱连通由此处统一处理|
-|赛尔与驻舱| `src/population/robot.js`、`population.js`、`player.js`、`berths.js` |机体、步态、船员近场实例、动作输入和充能位|
+|赛尔与驻舱| `src/population/robot.js`、`population.js`、`player.js`、`berths.js` |机体、屏面和步态、船员近场实例、玩家镜头与充能位|
+|随行伙伴| `src/population/super-nono.js` |第一代初级超能 NoNo 的白壳、黑屏、青翼、伴行与致意|
+|滑翔翼与驾驶| `src/population/personal-flyer.js`、`src/viewer/personal-flight.js` |前者负责实体、踏板高度和悬浮表现，后者负责取出、登乘、净空、升降、着陆和存档|
 |操控与视图| `src/viewer/boarding.js`、`explore.js`、`work/seer-layout.html` |登舰、视角、定位和全舰浏览|
 |舰体和装配| `work/hull-next.js`、`bridge-and-pod.js`、`machinery.js`、`src/habitat/exterior-scale.js`、`work/assemble-seer.py` |舰壳、外构件、米制标尺和离线构建|
 
@@ -19,6 +21,14 @@
 舱室由稳定 ID 注册，例如 `cabinBuilders.teleport = function (kit) { ... }`。装配顺序由构建脚本定义。局部原点在舱室地面中心，单位为米，Y 向上，+Z 指门口。公共门净宽 3.4 米、高 3.1 米。每个舱传入自己的 W、D、H。公共壳体负责地面和门洞；舱内大型设备在 `kit.block(x,z,w,d)` 登记占地，使玩家能从入口走到工位并绕回。新开出口须同步设计两端落点、朝向和碰撞。
 
 玩家和船员共用 `seerRobots` 模板。第一人称眼位读 `eyeHeight`，步态读 `phaseStep`。需要改体型时同时看正面剪影、侧面轮廓、鞋底触地和光学面盘高度。人口层只绘制近场实例，远程船员的位置由同一时钟与路线求得。
+
+v0.4.0 的玩家面盘由 `seerRobots.setExpression(rig, 'smile')` 切到笑眼，传入 `'neutral'` 恢复平视。玩家的步态更新同时推进眨眼，批量船员共用常态屏。2014 年对白画面的笑眼可以作为绘制依据，地图上原版表情菜单的触发方式还有待录到。[面盘表情图证](面盘表情图证.md)
+
+伙伴由 `createSuperNono(worldMetre)` 单独创建。登舰和换层使用 `arrive` 安排队形，逐帧 `update` 读取玩家位置、视角、骑乘状态和踏板高度，`greet` 触发致意。更改绕障或飞行队形时，保留同一只 NoNo 在徒步与驾驶之间的连续性。[超能 NoNo 图证](超能NoNo图证.md)
+
+滑翔翼以甲板坐标定位，局部 −Z 为机鼻，中央为双脚落点。实体的 `update` 返回相对当前甲板标高的踏面高度，包含地面构件、飞行高度和悬浮起伏。驾驶时赛尔压低机体，双脚落在踏板上。玩家、镜头和伙伴共用这项高度基准。机身宽约 2.98 米、长约 2.26 米，最远翼端距中心约 1.548 米。碰撞圆半径取 1.60 米，允许低空居中穿过净宽 3.40 米的标准舱门。制作新舱时应在 `kit.block` 登记机柜占地，给取出、下机留下开阔甲板。[单人飞行器图证](单人飞行器图证.md)
+
+本期键位由 `boarding.js` 统一接入。步行和快行分别为 3.6 和 6.8 米/秒，滑翔翼正常与加速上限分别为 8.2 和 11.5 米/秒。F 根据状态取出、登乘或着陆，驾驶时空格上升、C 下降。触屏按钮复用同一套取出和升降操作。画质固定为精细。后续造型或操作补证接在 [#6](https://github.com/lshxzhy/seer-starship-reconstruction/issues/6)。
 
 角色资料从 [characters.json](../src/ai/characters.json) 读取。稳定角色 ID 对应联系人，`departmentId` 对应功能分组，`roomId` 对应模型舱室；外部联系人可没有舱室。原作依据写进 `facts` 和 `sources`，项目拟定的语气及专长写进 `persona` 和 `expertise`。补资料时同步[角色说明](舰上组织与角色.md)。普通船员复用 `crew`，会话按实际 SE 编号区分。
 

@@ -28,9 +28,8 @@
   const viewButtons=[...root.querySelectorAll('[data-view]')];
   for(const [i,deck] of regions.entries())deckSelect.add(new Option(deck.name,String(i)));
   const state={mode:'board',deck:1,room:'',located:'',rotate:false,wire:false,
-    azimuth:-.16,elevation:.20,distance:18.7,quality:'fine'};
+    azimuth:-.16,elevation:.20,distance:18.7};
   const finishing=createFrameFinish();
-  const qualitySelect=root.querySelector('[data-quality]');
   const target=new T.Vector3();
   const raycaster=new T.Raycaster();
   let selected=null, frame=0, lastTime=0, disposed=false;
@@ -74,7 +73,6 @@
     const detailed=boardable();
     const located=cut && habitat.byId.get(state.located);
     reflections.select(aboard || Boolean(detailed));
-    qualitySelect.value=state.quality;
     locator.visible=Boolean(located);
     if(located){
       const {width,height,depth}=located.spec;
@@ -143,7 +141,6 @@
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
     state.mode=saved.mode;
-    state.quality=saved.quality==='fast'?'fast':'fine';
     state.located=habitat.byId.has(saved.located)?saved.located:'';
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
     state.room=(state.mode==='board'?habitat.byId.has(saved.room):regions[state.deck].rooms.some(r=>r.id===saved.room))?saved.room:'';
@@ -165,7 +162,7 @@
     frame=0;if(disposed)return;
     if(state.mode==='board'){
       const walking=boarding.frame(time);
-      finishing.render(state.quality==='fine',unitMetre*.68);
+      finishing.render(unitMetre*.68);
       if(walking)requestDraw();
       return;
     }
@@ -176,18 +173,17 @@
     camera.position.set(target.x+Math.sin(state.azimuth)*horizontal,
       target.y+Math.sin(state.elevation)*distance,target.z+Math.cos(state.azimuth)*horizontal);
     camera.lookAt(target);
-    finishing.render(state.quality==='fine' && !state.wire,boardable()?unitMetre*.68:.115);
+    if(state.wire)renderer.render(scene,camera);
+    else finishing.render(boardable()?unitMetre*.68:.115);
     if(state.rotate)requestDraw();
   }
   function requestDraw(){if(!disposed && !frame)frame=requestAnimationFrame(draw);}
   function resize(){
     const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
-    const fine=state.quality==='fine';
-    const ratio=Math.min(window.devicePixelRatio||1,fine?2:1,Math.sqrt((fine?2800000:1050000)/(w*h)));
+    const ratio=Math.min(window.devicePixelRatio||1,2,Math.sqrt(2800000/(w*h)));
     if(renderer.getPixelRatio()!==ratio)renderer.setPixelRatio(ratio);
     renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestDraw();
   }
-  qualitySelect.addEventListener('change',()=>{state.quality=qualitySelect.value;resize();save();});
   const fullscreenButton=root.querySelector('[data-action=fullscreen]');
   if(document.fullscreenEnabled && root.requestFullscreen){
     fullscreenButton.hidden=false;

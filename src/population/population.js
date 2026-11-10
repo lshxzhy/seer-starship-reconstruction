@@ -445,13 +445,16 @@
       }
       return match?{...getById(match.i+1),distance:Math.sqrt(best)}:null;
     }
-    function constrainStep(p,next){
-      if(!active||!nearby.length||p.level!==next.level)return next;
-      const allowed=q=>nearby.every(n=>{
+    function clearsCrew(p,q,radius=.43){
+      if(!active||!nearby.length||p.level!==q.level)return true;
+      return nearby.every(n=>{
         if(n.p.level!==q.level)return true;
         const dist=(q.x-n.p.x)**2+(q.z-n.p.z)**2;
-        return dist>=.84**2 || dist>=(p.x-n.p.x)**2+(p.z-n.p.z)**2;
+        return dist>=(radius+.41)**2 || dist>=(p.x-n.p.x)**2+(p.z-n.p.z)**2;
       });
+    }
+    function constrainStep(p,next){
+      const allowed=q=>clearsCrew(p,q);
       if(allowed(next))return next;
       // Globe movement may already have slid along a wall; recheck both
       // axes before accepting a second slide along a crew member.
@@ -460,7 +463,7 @@
       }
       return p;
     }
-    return {update,setActive,getById,nearest,constrainStep,
+    return {update,setActive,getById,nearest,clearsCrew,constrainStep,
       dispose(){batch.root.remove(contacts.mesh);contacts.dispose();},
       get summary(){const onDuty=1+tasks.length+rotatingRows;
         return {total,npc:total-1,capacity:residences.capacity,visible:drawnCount,active:onDuty,charging:total-onDuty};}

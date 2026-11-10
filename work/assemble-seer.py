@@ -28,8 +28,10 @@ scripts.extend(work/name for name in ('hull-next.js','bridge-and-pod.js','machin
 scripts.extend([habitat/'exterior-scale.js', work/'interior.js', habitat/'registry.js', habitat/'kit.js'])
 scripts.extend(habitat/name for name in ('engineering.js','science.js','civic.js','crew.js'))
 scripts.extend([population/'berths.js',habitat/'installation.js',habitat/'layout-record.js',
-                population/'robot.js',population/'population.js',population/'player.js'])
-scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'boarding.js',viewer/'explore.js'])
+                population/'robot.js',population/'population.js',population/'player.js',
+                population/'super-nono.js',population/'personal-flyer.js'])
+scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
+                viewer/'boarding.js',viewer/'explore.js'])
 source = '\n'.join(path.read_text('utf-8') for path in scripts)
 publish_text(output/'seer-model.js',source)
 layout = (work/'seer-layout.html').read_text('utf-8')

@@ -14,7 +14,6 @@
       <button type="button" class="btn" data-view="section" aria-pressed="false">纵剖</button>
       <button type="button" class="btn" data-view="deck" aria-pressed="false">分层</button>
     </div>
-    <label class="seer-quality">画质 <select class="form-select" data-quality><option value="fine">精细</option><option value="fast">流畅</option></select></label>
     <div class="seer-pickers" hidden>
       <label>层区 <select class="form-select" data-deck></select></label>
       <label>舱室 <select class="form-select" data-room></select></label>
@@ -24,13 +23,18 @@
       <label>目的地 <select class="form-select" data-jump-room></select></label>
       <label>视角 <select class="form-select" data-perspective><option value="follow">跟随赛尔</option><option value="eye">第一人称</option></select></label>
       <button type="button" class="btn" data-face-player>看正面</button>
+      <button type="button" class="btn" data-smile aria-pressed="false">微笑</button>
+      <button type="button" class="btn" data-nono>招呼超能 NoNo</button>
+      <button type="button" class="btn" data-flyer>驾驶滑翔翼</button>
+      <button type="button" class="btn" data-climb hidden>升高</button>
+      <button type="button" class="btn" data-descend hidden>降低</button>
       <button type="button" class="btn" data-inspect-workstation hidden>近看设备</button>
       <button type="button" class="btn" data-locate-room>全舰定位</button>
       <label data-lift-control hidden>乘电梯 <select class="form-select" data-lift></select></label>
     </div>
   </div>
   <div class="seer-stage">
-    <canvas role="img" aria-label="操控玩家赛尔 SE-00001。WASD 或屏幕方向键行走，拖动环视，V 切换跟随与第一人称；驻舱层可通过目的地列表或主升降机抵达。">需要 WebGL 才能显示三维模型。</canvas>
+    <canvas role="img" aria-label="操控赛尔 SE-00001。WASD 或屏幕方向键移动，Shift 加速，拖动环视，V 切换视角。F 登乘或着陆，空格上升，C 下降。可用按钮微笑或招呼超能 NoNo。">需要 WebGL 才能显示三维模型。</canvas>
     <span class="seer-tag" data-tag hidden></span>
     <div class="seer-motion" data-move-pad role="group" aria-label="按住移动" hidden>
       <button class="btn" type="button" data-step="KeyW" aria-label="前进">↑</button>
@@ -43,6 +47,7 @@
   <p class="seer-detail" data-detail aria-live="polite"></p>
   <div class="seer-footer text-small text-muted"><span data-controls-hint>拖动转头 · W/A/S/D 移动 · Shift 快行</span><span data-status></span></div>
   <p class="seer-manifest text-small text-muted" data-population hidden></p>
+  <p class="seer-manifest text-small text-muted">非官方同人三维复原。项目原创程序和文档采用 MIT 许可，原作名称、角色形象及游戏美术归相应权利人。</p>
 </div>
 <style>
   #seer-starship-3d { width:100%; color:var(--foreground) }

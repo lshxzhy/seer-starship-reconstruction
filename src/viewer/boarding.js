@@ -14,7 +14,7 @@
     const keys = new Set();
     const touchKeys = new Map();
     const keyCodes = new Set(['KeyW','KeyS','KeyA','KeyD','ArrowUp','ArrowDown',
-      'ArrowLeft','ArrowRight','PageUp','PageDown','ShiftLeft','ShiftRight']);
+      'ArrowLeft','ArrowRight','PageUp','PageDown','ShiftLeft','ShiftRight','Space','KeyC']);
     let active = false;
     let pose = null;
     let yaw = 0, pitch = 0, frameTime = 0;
@@ -24,6 +24,10 @@
     const worldMetre = habitat.worldPosition(1,0,0).distanceTo(worldOrigin);
     const pilot=createSeerPilot(worldMetre);
     const population=createSeerPopulation();
+    const companion=createSuperNono(worldMetre);
+    const flight=createPersonalFlight(worldMetre,population);
+    const walkSpeed=3.6,runSpeed=6.8;
+    let smiling=false;
     const crewDialogue=createCrewDialogue({
       context:()=>({roomId:currentRoomId,location:tag.textContent,
         nearby:active&&pose?population.nearest(pose,4):null}),
@@ -35,6 +39,10 @@
     });
     const perspective=root.querySelector('[data-perspective]');
     const inspect=root.querySelector('[data-face-player]');
+    const smile=root.querySelector('[data-smile]');
+    const greet=root.querySelector('[data-nono]');
+    const mount=root.querySelector('[data-flyer]');
+    const climb=root.querySelector('[data-climb]'),descend=root.querySelector('[data-descend]');
     const detailVisit=root.querySelector('[data-inspect-workstation]');
     const populationText=root.querySelector('[data-population]');
     const idleClock={timer:0,lastReadout:-1};
@@ -194,6 +202,42 @@
       crewDialogue.close();
       yaw=pilot.facing+Math.PI;pitch=0;requestFrame();focusFlightControls();persist();
     });
+    function setSmile(on){
+      smiling=on;pilot.setSmile(on);
+      smile.setAttribute('aria-pressed',String(on));
+      smile.textContent=on?'恢复平视':'微笑';
+    }
+    smile.addEventListener('click',()=>{
+      if(!active)return;
+      cameraStyle('follow');setSmile(!smiling);
+      yaw=pilot.facing+Math.PI;pitch=0;focusFlightControls();requestFrame();persist();
+    });
+    greet.addEventListener('click',()=>{
+      if(!active)return;
+      crewDialogue.close();companion.greet();focusFlightControls();requestFrame();
+    });
+    const walkHint='W/A/S/D 行走 · Shift 快行 · 拖动环视 · V 切换视角';
+    const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
+    function flightControls(){
+      const label=flight.label(pose);
+      if(mount.textContent!==label)mount.textContent=label;
+      mount.disabled=flight.landing;
+      climb.hidden=descend.hidden=!flight.mounted;
+      hint.textContent=flight.mounted?flyHint:walkHint;
+      status.textContent=flight.mounted?'滑翔翼 · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
+    }
+    function operateFlyer(){
+      if(!active||flight.landing)return;
+      crewDialogue.close();clearInputs();
+      const result=flight.interact(pose,yaw);
+      if(result.pose){pose=result.pose;pilot.arrive(pose,yaw);habitat.updateLOD(pose);refreshPlace(true);}
+      info.textContent=result.notice;
+      flightControls();focusFlightControls();requestFrame();persist();
+    }
+    mount.addEventListener('click',operateFlyer);
+    for(const [button,step] of [[climb,.8],[descend,-.8]])button.addEventListener('click',()=>{
+      flight.changeHeight(step,pose);focusFlightControls();requestFrame();persist();
+    });
     canvas.addEventListener('wheel',e=>{
       if(!active || pilot.style!=='follow')return;
       e.preventDefault();
@@ -213,6 +257,7 @@
       touchKeys.clear();
       frameTime = 0;
       lookDrag = null;
+      flight.stop();
     }
     function has(code) {
       if (keys.has(code)) return true;
@@ -280,7 +325,9 @@
       boardControls.hidden=false;
       movePad.hidden=false;
       stage.dataset.boarded='true';
-      hint.textContent='W/A/S/D 行走 · Shift 快行 · 拖动环视 · V 切换视角';
+      flight.restore(saved?.flight,pose);
+      if(typeof saved?.smiling==='boolean')setSmile(saved.smiling);
+      companion.arrive(pose,yaw);flightControls();
       refreshPlace(true);
       requestFrame();
     }
@@ -289,6 +336,7 @@
       crewDialogue.setBoarded(false);
       active=false;clearInputs();restoreExteriorRig();clearTimeout(idleClock.timer);
       pilot.leave();population.setActive(false);populationText.hidden=true;
+      companion.leave();flight.leave();
       habitat.setActive(false);
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
@@ -307,21 +355,31 @@
       let forward = Number(has('KeyW')||has('ArrowUp'))-Number(has('KeyS')||has('ArrowDown'));
       let strafe = Number(has('KeyD')) - Number(has('KeyA'));
       const magnitude = Math.hypot(forward,strafe);
-      if (magnitude && dt) {
-        const step = dt*(has('ShiftLeft')||has('ShiftRight')?3.85:1.85)/magnitude;
-        forward*=step;strafe*=step;
-        const sin = Math.sin(yaw), cos = Math.cos(yaw);
-        const next=habitat.move(pose,strafe*cos-forward*sin,-strafe*sin-forward*cos);
-        pose=population.constrainStep(pose,next);
+      const sin=Math.sin(yaw),cos=Math.cos(yaw),norm=magnitude||1;
+      const dx=(strafe*cos-forward*sin)/norm,dz=(-strafe*sin-forward*cos)/norm;
+      const boost=has('ShiftLeft')||has('ShiftRight');
+      if(flight.mounted){
+        flight.changeHeight((Number(has('Space'))-Number(has('KeyC')))*2.2*dt,pose);
+        const result=flight.drive(pose,dx,dz,boost,dt);
+        pose=result.pose;
+        if(result.steppedOff){pilot.arrive(pose,yaw);clearInputs();persist();}
+        habitat.updateLOD(pose);refreshPlace();
+        if(result.notice)info.textContent=result.notice;
+      }else if(magnitude && dt){
+        const step=dt*(boost?runSpeed:walkSpeed);
+        pose=habitat.move(pose,dx*step,dz*step,.43,
+          (from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
         habitat.updateLOD(pose);
         refreshPlace();
       }
-      marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight,pose.z));
+      const ride=flight.draw(pose,dt);
+      companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0);
+      marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight+(ride?.footOffset||0),pose.z));
       nearFill.position.copy(marker);nearFill.position.y+=.35*worldMetre;
-      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight);
+      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride);
       pose.yaw=pilot.facing;
       population.update(pose,dt,sight);
-      if(time-idleClock.lastReadout>650){refreshPopulation();idleClock.lastReadout=time;}
+      if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
       if(!moving)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
       return moving;
     }
@@ -334,9 +392,9 @@
       const arrival=habitat.takeLift(pose,liftPicker.value);
       if (arrival) {
         crewDialogue.close();
-        clearInputs();pose=arrival;
+        flight.park();clearInputs();pose=arrival;
         if (Number.isFinite(arrival.yaw)) yaw=arrival.yaw;
-        pilot.arrive(pose,yaw);population.update(pose,0);
+        pilot.arrive(pose,yaw);companion.arrive(pose,yaw);population.update(pose,0);
         habitat.updateLOD(pose);refreshPlace(true);requestFrame();persist();
       }
       liftPicker.value='';focusFlightControls();
@@ -360,10 +418,13 @@
     const enabledKeys=e=>active && !e.ctrlKey && !e.metaKey && !e.altKey && keyCodes.has(e.code) && !/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName);
     root.addEventListener('keydown',e=>{
       if(crewDialogue.isOpen)return;
+      if(active&&e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)){
+        e.preventDefault();operateFlyer();return;
+      }
       if(active&&e.code==='KeyV'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!/^(SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)){
         e.preventDefault();cameraStyle(pilot.style==='follow'?'eye':'follow');requestFrame();persist();return;
       }
-      if (!enabledKeys(e)) return;
+      if (!enabledKeys(e) || (!flight.mounted && (e.code==='Space'||e.code==='KeyC'))) return;
       e.preventDefault();keys.add(e.code);requestFrame();
     });
     function endKey(e) {
@@ -389,8 +450,9 @@
         // A keyboard-activated movement button advances one short step.
         const along=btn.dataset.step==='KeyW'?.65:btn.dataset.step==='KeyS'?-.65:0;
         const across=btn.dataset.step==='KeyD'?.65:btn.dataset.step==='KeyA'?-.65:0;
-        const next=habitat.move(pose,across*Math.cos(yaw)-along*Math.sin(yaw),-across*Math.sin(yaw)-along*Math.cos(yaw));
-        pose=population.constrainStep(pose,next);
+        const dx=across*Math.cos(yaw)-along*Math.sin(yaw),dz=-across*Math.sin(yaw)-along*Math.cos(yaw);
+        if(flight.mounted)pose=flight.drive(pose,dx/.65,dz/.65,false,.12).pose;
+        else pose=habitat.move(pose,dx,dz,.43,(from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
         habitat.updateLOD(pose);refreshPlace();requestFrame();persist();
       });
     }
@@ -401,7 +463,7 @@
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       get roomId(){return currentRoomId;},
-      snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
-      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
+      snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;},
+      dispose(){crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }
