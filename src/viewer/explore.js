@@ -34,26 +34,44 @@
   const raycaster=new T.Raycaster();
   let selected=null, frame=0, lastTime=0, disposed=false;
   let stagedBoard=null, liveBoard=false, lastSaved='';
+  let stagedExpedition=null,parkedLanding=null;
   const recentSaves=[];
-  const boarding=createBoardingController(requestDraw,save);
-  const cockpit=createFlightDeck(boarding,id=>{
+  const shuttleAway=()=>parkedLanding?.vehicle?.phase==='landed';
+  const boarding=createBoardingController(requestDraw,save,shuttleAway);
+  function travelToShip(id,pose){
+    const trip=expedition.active?expedition.snapshot():null;
+    if(trip){
+      parkedLanding=trip.vehicle.phase==='landed'?{
+        origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId},vehicle:trip.vehicle,ramp:expedition.parkedRamp()}:null;
+    }
+    const passenger=trip?.origin.board||(liveBoard?boarding.snapshot():null);
+    stagedBoard={...passenger,roomId:id||'teleport',pose,yaw:pose?.yaw,pitch:pose?.yaw===undefined?undefined:.02,
+      facing:pose?.yaw,flight:passenger?.flight?{...passenger.flight,mounted:false}:undefined};
     Object.assign(state,{mode:'board',room:habitat.byId.has(id)?id:'',located:'',rotate:false,wire:false});
-    stagedBoard={roomId:id};
     frameSelection();syncScene();save();
-  },requestDraw);
-  let stagedExpedition=null;
+  }
+  function travelToPlanet(id){
+    const origin={roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
+    stagedExpedition={format:2,phase:'surface',mapDestination:id,origin,vehicle:parkedLanding?.vehicle,door:1};
+    parkedLanding=null;
+    Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
+    syncScene();canvas.focus({preventScroll:true});save();
+  }
+  const cockpit=createFlightDeck(boarding,travelToShip,requestDraw,travelToPlanet,()=>parkedLanding?.ramp);
   const expedition=createPlanetExpedition(requestDraw,save,origin=>{
     const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
     habitat.spawn(roomId);
     const berth=shipTransporters.boardingPose(habitat.byId.get(roomId),origin?.berthId);
     stagedBoard={...origin?.board,roomId};
     if(berth)Object.assign(stagedBoard,{pose:berth,yaw:berth.yaw,facing:berth.yaw,pitch:.025});
+    parkedLanding=null;
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
     syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
-  });
+  },()=>cockpit.openMap(null,true));
   root.querySelector('[data-embark]').addEventListener('click',()=>{
     const berth=boarding.station();
     if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
+    if(shuttleAway()){cockpit.openMap('shuttle-ramp');return;}
     stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'transfer'};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -174,6 +192,8 @@
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
     boarding.restorePack(saved.pack);
+    parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
+      ?saved.parkedLanding:null;
     state.mode=saved.mode;
     state.located=habitat.byId.has(saved.located)?saved.located:'';
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;
@@ -191,7 +211,7 @@
   }
   function save(){
     const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
-      expedition:state.mode==='planet'?expedition.snapshot():null};
+      expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding};
     lastSaved=JSON.stringify(privateContent);
     if(window.openai?.setWidgetState){
       recentSaves.push(lastSaved);

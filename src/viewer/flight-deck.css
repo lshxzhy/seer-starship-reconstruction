@@ -11,6 +11,7 @@
 .planet-atlas svg text{font:600 12px "Microsoft YaHei",sans-serif;fill:#eff9ee;paint-order:stroke;stroke:#122c30;stroke-width:3px;stroke-linejoin:round}
 .atlas-controls{padding:12px 14px;font-size:14px}.atlas-controls p{color:#c3d7cf}.atlas-controls label{display:block;color:#b0cfc7}
 .atlas-controls select{display:block;width:100%;margin-top:5px;border:1px solid #6a9190;background:#203e45;color:#eff9ee;padding:6px;border-radius:5px}
+.atlas-actions{display:flex;gap:5px;flex-wrap:wrap}.atlas-controls [data-browse-ship]{margin-top:10px}
 @container(max-width:540px){.planet-atlas .atlas-body{grid-template-columns:1fr}.planet-atlas svg{max-height:220px}.atlas-controls{padding:7px 11px}.atlas-controls p{margin:4px 0}}
 #seer-starship-3d [hidden]{display:none!important}
 .seer-stage {width:100%;height:clamp(390px,70vw,650px);position:relative;isolation:isolate;overflow:hidden;background:#101923;container-type:inline-size}

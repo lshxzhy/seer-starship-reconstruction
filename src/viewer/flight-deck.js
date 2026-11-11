@@ -1,14 +1,16 @@
-  function createFlightDeck(boarding,onTravel,requestFrame){
+  function createFlightDeck(boarding,onTravel,requestFrame,onPlanetTravel,parkedRamp){
     const overlay=root.querySelector('[data-overlay]'),dialog=overlay.querySelector('[role="dialog"]');
     const title=overlay.querySelector('[data-panel-title]'),dismiss=overlay.querySelector('[data-dismiss]');
     const dock=root.querySelector('.ship-dock'),triggers=[...dock.querySelectorAll('[data-console]')];
     const pages=new Map([...overlay.querySelectorAll('[data-page]')].map(p=>[p.dataset.page,p]));
-    const labels={map:'舰内地图',bag:'背包 · 储存箱',terminal:'舰载终端',exchange:'动力室 · 能源兑换台'};
+    const labels={map:'地图',bag:'背包 · 储存箱',terminal:'舰载终端',exchange:'动力室 · 能源兑换台'};
     let current=null,opener=null;
     const getState=()=>boarding.consoleState();
     const exchange=createSupplyExchange({container:pages.get('exchange'),getState,onDeliver:boarding.deliver,onClose:close});
     root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
-    const map=createShipMap({container:pages.get('map'),getState,onTravel:id=>{close(false);onTravel(id);focusPilot();},onClose:close});
+    const map=createShipMap({container:pages.get('map'),getState,parkedRamp,
+      onTravel:(id,pose)=>{close(false);onTravel(id,pose);canvas.focus({preventScroll:true});},
+      onPlanetTravel:id=>{close(false);onPlanetTravel(id);canvas.focus({preventScroll:true});}});
     const inventory=createPilotInventory({container:pages.get('bag'),getState,onUse:id=>{
       if(id==='map'||id==='locateDrill'){open('map',id==='locateDrill'?'machine':null);return;}
       boarding.useItem(id);
@@ -24,17 +26,17 @@
       if(focus)(opener||triggers[0]).focus({preventScroll:true});
       opener=null;requestFrame();
     }
-    function open(key,target=null){
-      if(stage.dataset.domain==='planet'||!pages.has(key)||boarding.commsOpen||boarding.inTransit)return;
+    function open(key,target=null,fromSurface=false){
+      if((stage.dataset.domain==='planet'&&!fromSurface)||!pages.has(key)||boarding.commsOpen||boarding.inTransit)return;
       if(key==='bag'&&!getState().active)return;
       if(key==='exchange'&&!getState().atExchange)return;
       if(current===key){close();return;}
-      if(!current)opener=triggers.find(b=>b.dataset.console===key);
+      if(!current)opener=fromSurface?root.querySelector('[data-atlas]'):triggers.find(b=>b.dataset.console===key);
       map.close();inventory.close();exchange.close();boarding.clearInputs();
       current=key;stage.dataset.consoleOpen=key;
       for(const [id,page] of pages)page.hidden=key!==id;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded',String(trigger.dataset.console===key));
-      overlay.hidden=false;title.textContent=labels[key];
+      overlay.hidden=false;title.textContent=fromSurface?'赛尔号舰内图':labels[key];
       if(key==='map')map.open(target);
       if(key==='bag')inventory.open();
       if(key==='exchange')exchange.open();
@@ -58,7 +60,7 @@
       if(e.target.matches('[data-perspective]')){close();focusPilot();}
     });
     function onKey(e){
-      if(stage.dataset.domain==='planet'||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+      if((stage.dataset.domain==='planet'&&!current)||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
       const el=e.target;
       if(el!==window&&el!==document&&el!==document.body&&el!==document.documentElement&&!root.contains(el))return;
       if(current&&e.key==='Tab'){
@@ -69,8 +71,8 @@
         }
         return;
       }
-      if(e.key==='Escape'&&current){
-        e.preventDefault();e.stopPropagation();close();return;
+      if((e.key==='Escape'||(current==='map'&&e.code==='KeyM'))&&current){
+        e.preventDefault();e.stopImmediatePropagation();close();return;
       }
       if(el.isContentEditable||el.closest?.('input,select,textarea,[role=textbox]'))return;
       const code=e.code||e.key.toUpperCase();
@@ -84,7 +86,7 @@
     }
     stage.addEventListener('seer-pack-change',refreshPack);
     return {
-      close,
+      close,openMap:(target=null,fromSurface=false)=>open('map',target,fromSurface),
       get isOpen(){return current!==null;},
       sync(aboard){
         dock.querySelector('[data-console="bag"]').hidden=!aboard;

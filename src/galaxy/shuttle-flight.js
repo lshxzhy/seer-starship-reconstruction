@@ -377,7 +377,11 @@ function createShuttleFlight(T,body,dock,saved){
     phase=s.phase;heading.fromArray(s.heading);levelHeading(frame);quaternion.fromArray(s.q).normalize();
     velocity.fromArray(s.v).clampLength(0,4500);
     pitch=clamp(Number(s.pitch)||0,-1.1,1.1);roll=clamp(Number(s.roll)||0,-.3,.3);
-    if(phase==='landed')return placeOnSurface({lat:latitude,lon:longitude},Math.atan2(heading.dot(frame.east),heading.dot(frame.north)));
+    if(phase==='landed'){
+      // A parked craft already has a berth. Keep its latitude and longitude
+      // even if an animal is now inside the flight planner's approach margin.
+      settleSurface({height:ground});return true;
+    }
     if(altitude<ground){position.setLength(R+ground+2);currentFrame();}
     target=validSite(s.target)?{...s.target}:null;
     auto=s.auto==='surface'&&target?'surface':s.auto==='dock'?'dock':null;

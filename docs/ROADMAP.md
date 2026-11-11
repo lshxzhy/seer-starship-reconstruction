@@ -2,6 +2,8 @@
 
 ## 帕诺星系与舰内交通
 
+地图现已提供人员传送，仍可步行及搭乘原有交通。皮皮的转身、短跳与地面净空已接入草原场景，第一代超能 NoNo 已增加随行姿态和表情。后续采集这一代伙伴起步、停住与转身的连续近景时，再据画面调整动作时序。[阶段记录 #12](https://github.com/lshxzhy/seer-starship-reconstruction/issues/12)
+
 L-01 已接入舷侧泊位、星际航行、低空巡航、下船步行和原泊位返航。后续的野外矿物可沿「徒步采样 → 原艇登船 → 原机位返舰 → 动力室签收」这条路线接入。[登陆艇阶段 #11](https://github.com/lshxzhy/seer-starship-reconstruction/issues/11)
 
 第一颗行星收录克洛斯星八个有地图依据的地点，原有飞船作为出发地。新增地点先核对门表、素材时期和精灵分布，再分配星球坐标。与飞船的衔接由舰内四个编号机位负责，跨甲板仍走实体轿厢。[本期任务 #10](https://github.com/lshxzhy/seer-starship-reconstruction/issues/10) · [克洛斯星图证](克洛斯星图证.md)

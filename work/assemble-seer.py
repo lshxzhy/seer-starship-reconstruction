@@ -35,7 +35,7 @@ scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'persona
                 viewer/'locker-record.js',viewer/'pilot-locker.js',viewer/'wayfinding.js',viewer/'ship-map.js',
                 viewer/'inventory.js',viewer/'exchange.js',viewer/'flight-deck.js',viewer/'lift-ride.js',
                 viewer/'boarding.js',root/'src'/'galaxy'/'klose-scenery.js',root/'src'/'galaxy'/'klose-surface.js',
-                root/'src'/'galaxy'/'landing-shuttle.js',root/'src'/'galaxy'/'shuttle-flight.js',
+                root/'src'/'galaxy'/'klose-map.js',root/'src'/'galaxy'/'landing-shuttle.js',root/'src'/'galaxy'/'shuttle-flight.js',
                 root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'expedition.js',viewer/'explore.js'])
 source = '\n'.join(path.read_text('utf-8') for path in scripts)
 publish_text(output/'seer-model.js',source)

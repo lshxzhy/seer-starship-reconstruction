@@ -1,6 +1,6 @@
   // The radar plots the installed metric layout. Passage endpoints, doors and
   // lift stops are shared with the walking controller and cabin builders.
-  function createShipMap({container,getState,onTravel}) {
+  function createShipMap({container,getState,onTravel,onPlanetTravel,parkedRamp}) {
     const plan=habitat.plan;
     const decks=new Map(plan.levels.map(deck=>[deck.id,deck]));
     const targets=new Map();
@@ -11,8 +11,9 @@
     }
     for(const lift of plan.lifts)for(const stop of lift.stops){
       const id=stop.level+'-'+lift.id;
+      const door={x:stop.center.x,z:stop.center.z-3.50};
       targets.set(id,{id,kind:'lift',name:lift.name,label:lift.name,level:stop.level,
-        center:stop.center,door:stop.center,line:lift});
+        center:stop.center,door,line:lift});
     }
     const NS='http://www.w3.org/2000/svg';
     const draw=(parent,tag,attrs={},text='')=>{
@@ -34,6 +35,7 @@
         .sm-radar svg {display:block;width:100%;height:100%;font:12px "Microsoft YaHei UI",sans-serif}
         .sm-radar svg text {pointer-events:none;fill:#d4e9f1;paint-order:stroke;stroke:#0a2738;stroke-width:3px;stroke-linejoin:round}
         .sm-radar svg .sm-fine {font-size:10px;fill:#9bbecf}
+        .sm-radar svg [data-klose-site] {pointer-events:auto;cursor:pointer}
         .sm-radar svg g[data-sm-target] {cursor:pointer}
         .sm-radar .sm-keys {font-size:.84em;color:#b4cddb}
         .sm-radar .sm-keys i {display:inline-block;width:.57em;height:.57em;margin-right:.38em;vertical-align:.06em}
@@ -50,7 +52,7 @@
         .sm-radar [hidden] {display:none!important}
       </style>
       <section class="sm-radar">
-        <div class="sm-toolbar"><label>甲板 <select class="form-select" data-sm-deck></select></label><span class="sm-position" data-sm-position></span></div>
+        <div class="sm-toolbar"><label data-sm-area-label>区域 <select class="form-select" data-sm-area><option value="ship">赛尔号</option><option value="klose">克洛斯星</option></select></label><label data-sm-deck-label>甲板 <select class="form-select" data-sm-deck></select></label><label data-sm-site-label hidden>目的地 <select class="form-select" data-sm-site></select></label><span class="sm-position" data-sm-position></span></div>
         <div class="sm-chart"><svg role="img" aria-label="舰内平面图"></svg></div>
         <div class="sm-keys"><span><i class="sm-crew-dot"></i>当前位置</span><span><i class="sm-stop-dot"></i>升降站</span><span><i class="sm-route-dash"></i>步行路线</span></div>
         <div class="sm-choices" role="group" aria-label="本层舱室与升降站"></div>
@@ -60,6 +62,10 @@
     const panel=container.querySelector('.sm-radar'),chart=panel.querySelector('svg');
     const picker=panel.querySelector('[data-sm-deck]'),choices=panel.querySelector('.sm-choices');
     const travel=panel.querySelector('[data-sm-travel]'),text=panel.querySelector('.sm-route');
+    const areaPicker=panel.querySelector('[data-sm-area]'),sitePicker=panel.querySelector('[data-sm-site]');
+    const locations=new Map(kloseMapDestinations().map(site=>[site.id,site]));
+    for(const site of locations.values())sitePicker.add(new Option(site.name,site.id));
+    const rampOption=new Option('停放的登陆艇 · 尾坡','shuttle-ramp');
     for(const deck of [...decks.values()].reverse())picker.add(new Option(deck.name,deck.id));
     let level='lower',selected=null,opened=false,lastView='';
 
@@ -170,15 +176,30 @@
     function refresh(){
       if(!opened)return;
       const state=getState(),pose=state.active?state.pose:null;
-      const view=[level,selected,pose?.level,pose?.x.toFixed(1),pose?.z.toFixed(1),
+      const remote=stage.dataset.domain==='planet',planet=areaPicker.value==='klose'&&!remote;
+      const view=[planet,remote,sitePicker.value,level,selected,pose?.level,pose?.x.toFixed(1),pose?.z.toFixed(1),
         chart.clientWidth,chart.clientHeight].join('|');
       if(view===lastView)return;
       lastView=view;
+      panel.querySelector('[data-sm-area-label]').hidden=remote;
+      panel.querySelector('[data-sm-deck-label]').hidden=planet;
+      panel.querySelector('[data-sm-site-label]').hidden=!planet;
+      panel.querySelector('.sm-keys').hidden=choices.hidden=planet;
+      if(planet){
+        const ramp=parkedRamp(),site=sitePicker.value==='shuttle-ramp'?ramp:locations.get(sitePicker.value);
+        panel.querySelector('[data-sm-position]').textContent='帕诺星系';
+        panel.querySelector('.sm-target').textContent=site?.name||'';
+        text.textContent=site?.description||'';
+        chart.setAttribute('aria-label','克洛斯星地点图，可使用目的地列表选择');
+        drawKloseMap(chart,{sites:[...locations.values()],selected:sitePicker.value,ramp,
+          onSelect:id=>{sitePicker.value=id;refresh();}});
+        travel.hidden=!site;travel.textContent='传送到此';return;
+      }
       const deck=decks.get(level),items=[...targets.values()].filter(t=>t.level===level);
       const target=targets.get(selected),route=routeFrom(pose,target);
       picker.value=level;
       const place=pose?habitat.location(pose):null;
-      panel.querySelector('[data-sm-position]').textContent=place?'当前 · '+place.name:'舰外总览';
+      panel.querySelector('[data-sm-position]').textContent=place?'当前 · '+place.name:remote?'当前 · 克洛斯星':'舰外总览';
       // Keep the native buttons stable while state refreshes, including focus.
       if(choices.dataset.level!==level){
         choices.replaceChildren();
@@ -192,8 +213,8 @@
       }
       for(const button of choices.children)button.setAttribute('aria-pressed',String(button.dataset.smTarget===selected));
       panel.querySelector('.sm-target').textContent=target?target.name:'选择舱室或升降站';
-      travel.hidden=!target||target.kind==='lift'||Boolean(route?.arrived);
-      if(!travel.hidden)travel.textContent=pose?'传送至此':'在此登舰';
+      travel.hidden=!target||Boolean(route?.arrived);
+      if(!travel.hidden)travel.textContent=(pose||remote)?'传送到此':'在此登舰';
       if(!target)text.textContent='';
       else if(!pose)text.textContent=target.kind==='lift'
         ?'可停靠'+target.line.stops.map(s=>decks.get(s.level).name).join('、')
@@ -212,20 +233,35 @@
       if(!element || !panel.contains(element))return;
       selected=element.dataset.smTarget;refresh();
     }
+    areaPicker.addEventListener('change',refresh);sitePicker.addEventListener('change',refresh);
     picker.addEventListener('change',()=>{level=picker.value;refresh();});
     panel.addEventListener('click',select);
     travel.addEventListener('click',()=>{
+      if(areaPicker.value==='klose'&&stage.dataset.domain!=='planet'){
+        if(locations.has(sitePicker.value)||(sitePicker.value==='shuttle-ramp'&&parkedRamp()))onPlanetTravel(sitePicker.value);
+        return;
+      }
       const target=targets.get(selected);
-      if(target&&target.kind!=='lift')onTravel(target.id);
+      if(!target)return;
+      if(target.kind==='lift'){
+        const pose={...target.door,y:decks.get(target.level).floorY,level:target.level,yaw:Math.PI};
+        if(habitat.canStand(pose))onTravel(null,pose);
+      }else onTravel(target.id);
     });
     const observer=new ResizeObserver(refresh);
     observer.observe(chart);
     return {
       open(id){
+        const away=parkedRamp();
+        if(away&&!rampOption.parentNode)sitePicker.add(rampOption);
+        if(!away)rampOption.remove();
+        areaPicker.value=id==='shuttle-ramp'&&away?'klose':'ship';
+        if(id==='shuttle-ramp'&&away)sitePicker.value=id;
         const s=getState(),target=targets.get(id);
         level=target?.level||(s.active&&s.pose?.level)||level;
         if(target)selected=target.id;
-        opened=true;refresh();
+        if(!target)selected=null;
+        opened=true;lastView='';refresh();
       },
       refresh,close(){opened=false;},
       dispose(){opened=false;observer.disconnect();container.replaceChildren();}

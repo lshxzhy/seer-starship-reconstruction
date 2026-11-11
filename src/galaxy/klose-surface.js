@@ -466,9 +466,39 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
   const groundGroup=new T.Group(); local.add(groundGroup);
   let lastFocus=null,terrain=null,details=null,groundTime=0;
   const diskRadius=120000;
+  const groundInverse=new T.Quaternion(),groundQuery=new T.Vector3();
+  // A 37 cm animal can visibly sink between samples of a coarser terrain
+  // ring. Interpolate the rendered triangle directly beneath its feet.
+  function groundCorrection(lat,lon){
+    if(!lastFocus||!terrain)return 0;
+    groundQuery.copy(point(lat,lon)).sub(groundGroup.position).applyQuaternion(groundInverse);
+    const {x,y,z}=groundQuery,dist=Math.hypot(x,z);
+    if(dist<1e-7)return -y;
+    const {sectors,geo}=terrain,angle=(Math.atan2(z,x)+tau)%tau;
+    const angleStep=tau/sectors,i=Math.min(sectors-1,Math.floor(angle/angleStep));
+    // Ring edges are chords between adjacent radial vertices.
+    const along=dist*Math.cos(angle-(i+.5)*angleStep)/Math.cos(angleStep*.5);
+    const ring=lastFocus.rings.findIndex(range=>range>=along);
+    if(ring<0)return 0;
+    const pts=geo.attributes.position;
+    function onFace(a,b,c){
+      const ax=pts.getX(a),az=pts.getZ(a),dx=x-ax,dz=z-az;
+      const bx=pts.getX(b)-ax,bz=pts.getZ(b)-az,cx=pts.getX(c)-ax,cz=pts.getZ(c)-az;
+      const det=bx*cz-bz*cx;
+      const u=(dx*cz-dz*cx)/det,v=(bx*dz-bz*dx)/det;
+      if(u<-.00001||v<-.00001||u+v>1.00001)return null;
+      return pts.getY(a)*(1-u-v)+pts.getY(b)*u+pts.getY(c)*v-y;
+    }
+    for(let j=Math.max(1,ring-1);j<=Math.min(terrain.radii.length-1,ring+1);j++){
+      const a=1+(j-1)*sectors+i,b=1+(j-1)*sectors+(i+1)%sectors;
+      const delta=j===1?onFace(0,b,a):onFace(a-sectors,b,a)??onFace(b-sectors,b,a-sectors);
+      if(delta!==null)return delta;
+    }
+    return 0;
+  }
   function padClear(x,z,margin=0){return Boolean(closestPad(x,z,30+margin));}
   function ensureScenery(){
-    if(!details)details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear});
+    if(!details)details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear,groundCorrection});
     return details;
   }
   function buildGround() {
@@ -487,7 +517,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     for (const [attr,stride] of [['position',3],['color',3],['uv',2]]) geo.setAttribute(attr,new T.BufferAttribute(new Float32Array(coords.length*stride),stride));
     geo.setIndex(indices);
     const mesh=new T.Mesh(geo,new T.MeshStandardMaterial({map:soilMap(),vertexColors:true,roughness:.98}));
-    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii};
+    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii,sectors};
     ensureScenery();
   }
   function placeGround(lat,lon,altitude) {
@@ -511,7 +541,8 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
       col.setXYZ(i,s.r,s.g,s.b);uv.setXY(i,x/2.4,z/2.4);
     }
     pos.needsUpdate=col.needsUpdate=uv.needsUpdate=true;geo.computeVertexNormals();
-    shellCenter.value.copy(f.up);lastFocus={lat,lon,altitude};
+    groundInverse.copy(f.quaternion).invert();
+    shellCenter.value.copy(f.up);lastFocus={lat,lon,altitude,rings:sections.map(r=>r.sin*anchorRadius)};
   }
   function setMode(next) {
     if(next===mode&&next!=='hidden')return;
@@ -521,7 +552,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     if(atmosphereRim)atmosphereRim.visible=next==='orbit';
     if (local.visible) buildGround();
   }
-  function update(lat,lon,dt=0,altitude=0) {
+  function update(lat,lon,dt=0,altitude=0,shuttleStatus=null) {
     if(mode!=='surface'&&mode!=='flight')return;
     altitude=mode==='surface'?0:Math.max(0,altitude);
     if(atmosphereRim)atmosphereRim.visible=altitude>12000;
@@ -535,7 +566,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
       placeGround(lat,lon,altitude);groundTime=0;
     }
     shellCut.value=mode==='flight'?Math.cos((diskRadius-6800)/radius):2;
-    details.update(lat,lon,dt,altitude);updateGroves(lat,lon,altitude);
+    details.update(lat,lon,dt,altitude,mode==='surface',shuttleStatus);updateGroves(lat,lon,altitude);
   }
   // The flight solver samples the entire footprint before setting the gear
   // down. Keep the lidar envelope separate from the underlying foot height:
@@ -591,6 +622,10 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     });
     return dest;
   }
+  function resolveArrival(lat,lon){
+    ensureScenery().prepareWalk(lat,lon);
+    return walk(lat,lon,0,0);
+  }
   function dispose() {
     const geometry=new Set(),materials=new Set(),textures=new Set();
     root.traverse(o=>{if(o.geometry)geometry.add(o.geometry);
@@ -599,7 +634,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
   setMode('hidden');
-  return {root,sites,radius,frame,height,point,move,walk,siteAt,update,setMode,dispose,
+  return {root,sites,radius,frame,height,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
-    nearestPipi:(lat,lon)=>details?details.nearestPipi(lat,lon):null};
+    nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null};
 }

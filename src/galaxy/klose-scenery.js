@@ -1,7 +1,7 @@
 // All scenery is authored geometry. Sites share one tangent chart and leave
 // the original map connections open. The historic hunting rooms share a biome.
 function createKloseScenery(T, parent, surface) {
-  const {sites,pools,height,frame,move,point,chart,trail,radius,padClear}=surface;
+  const {sites,pools,height,frame,move,point,chart,trail,radius,padClear,groundCorrection}=surface;
   const color=hex=>new T.Color(hex).convertSRGBToLinear();
   const shapes=new Map(),tau=Math.PI*2;
   const rough=new T.MeshStandardMaterial({color:0xffffff,roughness:.84,side:T.DoubleSide});
@@ -114,7 +114,8 @@ function createKloseScenery(T, parent, surface) {
   const randFrom=value=>()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
   const lerp=(a,b,t)=>a+(b-a)*t;
   function pipiModel() {
-    const animal=new T.Group(),ears=[];
+    const animal=new T.Group(),body=new T.Group(),ears=[],feet=[];
+    animal.add(body);animal.rotation.order='YXZ';
     const pink='#f5b2ca',light='#ffd3e1',tip='#381b2a',cheek='#ff778f';
     const materials=new Map();
     function paint(hex) {
@@ -122,17 +123,18 @@ function createKloseScenery(T, parent, surface) {
       return materials.get(hex);
     }
     function oval(x,y,z,sx,sy,sz,hex) {
-      const m=new T.Mesh(shapes.get('round').geo,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);animal.add(m);return m;
+      const m=new T.Mesh(shapes.get('round').geo,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);body.add(m);return m;
     }
     oval(0,.102,0,.104,.078,.073,pink);
     oval(0,.067,-.083,.044,.043,.047,light);
     const span=12,steps=32;
     for (const side of [-1,1]) {
       const foot=oval(side*.063,.035,.031,.050,.035,.048,pink);foot.rotation.z=side*.17;
+      animal.add(foot);feet.push(foot);
       oval(side*.079,.088,.047,.026,.018,.014,cheek);
       oval(side*.035,.117,.064,.012,.017,.008,'#291f2a');
       oval(side*.035-.002,.123,.072,.0044,.005,.003,'#fff8fc');
-      const ear=new T.Group();ear.position.set(side*.055,.149,0);animal.add(ear);ears.push(ear);
+      const ear=new T.Group();ear.position.set(side*.055,.149,0);body.add(ear);ears.push(ear);
       const curve=new T.CubicBezierCurve3(v(0,0,0),v(side*.028,.277,-.006),v(side*.16,.294,-.012),v(side*.175,-.024,.012));
       const p=[],rgb=[],idx=[],base=color(pink),end=color(tip);
       for(let j=0;j<=steps;j++) {
@@ -152,9 +154,9 @@ function createKloseScenery(T, parent, surface) {
       ear.add(new T.Mesh(geo,new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.66})));
     }
     const bill = new T.Mesh(new T.ConeGeometry(1,1,4),paint('#43ade6'));
-    bill.position.set(0,.089,.077);bill.rotation.x=Math.PI*.47;bill.rotation.y=Math.PI*.25;bill.scale.set(.018,.027,.012);animal.add(bill);
+    bill.position.set(0,.089,.077);bill.rotation.x=Math.PI*.47;bill.rotation.y=Math.PI*.25;bill.scale.set(.018,.027,.012);body.add(bill);
     animal.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-    animal.name='010 · 皮皮'; return {animal,ears};
+    animal.name='010 · 皮皮'; return {animal,body,ears,feet};
   }
   function makeSite(site,order) {
     const group=new T.Group(),near=new T.Group(),far=new T.Group();
@@ -335,10 +337,6 @@ function createKloseScenery(T, parent, surface) {
         stamp('sod',x,yAt(x,z)+1.42,z-.95,2.8,1.3,3.35,choose(leaves),.02,.1);
         if(i%2===0)leafFan(x+.24,yAt(x,z)+1.78,z-.7,.8,leaves,7);
       }
-      for(const [x,z,p] of [[2,-6,.8],[-1.6,-8.3,2.2],[4.2,-12.1,4],[10.5,4.8,6],[-13,11,1.7]]) {
-        const {animal,ears}=pipiModel();near.add(animal);
-        pipi.push({animal,ears,site,x,z,phase:p,yAt,at:move(site.lat,site.lon,x,-z)});
-      }
     }
     if(site.id==='swamp') {
       // Root buttresses arch over the branch leading down to the vine passage.
@@ -497,9 +495,28 @@ function createKloseScenery(T, parent, surface) {
     // Record the top of solid scenery in 3 m ground cells directly from the
     // rendered geometry. A shuttle approaches a crown, arch or cave roof from
     // above; the walker's trunk-only footprint cannot describe that contact.
-    const bounds=new T.Box3();
+    const bounds=new T.Box3(),birdCover=new Map();
     for(const [key,items] of records) {
       const {geo,material}=shapes.get(key);
+      // Even short turf, pebbles and leaves can hide a 37 cm bird. Register
+      // their actual ground footprints in the meadow separately from the
+      // much taller canopy used by the flight solver.
+      if(site.id==='grassland'){
+        if(!geo.boundingBox)geo.computeBoundingBox();
+        for(const item of items){
+          bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
+          if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
+          const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
+          if(bounds.min.y>yAt(cx,cz)+.62)continue;
+          const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z};
+          for(let ix=Math.floor(box.left-.30);ix<=Math.floor(box.right+.30);ix++)
+            for(let iz=Math.floor(box.back-.30);iz<=Math.floor(box.front+.30);iz++){
+              const cell=ix*256+iz;
+              if(!birdCover.has(cell))birdCover.set(cell,[]);
+              birdCover.get(cell).push(box);
+            }
+        }
+      }
       if(!['pool','energyPool','mud','lamp','sod','leaf'].includes(key)){
         if(!geo.boundingBox)geo.computeBoundingBox();
         for(const item of items){
@@ -526,27 +543,137 @@ function createKloseScenery(T, parent, surface) {
         return Math.max(Math.hypot(m[0],m[1],m[2]),Math.hypot(m[4],m[5],m[6]),Math.hypot(m[8],m[9],m[10]))>2.1;
       }));
     }
+    if(site.id==='grassland'){
+      const perches=[[2,-5],[-2,-8],[3,1],[-4,5],[-10,10]];
+      for(const [index,[x,z]] of perches.entries()){
+        const pet={...pipiModel(),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,cover:birdCover,
+          random:randFrom(15831+pipi.length*931),yaw:0,hop:null,goal:null,idle:0,clock:0,at:null};
+        // A scenery edit can shift a bed over a traditional perch. Search
+        // outwards on open soil instead of instantiating inside its mesh.
+        let found=false;
+        for(let ring=0;ring<=12&&!found;ring++){
+          const count=Math.max(1,ring*8);
+          for(let k=0;k<count;k++){
+            const a=tau*k/count,px=x+ring*.45*Math.cos(a),pz=z+ring*.45*Math.sin(a);
+            if(!birdClear(pet,px,pz,null,null))continue;
+            pet.x=pet.homeX=px;pet.z=pet.homeZ=pz;found=true;break;
+          }
+        }
+        if(!found)continue;
+        pet.yaw=pet.random()*tau;pet.idle=pet.random()*1.1;pet.clock=pet.random()*4;
+        pipi.push(pet);near.add(pet.animal);posePipi(pet);
+      }
+    }
     return {group,near,far,site,obstacles,overhead};
   }
-  let elapsed=0;
-  function update(lat,lon,dt,altitude=0) {
-    elapsed+=Math.min(.1,Math.max(0,dt||0));const {x,z}=chart(lat,lon);
+  function birdClear(pet,x,z,walker,shuttle){
+    // The meadow centre is the published walking-map arrival point.
+    if(Math.hypot(x,z)<1.05)return false;
+    const boxes=pet.cover.get(Math.floor(x)*256+Math.floor(z));
+    if(boxes)for(const b of boxes){
+      const dx=Math.max(0,b.left-x,x-b.right),dz=Math.max(0,b.back-z,z-b.front);
+      if(dx*dx+dz*dz<.30*.30)return false;
+    }
+    function clears(cx,cz,limit){
+      const distance=Math.hypot(x-cx,z-cz);
+      // A visitor or the descending hull can enter the avoidance margin:
+      // allow the bird to move outwards while still inside that margin.
+      return distance>=limit || (pet.at&&distance>Math.hypot(pet.x-cx,pet.z-cz)+1e-7);
+    }
+    if(walker&&!clears(walker.x,walker.z,.68))return false;
+    if(shuttle&&!clears(shuttle.x,shuttle.z,9.3))return false;
+    return pipi.every(other=>other===pet||clears(other.x,other.z,.62));
+  }
+  function clearPath(pet,x,z,walker,shuttle){
+    const dx=x-pet.x,dz=z-pet.z,steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.14));
+    for(let i=1;i<=steps;i++){
+      if(!birdClear(pet,pet.x+dx*i/steps,pet.z+dz*i/steps,walker,shuttle))return false;
+    }
+    return true;
+  }
+  function chooseGoal(pet,threat,walker,shuttle){
+    const angle=threat?Math.atan2(pet.x-threat.x,pet.z-threat.z):pet.random()*tau;
+    for(let i=0;i<16;i++){
+      const a=angle+(threat?(pet.random()-.5)*2.0:i*2.39996);
+      const reach=threat?3.6+pet.random()*2.8:1.2+pet.random()*2.3;
+      const x=(threat?pet.x:pet.homeX)+Math.sin(a)*reach;
+      const z=(threat?pet.z:pet.homeZ)+Math.cos(a)*reach;
+      if(Math.abs(x)>19||Math.abs(z)>19||Math.hypot(x-pet.x,z-pet.z)<.75)continue;
+      if(clearPath(pet,x,z,walker,shuttle))return {x,z};
+    }
+    return null;
+  }
+  function posePipi(pet){
+    const h=pet.hop,arc=h?4*h.t*(1-h.t):0,dx=Math.sin(pet.yaw),dz=Math.cos(pet.yaw);
+    const ground=pet.yAt(pet.x,pet.z);
+    pet.at=move(pet.site.lat,pet.site.lon,pet.x,-pet.z);
+    // Follow the drawn triangles under the feet, including after a change
+    // of terrain LOD. Local +Z is the actual eye and bill direction.
+    pet.animal.position.set(pet.x,ground+groundCorrection(pet.at.lat,pet.at.lon)+.004+(h?h.lift*arc:0),pet.z);
+    pet.animal.rotation.y=pet.yaw;
+    pet.animal.rotation.x=-Math.atan((pet.yAt(pet.x+.12*dx,pet.z+.12*dz)-ground)/.12);
+    pet.animal.rotation.z=Math.atan((pet.yAt(pet.x+.12*dz,pet.z-.12*dx)-ground)/.12);
+    const breath=.012*Math.sin(pet.clock*3);
+    pet.body.scale.set(1-.02*arc,1+breath+.05*arc,1-.02*arc);
+    pet.body.rotation.x=h ? .12*Math.sin(h.t*tau) : .025*Math.sin(pet.clock*2);
+    for(let i=0;i<2;i++){
+      pet.feet[i].position.y=.035+.012*arc;pet.feet[i].rotation.x=-.35*arc;
+      pet.ears[i].rotation.z=(i?1:-1)*(.032*Math.sin(pet.clock*2+i*.3)+.23*arc);
+      pet.ears[i].rotation.x=h?-.14*Math.sin(h.t*tau):.028*Math.sin(pet.clock*1.8+i);
+    }
+  }
+  function advancePipi(pet,dt,walker,shuttle){
+    pet.clock+=dt;
+    if(pet.hop){
+      const h=pet.hop;h.t=Math.min(1,h.t+dt/h.duration);
+      const progress=h.t-Math.sin(h.t*tau)/tau;
+      const x=h.x+h.dx*progress,z=h.z+h.dz*progress;
+      if(!h.blocked&&birdClear(pet,x,z,walker,shuttle)){pet.x=x;pet.z=z;}
+      else {h.blocked=true;pet.goal=null;}
+      if(h.t>=1){pet.hop=null;pet.idle=.065+pet.random()*.10;}
+      return;
+    }
+    const near=(p,r)=>p&&Math.hypot(pet.x-p.x,pet.z-p.z)<r;
+    const threat=near(shuttle,10.5)?shuttle:near(walker,1.25)?walker:null;
+    if(threat&&pet.goal){
+      const outward=(pet.goal.x-pet.x)*(pet.x-threat.x)+(pet.goal.z-pet.z)*(pet.z-threat.z);
+      if(outward<=0)pet.goal=null;
+    }
+    if(threat&&!pet.alert)pet.idle=0;
+    pet.alert=Boolean(threat);
+    if((pet.idle-=dt)>0)return;
+    if(!pet.goal){
+      pet.goal=chooseGoal(pet,threat,walker,shuttle);
+      if(!pet.goal){pet.idle=.45;return;}
+    }
+    const dx=pet.goal.x-pet.x,dz=pet.goal.z-pet.z,dist=Math.hypot(dx,dz);
+    if(dist<.09){pet.goal=null;pet.idle=.6+pet.random()*1.6;return;}
+    const want=Math.atan2(dx,dz),turn=Math.atan2(Math.sin(want-pet.yaw),Math.cos(want-pet.yaw));
+    const maxTurn=(threat?6:4.6)*dt;
+    pet.yaw+=T.MathUtils.clamp(turn,-maxTurn,maxTurn);
+    if(Math.abs(turn)>maxTurn)return;
+    const stride=Math.min(dist,(threat ? .40 : .26)+pet.random()*.16);
+    const stepX=dx*stride/dist,stepZ=dz*stride/dist;
+    if(!clearPath(pet,pet.x+stepX,pet.z+stepZ,walker,shuttle)){
+      pet.goal=null;pet.idle=.18;return;
+    }
+    pet.hop={x:pet.x,z:pet.z,dx:stepX,dz:stepZ,t:0,
+      lift:.045+.11*stride,duration:.20+.23*stride};
+  }
+  function update(lat,lon,dt,altitude=0,walking=false,shuttleStatus=null) {
+    const {x,z}=chart(lat,lon);
     for(let i=0;i<sites.length;i++) {
       const site=sites[i],dist=Math.hypot(x-site.x,z-site.z,altitude);
       if(!batches[i]&&dist<570)batches[i]=makeSite(site,i);
       const parts=batches[i];
       if(parts){parts.group.visible=dist<670;parts.near.visible=dist<116;parts.far.visible=!parts.near.visible;}
     }
-    for(const pet of pipi) {
-      if(!batches[0].near.visible)continue;
-      const t=elapsed+pet.phase,w=t*.46;
-      const dx=.45*Math.sin(w),dz=.25*Math.cos(w*1.36);
-      const hop=Math.max(0,Math.sin(t*3.7))**3;
-      pet.animal.position.set(pet.x+dx,pet.yAt(pet.x+dx,pet.z+dz)+.004+.065*hop,pet.z+dz);
-      pet.animal.rotation.y=.27+Math.sin(w)*.53;
-      pet.ears.forEach((ear,i)=>{ear.rotation.z=(i?1:-1)*(.065*Math.sin(t*2.1)+.1*hop);});
-      pet.at=move(pet.site.lat,pet.site.lon,pet.x+dx,-pet.z-dz);
-    }
+    if(!batches[0]?.near.visible)return;
+    const walker=walking?{x,z}:null;
+    const shuttle=shuttleStatus&&shuttleStatus.clearance<32?chart(shuttleStatus.lat,shuttleStatus.lon):null;
+    const total=T.MathUtils.clamp(dt||0,0,.24),steps=Math.max(1,Math.ceil(total/.035));
+    for(let i=0;i<steps;i++)for(const pet of pipi)advancePipi(pet,total/steps,walker,shuttle);
+    for(const pet of pipi)posePipi(pet);
   }
   function obstacleTop(x,z,footprint){
     let top=-Infinity;
@@ -561,20 +688,27 @@ function createKloseScenery(T, parent, surface) {
       if(site.id==='forest'&&Math.hypot(dx-7,dz+11)<2.55+footprint)
         top=Math.max(top,height(site.lat,site.lon)+3.2);
     }
+    for(const pet of pipi){
+      if(Math.hypot(x-pet.x,z-pet.z)<footprint+.3)
+        top=Math.max(top,height(pet.at.lat,pet.at.lon)+.48);
+    }
     return top;
   }
-  function nearestPipi(lat,lon) {
-    const observer=chart(lat,lon);let closest=null;
+  function nearestPipi(lat,lon,id) {
+    const observer=chart(lat,lon);let closest=null,distance=Infinity;
     for(const pet of pipi) {
-      const p=chart(pet.at.lat,pet.at.lon),d=Math.hypot(observer.x-p.x,observer.z-p.z);
-      if(!closest||d<closest.distance)closest={name:'皮皮',distance:d,lat:pet.at.lat,lon:pet.at.lon};
+      if(id&&pet.id!==id)continue;
+      const d=Math.hypot(observer.x-pet.x,observer.z-pet.z);
+      if(d<distance){closest=pet;distance=d;}
     }
-    return closest;
+    return closest?{id:closest.id,name:'皮皮',distance,lat:closest.at.lat,lon:closest.at.lon,
+      focusPoint:closest.animal.localToWorld(v(0,.166,.012))}:null;
   }
   function walk(lat,lon,east,north) {
     const start=chart(lat,lon),end=move(lat,lon,east,north),dest=chart(end.lat,end.lon);
     const candidates=batches.filter(part=>Math.hypot(start.x-part.site.x,start.z-part.site.z)<111)
-      .flatMap(part=>part.obstacles).filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(east,north)+o.r+.55);
+      .flatMap(part=>part.obstacles).concat(pipi.map(p=>({x:p.x,z:p.z,r:.30})))
+      .filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(east,north)+o.r+.55);
     if(!candidates.length)return end;
     // Short steps plus radial projection let the player slide around a trunk
     // without crossing thin buttresses during a sprint.
@@ -593,5 +727,11 @@ function createKloseScenery(T, parent, surface) {
     }
     return move(lat,lon,x-start.x,start.z-z);
   }
-  return {update,nearestPipi,walk,obstacleTop};
+  function prepareWalk(lat,lon){
+    const {x,z}=chart(lat,lon);
+    for(const [i,site] of sites.entries()){
+      if(!batches[i]&&Math.hypot(x-site.x,z-site.z)<111)batches[i]=makeSite(site,i);
+    }
+  }
+  return {update,nearestPipi,walk,prepareWalk,obstacleTop};
 }

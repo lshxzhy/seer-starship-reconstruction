@@ -1,6 +1,6 @@
   // The visitor's position is a foot point in ship-wide metres. Geometry and
   // collision use the same habitat layout. Only the camera uses render units.
-  function createBoardingController(requestFrame, persist) {
+  function createBoardingController(requestFrame, persist, shuttleAway=()=>false) {
     const liftControl = root.querySelector('[data-lift-control]');
     const liftPicker = root.querySelector('[data-lift]');
     const callButton=root.querySelector('[data-lift-call]');
@@ -319,7 +319,7 @@
     function flightControls(){
       const berth=currentBerth();
       embarkButton.hidden=!berth;
-      if(berth)embarkButton.textContent=berth.name+' · 乘廊车去登陆艇';
+      if(berth)embarkButton.textContent=shuttleAway()?'登陆艇停在克洛斯星 · 查看艇位':berth.name+' · 乘廊车去登陆艇';
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
