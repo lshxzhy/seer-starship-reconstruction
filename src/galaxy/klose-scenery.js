@@ -15,7 +15,21 @@ function createKloseScenery(T, parent, surface) {
   shape('cane',new T.CylinderGeometry(.79,1,1,9,2));
   shape('twig',new T.CylinderGeometry(.62,1,1,7,1));
   shape('rim',new T.TorusGeometry(1,.10,8,40));
-  shape('pool',new T.SphereGeometry(1,48,12),gloss);
+  const poolShape=new T.SphereGeometry(1,48,16);
+  shape('mud',poolShape,rough);
+  shape('pool',poolShape,new T.MeshStandardMaterial({color:0xffffff,roughness:.48,metalness:0}));
+  // The energy pool graduates from a shaded teal bank to bright cyan.
+  // Its glow is part of the water surface, confined to the basin.
+  const energyPool=poolShape.clone(),waterColors=[];
+  const deepWater=color('#369c9e'),shallowWater=color('#17d7e1'),waterTone=new T.Color();
+  const vertices=energyPool.getAttribute('position');
+  for(let i=0;i<vertices.count;i++){
+    const t=T.MathUtils.smoothstep(vertices.getZ(i),-.70,.85);
+    waterTone.copy(deepWater).lerp(shallowWater,t);waterColors.push(waterTone.r,waterTone.g,waterTone.b);
+  }
+  energyPool.setAttribute('color',new T.Float32BufferAttribute(waterColors,3));
+  shape('energyPool',energyPool,new T.MeshStandardMaterial({vertexColors:true,roughness:.44,
+    emissive:color('#168a93'),emissiveIntensity:.35}));
   shape('lamp',new T.SphereGeometry(1,14,9),luminous);
   // A keeled leaf has its own bent midrib, so both moonlight and sunlight
   // reveal the blade, even without alpha textures.
@@ -31,7 +45,10 @@ function createKloseScenery(T, parent, surface) {
   shape('leaf',leafGeometry());
   const mushroomProfile=[[.02,.025],[.49,.02],[.88,.075],[1,.16],[.95,.32],[.78,.52],[.48,.69],[.12,.77],[0,.77]];
   shape('cap',new T.LatheGeometry(mushroomProfile.map(([x,y])=>new T.Vector2(x,y)),32));
-  shape('crystal',new T.LatheGeometry([[.04,-.04],[.29,0],[.36,.16],[.31,.72],[0,1]].map(([x,y])=>new T.Vector2(x,y)),6),gloss);
+  const crystalShape=new T.LatheGeometry([[.04,-.04],[.29,0],[.36,.16],[.31,.72],[0,1]].map(([x,y])=>new T.Vector2(x,y)),6);
+  shape('crystal',crystalShape,gloss);
+  shape('coreCrystal',crystalShape,new T.MeshStandardMaterial({flatShading:true,roughness:.39,
+    metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}));
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.8,side:T.DoubleSide});
   function meshData(positions,colors,indices) {
     const g=new T.BufferGeometry();
@@ -48,8 +65,8 @@ function createKloseScenery(T, parent, surface) {
         const a=k*tau/sides,b=Math.cos(a),z=Math.sin(a);
         const vein=1+.067*Math.cos(5*a);
         p.push(at.x-tangent.y*width*b,at.y+tangent.x*width*b,at.z+width*.78*z*vein);
-        const tone=.79+.21*Math.cos(a-.3)**2+.055*Math.cos(5*a);
-        colors.push(tone,tone*.965,tone);
+        const ridge=.5+.5*Math.cos(a-.3),veinTone=.5+.5*Math.cos(5*a);
+        colors.push(.70+.28*ridge,.48+.42*ridge+.10*veinTone,.75+.25*ridge);
         if(j) {const l=(j-1)*sides+k,r=(j-1)*sides+(k+1)%sides;idx.push(l,r,l+sides,r,r+sides,l+sides);}
       }
     }
@@ -74,6 +91,26 @@ function createKloseScenery(T, parent, surface) {
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);
   const batches=[],pipi=[];
+  // The classic grassland has blue turf and one yellow-green upper terrace.
+  // The hunting grounds use bluer violet banks; only the sanctuary shares
+  // the azure grass. Values were sampled from the corresponding map frames.
+  const azureLeaves=['#227ca8','#3397c8','#44a3cf','#60afd6'];
+  const meadowLeaves=['#627d28','#7a8e37','#9db948','#b4ce53'];
+  const wetlandLeaves=['#405c98','#528dc5','#5c6ca7','#718bbd'];
+  const openGround={
+    grassland:{leaves:azureLeaves,plumes:['#ee6098','#f474a7','#fd9fb7'],fruit:'#204e91',rock:'#ad744f',cap:'#d29b70'},
+    wetland:{leaves:wetlandLeaves,plumes:['#bb397f','#e75a8a','#fb8195'],fruit:'#384d93',rock:'#8a475b',cap:'#9c9473'},
+    sanctuary:{leaves:azureLeaves,plumes:['#dc5991','#f474a7','#ff9fb7'],fruit:'#1c5685',rock:'#985b46',cap:'#d89e7b'}
+  };
+  const groves={
+    grassland:{bark:'#745332',crown:azureLeaves},
+    wetland:{bark:'#78672c',crown:['#667336','#a09a4e','#b4ad64']},
+    sanctuary:{bark:'#80604c',crown:azureLeaves},
+    swamp:{bark:'#756333',crown:['#434525','#61602e','#78803d'],vine:'#848b3e'},
+    forest:{bark:'#54551e',crown:['#41471b','#51541b','#777c34'],vine:'#9d9d37'},
+    vineway:{bark:'#473b25',crown:['#243c43','#304d49','#46543c'],vine:'#697033'},
+    flame:{bark:'#632b6a',crown:['#e28714','#cd6509','#f7a225','#ab4d0e'],vine:'#1667bc'}
+  };
   const randFrom=value=>()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
   const lerp=(a,b,t)=>a+(b-a)*t;
   function pipiModel() {
@@ -171,12 +208,12 @@ function createKloseScenery(T, parent, surface) {
       for (const [u,h] of [[-.43,1.28],[-.68,1.42],[-.57,1.28]]) {
         const p=local(u,h),q=local(u-.04,h-.33);link(p,q,.021*s,'#765065');
         stamp('round',q.x,q.y-.09*s,q.z,.105*s,.18*s,.11*s,fruit);
-        stamp('round',q.x-.034*s,q.y-.04*s,q.z+.071*s,.03*s,.045*s,.025*s,'#a4caeb');
+        stamp('round',q.x-.034*s,q.y-.04*s,q.z+.071*s,.03*s,.045*s,.025*s,'#559fc1');
       }
     }
-    function tree(x,z,s,flame=false,rooty=false) {
+    function tree(x,z,s) {
       const g=yAt(x,z),phase=seed()*tau;
-      const bark=flame?'#65466a':rooty?'#685d42':'#655852';
+      const {bark,crown,vine:vineColor}=groves[site.id],flame=site.id==='flame';
       const top=v(x+.22*s,g+1.96*s,z-.18*s),mid=v(x-.12*s,g+1.05*s,z);
       tendril([v(x,g-.07*s,z),mid,top],s*.22,bark,true);
       obstacle(x,z,s*.20);
@@ -186,17 +223,16 @@ function createKloseScenery(T, parent, surface) {
         tendril([v(x,g+.36*s,z),v(x+.37*s*dx,g+.08*s,z+.37*s*dz),root],s*.135,bark);
         const end=v(top.x+s*.73*dx,top.y+(.16+seed()*.38)*s,top.z+s*.73*dz);
         tendril([mid,v(top.x+s*.32*dx,top.y-.39*s,top.z+s*.32*dz),end],s*.13,bark);
-        const crowns=flame?['#e9a234','#e58b30','#f1bf46','#cb7539']:rooty?['#777b42','#647951','#9a994f']:['#4d9892','#66b0a2','#78bab0'];
-        stamp('rock',end.x,end.y,end.z,s*.72,s*.32,s*.65,choose(crowns),seed()*.22,a);
-        if(flame) leafFan(end.x,end.y+.18*s,end.z,.65*s,crowns,6);
+        stamp('rock',end.x,end.y,end.z,s*.72,s*.32,s*.65,choose(crown),seed()*.22,a);
+        if(flame) leafFan(end.x,end.y+.18*s,end.z,.65*s,crown,6);
       }
-      if(flame||rooty) {
+      if(vineColor) {
         const vine=[];
         for(let j=0;j<=16;j++) {
           const f=j/16,a=phase+f*Math.PI*3.4;
           vine.push(v(x+.225*s*Math.cos(a)+.10*s*f,g+s*(.06+1.88*f),z+.225*s*Math.sin(a)));
         }
-        tendril(vine,.055*s,flame?'#2191ae':'#879149');
+        tendril(vine,.055*s,vineColor);
       }
     }
     function reeds(x,z,s,shade) {
@@ -223,16 +259,17 @@ function createKloseScenery(T, parent, surface) {
       if(s>1.35)obstacle(x,z,s*.71);
     }
     function crystals(x,z,s,amber=false) {
-      const y=yAt(x,z),palette=amber?['#ffbd49','#f6d273','#dd9448']:['#33ceba','#69ebce','#2fa893'];
+      const y=yAt(x,z),palette=amber?['#f7b51a','#ffe16a','#c97f19']:['#029a8d','#2aabb1','#157663','#4edfb3'];
       for(let k=0;k<8;k++) {
         const a=tau*k/8,l=(.45+seed()*.7)*s;
-        stamp('crystal',x+.32*s*Math.cos(a),y-.12*s,z+.32*s*Math.sin(a),l,l*1.33,l,choose(palette),-.42*Math.sin(a),a,.37*Math.cos(a));
+        stamp(amber?'crystal':'coreCrystal',x+.32*s*Math.cos(a),y-.12*s,z+.32*s*Math.sin(a),l,l*1.33,l,
+          choose(palette),-.42*Math.sin(a),a,.37*Math.cos(a));
       }
     }
     function roughLedge(x,z,s,c,az) {
       const y=yAt(x,z);
       stamp('facet',x,y+s*.28,z,s,s*.78,s*.87,c,.06,az,-.07);
-      stamp('boulder',x,y+s*.65,z,s*1.04,s*.28,s*.88,'#c0a47f',.04,az);
+      stamp('boulder',x,y+s*.65,z,s*1.04,s*.28,s*.88,openGround[site.id].cap,.04,az);
       if(s>1.5)obstacle(x,z,s*.77);
     }
     // Perimeter landforms are separated from the central navigation lanes.
@@ -240,29 +277,30 @@ function createKloseScenery(T, parent, surface) {
       const a=seed()*tau,r=12+Math.sqrt(seed())*68,x=r*Math.cos(a),z=r*Math.sin(a);
       if(blocked(x,z,1.4))continue;
       const g=yAt(x,z),n=seed(),s=.6+seed()*2;
-      if (site.id==='grassland'||site.id==='wetland'||site.id==='sanctuary') {
-        const greens=['#5093a0','#72bbca','#529ead','#75a678'];
+      if (openGround[site.id]) {
+        const palette=openGround[site.id];
+        const leaves=site.id==='grassland'&&x>8&&z<-8?meadowLeaves:palette.leaves;
         if(n<.18) {
-          stamp('rock',x,g-.12*s,z,s*2,s*.46,s*1.5,choose(greens),.04,a);
-          leafFan(x,g+.22*s,z,s,greens,6);
-        } else if (n<.37) leafFan(x,g,z,s*.9,greens,8);
-        else if(n<.53)curled(x,g,z,s,a,choose(['#e791aa','#db88ae','#edacbd']), '#565da3');
-        else if(n<.73 && r>29)roughLedge(x,z,s*1.3,'#ae816b',a);
+          stamp('rock',x,g-.12*s,z,s*2,s*.46,s*1.5,choose(leaves),.04,a);
+          leafFan(x,g+.22*s,z,s,leaves,6);
+        } else if (n<.37) leafFan(x,g,z,s*.9,leaves,8);
+        else if(n<.53)curled(x,g,z,s,a,choose(palette.plumes),palette.fruit);
+        else if(n<.73 && r>29)roughLedge(x,z,s*1.3,palette.rock,a);
         else if(n<.82 && r>38)tree(x,z,s*1.8);
-        else stones(x,z,s*.35,'#c09c7b');
+        else stones(x,z,s*.35,palette.cap);
       } else if(site.id==='swamp'||site.id==='forest'||site.id==='vineway') {
-        if(n<.35&&r>18)tree(x,z,s*1.9,false,true);
-        else if(n<.64)leafFan(x,g,z,s*1.2,site.id==='vineway'?['#494a75','#575d8c']:['#7d8a46','#a2a457','#748348'],9);
+        if(n<.35&&r>18)tree(x,z,s*1.9);
+        else if(n<.64)leafFan(x,g,z,s*1.2,site.id==='vineway'?['#254b62','#3d708d','#537f9f']:['#798039','#a2a047','#65682e'],9);
         else if(n<.83)spore(x,z,s*.65,'#a9926f',choose(['#bd8656','#cb9d65','#a98761']),false);
         else stones(x,z,s*.85,'#82785c');
       } else if(site.id==='flame') {
-        if(n<.43)tree(x,z,s*2.1,true);
-        else if(n<.74)leafFan(x,g,z,s,['#396381','#587b9d','#56527d']);
-        else if(n<.9)stones(x,z,s,'#8b6570');
+        if(n<.43)tree(x,z,s*2.1);
+        else if(n<.74)leafFan(x,g,z,s,['#0d406d','#1f5b8d','#2d6ca2']);
+        else if(n<.9)stones(x,z,s,'#944b3c');
       } else if(site.id==='core'&&r<38) {
-        if(n<.55)stones(x,z,s*.9,'#7d685d');
+        if(n<.55)stones(x,z,s*.9,'#947149');
         else if(n<.72)crystals(x,z,s*.72);
-        else spore(x,z,s*.72,'#b38e67','#ba7747',false);
+        else spore(x,z,s*.72,'#876e34','#b64d35',false);
       }
     }
     // Foreground characteristic details are deliberately hand-placed at each clearing.
@@ -271,18 +309,18 @@ function createKloseScenery(T, parent, surface) {
         stones(x,z,s*1.1,'#a77860');crystals(x+.27*s,z+.78*s,s*.93,true);
       }
       for(const [x,z,s] of [[6,-14,2.3],[9,-13,1.65],[10,-17,2.8],[-11,5,2.6]])
-        curled(x,yAt(x,z),z,s,.4,'#e6a0b6','#5860a1');
+        curled(x,yAt(x,z),z,s,.4,'#f474a7',openGround.grassland.fruit);
       // Blue turf in scalloped beds gives the upper terraces and the landing
       // clearing different silhouettes. The orange walking lanes stay visible.
       for(const [x,z,sx,sz] of [[-8,-12,5.4,5.1],[-10,-5,4.3,2.8],[8,-13,5.2,6.3],[8,-6,3.4,3.1],[13,2,7,4.6],[-8,2.5,3.6,2.2],[-15,-21,9,7],[14,-22,10,7]]) {
-        const g=yAt(x,z);
-        stamp('sod',x,g+.08,z,sx,1.35,sz,'#5499a8',0,seed()*.66);
+        const g=yAt(x,z),leaves=x>=8&&z<=-13?meadowLeaves:azureLeaves;
+        stamp('sod',x,g+.08,z,sx,1.35,sz,leaves[1],0,seed()*.66);
         for(let j=0;j<32;j++) {
           const a=seed()*tau,t=Math.sqrt(seed()),px=x+sx*t*Math.cos(a),pz=z+sz*t*Math.sin(a);
           if(trail(site.x+px,site.z+pz)<1.35)continue;
           const py=yAt(px,pz)+.1+.17*(1-t);
           const s=.15+.61*seed();
-          leafFan(px,py,pz,s,['#58a6b2','#73babe','#43919f','#789e76'],4+Math.floor(seed()*3));
+          leafFan(px,py,pz,s,leaves,4+Math.floor(seed()*3));
           if(j%7===0) {
             const h=.38+.42*seed();link(v(px,py,pz),v(px+.09,py+h,pz),.022,'#6e9774');
             stamp('round',px+.09,py+h,pz,.10,.07,.11,'#e8b489');
@@ -292,9 +330,10 @@ function createKloseScenery(T, parent, surface) {
       for(let i=0;i<26;i++) {
         const x=lerp(-21,23,i/25),z=-23+3*Math.sin(.18*x);
         if(blocked(x,z,2))continue;
-        roughLedge(x,z,1.8+.55*seed(),'#c09579',.32);
-        stamp('sod',x,yAt(x,z)+1.42,z-.95,2.8,1.3,3.35,choose(['#5499b0','#63a5b8','#75b9c5']),.02,.1);
-        if(i%2===0)leafFan(x+.24,yAt(x,z)+1.78,z-.7,.8,['#5195af','#67aabd','#77bdca'],7);
+        const leaves=x>8?meadowLeaves:azureLeaves;
+        roughLedge(x,z,1.8+.55*seed(),openGround.grassland.rock,.32);
+        stamp('sod',x,yAt(x,z)+1.42,z-.95,2.8,1.3,3.35,choose(leaves),.02,.1);
+        if(i%2===0)leafFan(x+.24,yAt(x,z)+1.78,z-.7,.8,leaves,7);
       }
       for(const [x,z,p] of [[2,-6,.8],[-1.6,-8.3,2.2],[4.2,-12.1,4],[10.5,4.8,6],[-13,11,1.7]]) {
         const {animal,ears}=pipiModel();near.add(animal);
@@ -305,7 +344,7 @@ function createKloseScenery(T, parent, surface) {
       // Root buttresses arch over the branch leading down to the vine passage.
       for(const [x,z,r] of [[5,14,1],[-6,24,.8],[-7,-23,.9]]) {
         const g=yAt(x,z),pts=[v(x-5*r,g,z),v(x-3.8*r,g+2.8*r,z-.4),v(x-.9*r,g+4.3*r,z-.3),v(x+2.6*r,g+3.5*r,z),v(x+5*r,g,z+.4)];
-        tendril(pts,.69*r,'#786c4b',true);
+        tendril(pts,.69*r,'#a58c53',true);
         obstacle(x-5*r,z,.6*r);obstacle(x+5*r,z,.5*r);
       }
       for(const [x,z] of [[7,-8],[-9,7],[9,11]]) {
@@ -318,11 +357,11 @@ function createKloseScenery(T, parent, surface) {
     if(site.id==='forest') {
       for(let i=0;i<6;i++) {
         const x=-14-seed()*5,z=-11+4*i,y=yAt(x,z),s=3.8+seed();
-        stamp('boulder',x,y+.48*s,z,s,s*.72,s*1.2,'#b39c78',0,seed());
+        stamp('boulder',x,y+.48*s,z,s,s*.72,s*1.2,'#cdad84',0,seed());
         obstacle(x,z,s*.79);
         for(let j=0;j<7;j++) {
           const a=tau*j/7;
-          stamp('round',x+.72*s*Math.cos(a),y+s*1.02,z+.7*s*Math.sin(a),s*.16,s*.037,s*.25,'#554b42',0,a);
+          stamp('round',x+.72*s*Math.cos(a),y+s*1.02,z+.7*s*Math.sin(a),s*.16,s*.037,s*.25,'#432f28',0,a);
         }
       }
       // 047's broad mottled cap, shadowed face, pale eyes and four stout legs
@@ -333,10 +372,10 @@ function createKloseScenery(T, parent, surface) {
       stamp('round',bx,base+.52,bz,.62,.39,.43,'#bfab7c');
       stamp('round',bx,base+.82,bz+.21,.48,.215,.26,'#39312b');
       for(const off of [-.17,.15])stamp('round',bx+off,base+.86,bz+.46,.057,.088,.035,'#fff3da');
-      stamp('cap',bx,base+.86,bz,.88,.67,.73,'#985632',.03,.27,-.13);
+      stamp('cap',bx,base+.86,bz,.88,.67,.73,'#993300',.03,.27,-.13);
       for(let j=0;j<9;j++) {
         const a=j*tau/9,r=j%3?.61:.32;
-        stamp('round',bx+Math.cos(a)*r,base+(j%3?1.14:1.34),bz+Math.sin(a)*r*.7,.16,.04,.14,'#d9c196',0,a);
+        stamp('round',bx+Math.cos(a)*r,base+(j%3?1.14:1.34),bz+Math.sin(a)*r*.7,.16,.04,.14,'#f9e9bf',0,a);
       }
       for(const [dx,dy] of [[.51,.53],[.60,.44]])stamp('round',bx+dx,base+dy,bz+.27,.13,.16,.11,'#c19e6a');
       for(let i=0;i<18;i++){const a=seed()*tau,r=3+seed()*5;spore(7+r*Math.cos(a),-11+r*Math.sin(a),.29+.43*seed(),'#baa283','#a97d5e');}
@@ -346,7 +385,7 @@ function createKloseScenery(T, parent, surface) {
       for(const [x,z] of [[-11,-7],[12,-15],[17,8],[-18,10]]) {
         for(let j=0;j<4;j++) {
           const dx=x+j*.43;const g=yAt(dx,z);
-          tendril([v(dx+.3,g+12,z),v(dx-.3,g+7.1,z+.4),v(dx,g+.2,z)],.14,'#776f43');
+          tendril([v(dx+.3,g+12,z),v(dx-.3,g+7.1,z+.4),v(dx,g+.2,z)],.14,j%2?'#777c34':'#9d9d37');
         }
       }
     }
@@ -356,49 +395,59 @@ function createKloseScenery(T, parent, surface) {
         stamp('facet',x,g+.18,z,.67,.31,.62,'#a59770',0,.2*i);
       }
       const x=7,z=-12,g=yAt(x,z);
-      stamp('facet',x,g+.27,z,2.8,.54,2.65,'#9b8065');
-      stamp('facet',x,g+.55,z,2.33,.15,2.30,'#8dab6d');
-      stamp('rim',x,g+.64,z,1.74,1.72,.45,'#d0af67',Math.PI/2);
+      stamp('facet',x,g+.27,z,2.8,.54,2.65,'#986446');
+      stamp('facet',x,g+.55,z,2.33,.15,2.30,'#9cbd46');
+      stamp('rim',x,g+.64,z,1.74,1.72,.45,'#e6b975',Math.PI/2);
     }
     for(const p of pools.filter(p=>p.id===site.id)) {
       const x=p.dx,z=p.dz,y=yAt(x,z),isCore=site.id==='core',isWet=site.id==='wetland';
-      const water=isCore?'#53d7be':isWet?'#dbaa52':'#619e91';
+      const water=isCore?'#ffffff':isWet?'#e5a037':'#bf9143';
       const waterLevel=y+(isCore?.99:.75);
-      stamp('pool',x,waterLevel,z,p.rx*.96,.13,p.rz*.96,water);
+      stamp(isCore?'energyPool':isWet?'pool':'mud',x,waterLevel,z,p.rx*.96,.13,p.rz*.96,water);
       for(let j=0;j<22;j++) {
         const a=seed()*tau,t=.91+seed()*.12,dx=x+t*p.rx*Math.cos(a),dz=z+t*p.rz*Math.sin(a);
         if(!isCore && seed()<.45)reeds(dx,dz,.8+seed()*.9,'#979152');
-        else stones(dx,dz,.35+seed()*.62,isCore?'#b78d9d':'#97936e');
+        else stones(dx,dz,.35+seed()*.62,isCore?'#9a784d':isWet?'#8e866e':'#af9556');
       }
       for(let j=0;j<8;j++) {
         const a=seed()*tau,f=seed()*.68,px=x+p.rx*f*Math.cos(a),pz=z+p.rz*f*Math.sin(a);
-        stamp('round',px,waterLevel+.139,pz,.36+seed(),.009,.04+seed()*.035,isCore?'#a4ffdd':isWet?'#edd495':'#9bbfb0',0,.13);
+        stamp('round',px,waterLevel+.139,pz,.36+seed(),.009,.04+seed()*.035,isCore?'#66edeb':isWet?'#f7ce72':'#d9b470',0,.13);
       }
       if(isCore) {
-        stamp('rock',x,waterLevel+.16,z,1.7,.49,1.35,'#8c8b64');
-        stamp('rock',x,waterLevel+.49,z,1.32,.17,1.05,'#a3ae70');
+        // Map 13/1707 has an almost continuous strip of pink growth along
+        // the pool. The sections under the crystals take on a lavender tint.
+        for(let i=0;i<42;i++){
+          const a=tau*i/42,c=Math.cos(a),s=Math.sin(a);
+          const dx=x+(p.rx+.36)*c,dz=z+(p.rz+.28)*s;
+          const along=Math.hypot(p.rx*s,p.rz*c)*tau/42;
+          const rimColor=c>.74?'#ae9bde':s<-.65?'#bf558f':'#ce79ae';
+          stamp('sod',dx,Math.max(yAt(dx,dz),waterLevel+.03),dz,along*.85,.62,.79,
+            rimColor,0,Math.atan2(-p.rz*c,-p.rx*s));
+        }
+        stamp('rock',x,waterLevel+.16,z,1.7,.49,1.35,'#6d7647');
+        stamp('rock',x,waterLevel+.49,z,1.32,.17,1.05,'#bd9c5f');
       }
     }
     if(site.id==='vineway') {
       // Ogre roots form the actual covered descent. The open strip follows
       // the bearing of the swamp-to-core edge through each arch.
-      const roof='#4e5461',rootColor='#616752';
+      const roof='#50412a',rootColor='#333c2c';
       for(let i=0;i<12;i++) {
         const z=-41+i*7.2,x=-z*.28,g=yAt(x,z),w=8.5+seed()*1.4;
         const pts=[v(x-w,g-.6,z),v(x-w+.9,g+4,z+.9),v(x-3.4,g+8.5+.7*seed(),z+1.3),v(x+2,g+9.3,z+.9),v(x+w-1.5,g+6,z),v(x+w,g,z-.5)];
         tendril(pts,1.65,roof,true);
         obstacle(x-w,z,1.42);obstacle(x+w,z,1.32);
-        const red=pts.map(p=>v(p.x+.48,p.y-.64,p.z+.72));tendril(red,.21,i%3?'#805564':'#984f60',true);
+        const vine=pts.map(p=>v(p.x+.48,p.y-.64,p.z+.72));tendril(vine,.21,i%3?'#485a40':'#76713a',true);
         for(const side of [-1,1]) {
-          const xx=x+side*w;stones(xx,z,2.5,'#5b6178');
-          leafFan(xx,g+1,z,1.4,['#675e8a','#55577a','#7d7198'],8);
+          const xx=x+side*w;stones(xx,z,2.5,'#87715c');
+          leafFan(xx,g+1,z,1.4,['#465688','#6c509d','#9a72be'],8);
         }
         const edge=x+w-2.7;
         tendril([v(edge,g+2,z-3.7),v(edge-.5,g+1.3,z),v(edge+.35,g+1.8,z+3.7)],.36,rootColor);
       }
     }
     if(site.id==='core') {
-      const shell=['#61554c','#665c52','#736157','#79685a'];
+      const shell=['#362a1c','#4b3721','#68512d','#775d38'];
       // A closed crown and buttressed perimeter form the cave ceiling and walls.
       // Leave the north-northeast sector open towards the descending root passage.
       const floor=yAt(0,0);
@@ -415,15 +464,15 @@ function createKloseScenery(T, parent, surface) {
         }
         stamp('boulder',x*.63,floor+16.8+seed()*1.4,z*.63,9,4.4,10,choose(shell),.07,a);
       }
-      stamp('rock',0,floor+18,0,24,4.1,25,'#64594e',.03,.19);
+      stamp('rock',0,floor+18,0,24,4.1,25,'#4d3c27',.03,.19);
       for(const [x,z,s] of [[9,-16,3.3],[13,-13,4],[14,-10,2.4],[11,-20,3.4],[-17,7,1.85]])crystals(x,z,s);
-      const light=new T.PointLight(0x71fadd,1.8,44);light.position.set(-5,floor+4,-13);near.add(light);
-      const fill=new T.PointLight(0xf7ca92,.95,45);fill.position.set(1,floor+5,4);near.add(fill);
+      const light=new T.PointLight(0x47dee2,1.05,13);light.position.set(8,floor+4,-15);near.add(light);
+      const fill=new T.PointLight(0xffddb3,.92,42);fill.position.set(-1,floor+7,-2);near.add(fill);
     }
     if(site.id==='flame') {
-      for(const [x,z,s] of [[-9,-12,4.6],[10,-13,4.2],[14,-6,3.2]])tree(x,z,s,true);
+      for(const [x,z,s] of [[-9,-12,4.6],[10,-13,4.2],[14,-6,3.2]])tree(x,z,s);
       const g=yAt(-14,-4);
-      tendril([v(-21,g-1,-5),v(-20,g+4,-5),v(-17,g+5.4,-5),v(-13,g+5.2,-5),v(-11,g+3,-5),v(-10,g,-5)],1.6,'#997165',true);
+      tendril([v(-21,g-1,-5),v(-20,g+4,-5),v(-17,g+5.4,-5),v(-13,g+5.2,-5),v(-11,g+3,-5),v(-10,g,-5)],1.6,'#814432',true);
       const fx=-13,fz=-6,fy=yAt(fx,fz);
       stamp('round',fx,fy+.42,fz,1,.44,.4,'#de7851',.03);
       stamp('round',fx+.7,fy+.82,fz+.12,.44,.41,.35,'#f09c5e');
@@ -436,12 +485,12 @@ function createKloseScenery(T, parent, surface) {
     }
     if(site.id==='sanctuary') {
       const x=0,z=-14,g=yAt(x,z);
-      for(const [r,h,shade] of [[5,.4,'#94765b'],[4.5,.7,'#bb9870'],[4,.92,'#dab88c']]) stamp('facet',x,g+h*.48,z,r,h,r,shade,0,.19);
-      stamp('rim',x,g+.96,z,3.25,3.25,.47,'#cda76d',Math.PI/2);
+      for(const [r,h,shade] of [[5,.4,'#985b46'],[4.5,.7,'#c18a62'],[4,.92,'#f0c479']]) stamp('facet',x,g+h*.48,z,r,h,r,shade,0,.19);
+      stamp('rim',x,g+.96,z,3.25,3.25,.47,'#ffe4a1',Math.PI/2);
       obstacle(x,z,4.25);
       for(const [px,pz,s] of [[-7,-15,3.7],[7,-16,3.1],[-8,-21,2.5],[9,-23,4.1]]) {
-        const y=yAt(px,pz);stamp('boulder',px,y+s*.57,pz,s*.34,s,s*.31,'#b79778',.16,.26,-.18);
-        stamp('facet',px-.05,y+s*.67,pz+.21,s*.24,s*1.5,s*.20,'#dbb68a',.16,.26,-.18);
+        const y=yAt(px,pz);stamp('boulder',px,y+s*.57,pz,s*.34,s,s*.31,'#a77861',.16,.26,-.18);
+        stamp('facet',px-.05,y+s*.67,pz+.21,s*.24,s*1.5,s*.20,'#e6b792',.16,.26,-.18);
         obstacle(px,pz,s*.26);
       }
     }
@@ -452,7 +501,7 @@ function createKloseScenery(T, parent, surface) {
         const mesh=new T.InstancedMesh(geometry,material,entries.length);
         entries.forEach((item,i)=>{mesh.setMatrixAt(i,item.matrix);mesh.setColorAt(i,color(item.hex));});
         mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;
-        mesh.receiveShadow=true;mesh.castShadow=target===near&&key!=='pool'&&key!=='lamp'&&key!=='sod';
+        mesh.receiveShadow=true;mesh.castShadow=target===near&&!['pool','energyPool','mud','lamp','sod'].includes(key);
         target.add(mesh);
       }
       batch(near,geo,items);

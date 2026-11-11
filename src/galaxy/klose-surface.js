@@ -17,7 +17,8 @@ const KLOSE_WORLD = (() => {
   }));
   const routes = [['grassland','swamp'],['swamp','forest'],['swamp','vineway'],['vineway','core'],
     ['grassland','wetland'],['grassland','flame'],['grassland','sanctuary'],['wetland','flame']];
-  return {id:'klose',name:'克洛斯星',radius,sites,routes};
+  const rings={normal:[-.068462,.759343,.647078],inner:1.64,outer:1.98};
+  return {id:'klose',name:'克洛斯星',radius,sites,routes,rings};
 })();
 
 function createKloseSurface(T, world, definition = KLOSE_WORLD) {
@@ -141,94 +142,130 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
   }
 
   const color = hex=>new T.Color(hex).convertSRGBToLinear();
-  const orbitalPalette = ['#102a45','#183e58','#246472','#539d94','#b1ad78','#7f9352','#486e49','#3c5d47','#888765'].map(hex=>new T.Color(hex));
-  const thresholds=[-1.2,-.65,-.27,-.07,-.018,.045,.20,.47,1.2];
+  // Bright-side fills in Taomei's labelled Pano chart, icon 27. The tilted
+  // belts and the ring have a single pole in the planet's Cartesian frame.
+  const pole=new T.Vector3(...definition.rings.normal).normalize();
+  const belts=['#bc969a','#6f7c91','#aa9db5','#999966','#9ab8b1'].map(hex=>new T.Color(hex));
+  const boundaries=[-.36,-.13,.36,.76];
+  function orbitalAlbedo(x,y,z,field,output){
+    const latitude=x*pole.x+y*pole.y+z*pole.z+field*.018;
+    let band=0;
+    while(band<boundaries.length&&latitude>boundaries[band]+.022)band++;
+    output.copy(belts[band]);
+    if(band<boundaries.length)
+      output.lerp(belts[band+1],smooth(boundaries[band]-.022,boundaries[band]+.022,latitude));
+    return output;
+  }
   function atlas() {
-    const w=2048,h=1024,cw=w/2,ch=h/2;
-    const body=document.createElement('canvas'), clouds=document.createElement('canvas');
-    body.width=w;body.height=h;clouds.width=cw;clouds.height=ch;
-    const ctx=body.getContext('2d'), cloudCtx=clouds.getContext('2d');
-    const land=ctx.createImageData(w,h),air=cloudCtx.createImageData(cw,ch),relief=new Float32Array(w*h),sample=new T.Color();
-    const lons=new Float32Array(w),cosines=new Float32Array(w),sines=new Float32Array(w);
+    const w=2048,h=1024,body=document.createElement('canvas');
+    body.width=w;body.height=h;
+    const ctx=body.getContext('2d'),land=ctx.createImageData(w,h),sample=new T.Color();
+    const cosines=new Float32Array(w),sines=new Float32Array(w);
     for(let col=0;col<w;col++) {
       const lon=((col+.5)/w-.5)*tau;
-      lons[col]=lon;cosines[col]=Math.cos(lon);sines[col]=Math.sin(lon);
+      cosines[col]=Math.cos(lon);sines[col]=Math.sin(lon);
     }
     for (let row=0;row<h;row++) {
       const lat=(.5-(row+.5)/h)*Math.PI,c=Math.cos(lat),y=Math.sin(lat);
       for (let col=0;col<w;col++) {
-        const lon=lons[col],x=c*cosines[col],z=-c*sines[col],i=(row*w+col)*4;
+        const x=c*cosines[col],z=-c*sines[col],i=(row*w+col)*4;
         const field=bedrock(x,y,z);
-        let band=0;
-        while (band<thresholds.length-2 && field>thresholds[band+1]) band++;
-        sample.copy(orbitalPalette[band]).lerp(orbitalPalette[band+1],smooth(thresholds[band],thresholds[band+1],field));
-        const continent=smooth(-.04,.17,field),fine=fractal(x*74,y*74,z*74);
-        const boundary=Math.abs(fractal(11+12*x,3+12*y,7+12*z)+.16*fine);
-        const ridge=continent*(1-smooth(.025,.24,boundary))*(.28+.72*smooth(-.05,.43,field));
-        relief[row*w+col]=continent*(field*.6+ridge+.10*fine);
-        const grain=.93+.13*fine+.045*noise(x*203,y*203,z*203);
-        const tundra=ridge*.33,ice=smooth(.94,1.018,Math.abs(y)+.028*noise(9*x,9*y,9*z)+.012*fine);
-        land.data[i]=255*((sample.r*grain+tundra*.31)*(1-ice)+.83*ice);
-        land.data[i+1]=255*((sample.g*grain+tundra*.21)*(1-ice)+.89*ice);
-        land.data[i+2]=255*((sample.b*grain+tundra*.15)*(1-ice)+.89*ice);
+        orbitalAlbedo(x,y,z,field,sample);
+        const relief=1+.073*field+.040*fractal(x*55,y*55,z*55);
+        land.data[i]=255*sample.r*relief;
+        land.data[i+1]=255*sample.g*relief;
+        land.data[i+2]=255*sample.b*relief;
         land.data[i+3]=255;
-        if(!(row&1)&&!(col&1)) {
-          const k=((row>>1)*cw+(col>>1))*4;
-          // A localized cyclone deforms the cloud field without repeating a diagonal wave around the globe.
-          const px=unwrap(lon-.10)*Math.cos(.33),py=lat-.33,d2=px*px+py*py,twist=2.8*Math.exp(-d2/.075);
-          const angle=lon+(px*Math.cos(twist)-py*Math.sin(twist)-px),v=lat+(px*Math.sin(twist)+py*Math.cos(twist)-py);
-          const cy=Math.sin(v),cx=Math.cos(v)*Math.cos(angle),cz=-Math.cos(v)*Math.sin(angle);
-          const shear=fractal(2+cx*4,9+cy*4,7+cz*4);
-          const cloudsBroad=fractal(15+cx*6.1+1.8*shear,12+cy*8.4,7+cz*6.7-.85*shear);
-          const wisps=fractal(23+cx*36,17+cy*43+2.6*shear,13+cz*39);
-          const density=cloudsBroad+.29*wisps;
-          air.data[k]=231;air.data[k+1]=242;air.data[k+2]=238;
-          air.data[k+3]=167*smooth(.20,.63,density)+28*smooth(.04,.29,density);
-        }
       }
     }
-    for(let row=1;row<h-1;row++)for(let col=0;col<w;col++) {
-      const j=row*w+col,i=j*4;
-      const ew=relief[row*w+((col+1)%w)]-relief[row*w+((col+w-1)%w)];
-      const ns=relief[j+w]-relief[j-w],illum=clamp(1+.83*ew+.63*ns,.69,1.23);
-      for(let channel=0;channel<3;channel++)land.data[i+channel]*=illum;
+    ctx.putImageData(land,0,0);
+    const tex=new T.CanvasTexture(body);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;tex.anisotropy=4;return tex;
+  }
+  function addRings() {
+    const {inner,outer}=definition.rings;
+    // The icon has an amber inner band and a wider lemon-gold outer band.
+    // Give the disk a few genuine gaps; the globe and rings share the depth buffer.
+    const material=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide});
+    const rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),pole);
+    const lerp=T.MathUtils.lerp;
+    const sun=frame(origin.lat,origin.lon);
+    const light=sun.up.multiplyScalar(.76).addScaledVector(sun.east,-.8).addScaledVector(sun.north,-.22).normalize();
+    const p=new T.Vector3(),base=new T.Color();
+    for(const [a,b,dark,bright] of [[0,.22,'#bd834c','#dfa25e'],[.244,.70,'#efd567','#ffff66'],
+      [.707,.89,'#f4d269','#fff484'],[.907,1,'#efbd5a','#ffff77']]){
+      const start=lerp(inner,outer,a),end=lerp(inner,outer,b);
+      const ring=new T.RingGeometry(start*radius,end*radius,220,12);
+      const attribute=ring.getAttribute('position'),rgb=new Float32Array(attribute.count*3);
+      const low=color(dark),high=color(bright);
+      for(let i=0;i<attribute.count;i++){
+        p.fromBufferAttribute(attribute,i).divideScalar(radius).applyQuaternion(rotation);
+        const r=p.length(),t=clamp((r-start)/(end-start)),along=p.dot(light);
+        const clearance=Math.sqrt(Math.max(0,r*r-along*along));
+        const shade=along>=0?1:.49+.51*smooth(.95,1.08,clearance);
+        base.copy(low).lerp(high,.3+.6*t+.07*Math.sin(t*28+a*6)).multiplyScalar(shade);
+        base.toArray(rgb,i*3);
+      }
+      ring.setAttribute('color',new T.BufferAttribute(rgb,3));
+      const mesh=new T.Mesh(ring,material);mesh.name='克洛斯星 · 金色环带';
+      mesh.quaternion.copy(rotation);orbital.add(mesh);
     }
-    ctx.putImageData(land,0,0); cloudCtx.putImageData(air,0,0);
-    return [body,clouds].map(canvas=>{const tex=new T.CanvasTexture(canvas);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;tex.anisotropy=4;return tex;});
   }
   let builtOrbit=false;
   function buildOrbit() {
     if (builtOrbit) return;
     builtOrbit=true;
-    const [land,clouds]=atlas();
     orbital.add(new T.Mesh(new T.SphereGeometry(radius,144,88),
-      new T.MeshStandardMaterial({map:land,roughness:.88})));
-    orbital.add(new T.Mesh(new T.SphereGeometry(radius*1.0035,112,72),
-      new T.MeshLambertMaterial({map:clouds,transparent:true,depthWrite:false})));
+      new T.MeshStandardMaterial({map:atlas(),roughness:.91})));
+    addRings();
     const rim=new T.ShaderMaterial({vertexShader:
       'varying vec3 n; varying vec3 v; void main(){ vec4 p=modelViewMatrix*vec4(position,1.); n=normalize(normalMatrix*normal); v=normalize(-p.xyz); gl_Position=projectionMatrix*p; }',
-      fragmentShader:'varying vec3 n; varying vec3 v; void main(){ float f=pow(max(0.,1.-abs(dot(normalize(n),normalize(v)))),5.); gl_FragColor=vec4(.28,.76,.93,.6*f); }',
+      fragmentShader:'varying vec3 n; varying vec3 v; void main(){ float f=pow(max(0.,1.-abs(dot(normalize(n),normalize(v)))),5.); gl_FragColor=vec4(.61,.63,.71,.26*f); }',
       transparent:true,side:T.BackSide,depthWrite:false});
-    orbital.add(new T.Mesh(new T.SphereGeometry(radius*1.023,112,64),rim));
+    orbital.add(new T.Mesh(new T.SphereGeometry(radius*1.009,112,64),rim));
   }
-  const turf=['#d87d61','#e89d76','#d7a572','#709baa','#7e8153','#9a8459','#7c8568','#426683','#689dad','#366f81','#647da3'].map(color);
-  const biomeIndex={grassland:0,swamp:5,forest:4,vineway:10,core:6,wetland:3,flame:7,sanctuary:8};
-  const groundColor=new T.Color();
+  // The original scene paintings give trails their local soil colour. In
+  // particular, map 10 has a coral clearing framed by broad banks of blue sod.
+  const soil = {
+    grassland:['#ee7057','#ff9664','#fb795b'],
+    swamp:    ['#926331','#c18a45','#ae894b'],
+    forest:   ['#806443','#b18a59','#a78655'],
+    vineway:  ['#254468','#42789a','#785f61'],
+    core:     ['#785c35','#b79666','#92744a'],
+    wetland:  ['#234d80','#4c79b1','#436996'],
+    flame:    ['#112d59','#26608b','#995040'],
+    sanctuary:['#197ba5','#43acda','#d58d64']
+  };
+  for (const name of Object.keys(soil)) soil[name]=soil[name].map(color);
+  const grassBlue=color('#2a8cbd'),grassTip=color('#58b5d9'),grassMoss=color('#98af45');
+  const groundColor=new T.Color(),regionColor=new T.Color(),sodColor=new T.Color();
+  function grassClearing(x,z,variation,trailCoverage) {
+    // North is behind the blue-topped rock ledge. Only the northeastern shelf
+    // is yellow-green in map 10; the sunny foreground stays coral.
+    const edge=Math.max(-z-17+3.5*Math.sin(x*.11),x-21+3*Math.sin(z*.15),
+      -x-17+2.8*Math.sin(z*.13),z-26+4*Math.sin(x*.09));
+    const coverage=smooth(-3,4,edge+2.8*variation)*(1-.78*trailCoverage);
+    sodColor.copy(grassBlue).lerp(grassTip,.25+.5*variation);
+    sodColor.lerp(grassMoss,smooth(9,19,x)*(1-smooth(-13,-4,z)));
+    regionColor.lerp(sodColor,coverage);
+  }
   function shade(lat,lon,x,z) {
-    const d=Math.hypot(x,z);
-    if (d>1800 && geography(lat,lon)<-.06) return groundColor.copy(turf[9]);
-    const variation=.5+.5*Math.sin(.029*x+Math.sin(.035*z))*Math.cos(.033*z-.01*x);
-    groundColor.copy(turf[0]).lerp(turf[1],variation*.47);
-    if (d>470) return groundColor.setHex(0x759b61).convertSRGBToLinear();
-    for (const s of sites) {
-      if (s.id==='grassland') continue;
-      const weight=1-smooth(30,95,Math.hypot(s.x-x,s.z-z));
-      if (weight>0) groundColor.lerp(turf[biomeIndex[s.id]],weight);
+    const d=Math.hypot(x,z),c=Math.cos(lat),sx=c*Math.cos(lon),sy=Math.sin(lat),sz=-c*Math.sin(lon);
+    orbitalAlbedo(sx,sy,sz,bedrock(sx,sy,sz),groundColor).convertSRGBToLinear();
+    if (d>660) return groundColor;
+    const variation=smooth(-.66,.66,noise(x*.066,8,z*.066));
+    const trailCoverage=1-smooth(1.2,4.4,trail(x,z));
+    const daylight=.94+.09*variation;
+    for (const site of sites) {
+      const dx=x-site.x,dz=z-site.z;
+      const weight=1-smooth(50,132,Math.hypot(dx,dz));
+      if (!weight)continue;
+      const [shade,light,path]=soil[site.id];
+      regionColor.copy(shade).lerp(light,.15+.73*variation);
+      if (site.id==='grassland') grassClearing(dx,dz,variation,trailCoverage);
+      regionColor.lerp(path,.66*trailCoverage);
+      groundColor.lerp(regionColor,weight);
     }
-    const distance=trail(x,z);
-    const path=(1-smooth(1.4,4.5,distance))*.8;
-    groundColor.lerp(turf[2],path);
-    return groundColor.multiplyScalar(.87+.14*variation+.075*Math.sin(x*.84+z*.46)*Math.sin(z*.75));
+    return groundColor.multiplyScalar(daylight);
   }
   function soilMap() {
     const canvas=document.createElement('canvas');canvas.width=canvas.height=192;

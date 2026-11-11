@@ -12,6 +12,8 @@ SEER 是一个以经典页游《赛尔号》为参考的离线三维同人项目
 
 克洛斯星的模型半径为 780 公里。地表图标出草原、沼泽、林间、藤蔓通道、地心、湿地、烈焰丛林和神宠之境。草原向西经沼泽抵达林间，在沼泽改走藤蔓坡道可以下到地心。八处地点来自不同时期的页游地图，共存时间线、地理坐标与距离由项目设定。[原作地图、现场图片与版本依据](docs/克洛斯星图证.md)
 
+从轨道可以看到经典帕诺星图上的金色斜环和灰青、橄榄、灰紫宽带。落地后，草原的珊瑚红土与蓝草岩台在橙红天光下相接，沿路走进沼泽会见到赭黄泥池；地心的青蓝池水由玫紫岸草环绕。[2016 年星图与草原实景](https://news.4399.com/news/seerwenda/610708.html) · [本版轨道](https://github.com/lshxzhy/seer-starship-reconstruction/releases/download/v0.8.1/klose-orbit.jpg) · [本版草原](https://github.com/lshxzhy/seer-starship-reconstruction/releases/download/v0.8.1/klose-grassland.jpg)
+
 ## 舰上操作
 
 - **舰内地图（M）**　在画面底栏打开地图，选择甲板，再点舱室查看步行路线和升降站换乘提示。要马上抵达可选“传送至此”。舱室位置取自本艘扩建舰。[地图图证](docs/地图系统图证.md)

@@ -10,11 +10,29 @@
     const hint=stage.querySelector('[data-route-hint]'),trackButton=atlas.querySelector('[data-track-site]');
     const sites=KLOSE_WORLD.sites,byId=new Map(sites.map(s=>[s.id,s])),home=byId.get('grassland');
     const radius=KLOSE_WORLD.radius,clamp=T.MathUtils.clamp;
+    // The exposed sky strip in maps 10, 12, 550 and 943 sets the local horizon.
+    // In enclosed areas, extend the distant canopy or cave mouth into the haze.
+    function air(horizon,zenith,haze,clouds,sun,fill){
+      return {horizon:new T.Color(horizon),zenith:new T.Color(zenith),haze:new T.Color(haze),clouds,sun,fill};
+    }
+    const atmosphere={
+      grassland:air(0xff7425,0xc44360,0xf19165,.09,.97,.52),
+      swamp:air(0x706144,0x352736,0x897651,.06,.78,.43),
+      forest:air(0xcb1a58,0x872431,0x9c6c58,.04,.81,.46),
+      vineway:air(0x663954,0x28223c,0x595067,.04,.62,.41),
+      core:air(0x473a31,0x262026,0x50453e,0,.18,.30),
+      wetland:air(0xffc990,0xc65e83,0xe6a27f,.20,.98,.55),
+      flame:air(0xffaa64,0x963669,0xb57872,.14,.90,.49),
+      sanctuary:air(0x99d8f3,0x326dc4,0x8ab8dd,.33,.99,.54)
+    };
+    const airWeights=new Float32Array(sites.length);
+    let lastAirLat,lastAirLon;
     const keys=new Set(),touch=new Map(),pendingSteps=new Map(),events=new AbortController();
     const listen=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:events.signal});
     let world,body,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight;
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
-    let orbitLat=home.lat+.18,orbitLon=home.lon-.28,orbitZoom=3.3,elapsed=0,lastTime=null,walkPhase=0;
+    const defaultOrbitZoom=4.6;
+    let orbitLat=home.lat+.18,orbitLon=home.lon-.28,orbitZoom=defaultOrbitZoom,elapsed=0,lastTime=null,walkPhase=0;
     let targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',approach=null,shownMode='',uiClock=0;
     let watching=false;
     let visible=true;
@@ -57,8 +75,8 @@
       rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true});
       local.add(rig.root);contact=createSoleContacts(1);local.add(contact.mesh);
       nono=createSuperNono(1,local);drill=createMiningDrill(world);
-      bounce=new T.HemisphereLight(0xdceaf5,0x6d6762,.65);
-      lamp=new T.DirectionalLight(0xffeed0,1.42);world.add(bounce,lamp,lamp.target);
+      bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
+      lamp=new T.DirectionalLight(0xfff8ef,.97);world.add(bounce,lamp,lamp.target);
       lamp.shadow.mapSize.setScalar(Math.min(2048,renderer.capabilities.maxTextureSize));
       Object.assign(lamp.shadow.camera,{left:-27,right:27,bottom:-27,top:27,near:1,far:114});
       lamp.shadow.camera.updateProjectionMatrix();lamp.shadow.bias=-.00035;lamp.shadow.normalBias=.045;
@@ -74,27 +92,70 @@
       stars=new T.Points(g,new T.PointsMaterial({color:0xd8e7f5,size:1.5,sizeAttenuation:false,fog:false,toneMapped:false}));
       world.add(stars);
       // Local sky dome follows the tangent frame so its horizon rotates around the globe.
+      const rings=KLOSE_WORLD.rings;
+      const ringNormal=new T.Vector3().fromArray(rings.normal);
       sky=new T.Mesh(new T.SphereGeometry(1,42,22),new T.ShaderMaterial({
         side:T.BackSide,depthWrite:false,depthTest:false,fog:false,
-        uniforms:{sun:{value:new T.Vector3(-.55,.82,-.28).normalize()},forestTint:{value:0},moonStrength:{value:0}},
+        uniforms:{sun:{value:daylight.clone()},horizon:{value:new T.Color()},zenith:{value:new T.Color()},
+          cloudAmount:{value:0},moonStrength:{value:0},ringPlane:{value:new T.Vector3()},
+          ringBounds:{value:new T.Vector2(rings.inner,rings.outer)}},
         vertexShader:'varying vec3 direction;void main(){direction=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-        fragmentShader:`varying vec3 direction;uniform vec3 sun;uniform float forestTint;uniform float moonStrength;
+        fragmentShader:`varying vec3 direction;uniform vec3 sun,horizon,zenith,ringPlane;
+          uniform vec2 ringBounds;uniform float cloudAmount,moonStrength;
           float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
           float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.),f.x),f.y);}
           void main(){vec3 d=normalize(direction);float y=max(d.y,0.);
-            vec3 col=mix(vec3(.80,.90,.78),vec3(.22,.49,.68),smoothstep(0.,.83,y));
+            vec3 col=mix(horizon,zenith,smoothstep(0.,.69,pow(y,.80)));
             vec2 q=d.xz/max(.06,d.y+.13)*2.5;float f=noise(q)*.57+noise(q*2.)*.27+noise(q*4.)*.12+noise(q*8.)*.04;
-            col=mix(col,mix(vec3(.76,.41,.47),vec3(.30,.16,.36),smoothstep(0.,.75,y)),forestTint);
+            float den=dot(d,ringPlane);
+            if(d.y>0. && abs(den)>.0001){
+              float t=-ringPlane.y/den;
+              float r=length(vec3(0.,1.,0.)+d*t);
+              float band=smoothstep(ringBounds.x,ringBounds.x+.018,r)*(1.-smoothstep(ringBounds.y-.018,ringBounds.y,r));
+              if(t>0.)col=mix(col,vec3(1.,.87,.52),band*smoothstep(.025,.30,y)*cloudAmount*.78);
+            }
             vec3 moon=normalize(vec3(.25,.40,-.90));float md=length(d-moon)/.19;
             if(md<1.){vec3 n=normalize((d-moon)/.19+moon*sqrt(max(0.,1.-md*md)));
               float lit=.25+.75*max(dot(n,normalize(vec3(-.58,.61,-.51))),0.);
               vec3 m=mix(vec3(.19,.50,.70),vec3(.46,.78,.82),.5+.5*sin(dot(n,vec3(7.,18.,5.))+3.*noise(n.xy*7.)));
               col=mix(col,m*lit,moonStrength*(1.-smoothstep(.98,1.,md)));}
-            col=mix(col,vec3(.97,.96,.84),smoothstep(.52,.76,f)*smoothstep(0.,.20,y)*.69);
-            float s=max(dot(d,sun),0.);col+=vec3(.29,.21,.10)*pow(s,40.)+vec3(.42,.38,.26)*smoothstep(.997,.9995,s);
+            col=mix(col,mix(horizon,vec3(1.),.62),smoothstep(.52,.76,f)*smoothstep(0.,.19,y)*cloudAmount);
+            float s=max(dot(d,sun),0.);col+=cloudAmount*(vec3(.7,.48,.28)*pow(s,40.)+vec3(.9,.84,.72)*smoothstep(.997,.9995,s));
             gl_FragColor=vec4(col,1.);}`
       }));
+      sky.userData.ringNormal=ringNormal;
       sky.renderOrder=-1000;sky.frustumCulled=false;world.add(sky);
+    }
+    function lightSurface(groundFrame,foot){
+      const u=sky.material.uniforms;
+      if(position.lat!==lastAirLat||position.lon!==lastAirLon){
+        lastAirLat=position.lat;lastAirLon=position.lon;
+        let total=0;
+        for(const [i,site] of sites.entries()){
+          airWeights[i]=1-T.MathUtils.smoothstep(displacement(position,site).distance,35,96);
+          total+=airWeights[i];
+        }
+        // Return to the open grassland sky beyond the documented sites.
+        const open=atmosphere.grassland;
+        let weight=Math.max(0,1-total);
+        u.horizon.value.copy(open.horizon);u.zenith.value.copy(open.zenith);world.fog.color.copy(open.haze);
+        let sun=open.sun*weight,fill=open.fill*weight,clouds=open.clouds*weight,moon=0;
+        for(const [i,site] of sites.entries()){
+          const w=airWeights[i],a=atmosphere[site.id];if(!w)continue;
+          weight+=w;const blend=w/weight;
+          u.horizon.value.lerp(a.horizon,blend);u.zenith.value.lerp(a.zenith,blend);world.fog.color.lerp(a.haze,blend);
+          sun+=w*a.sun;fill+=w*a.fill;clouds+=w*a.clouds;
+          if(site.id==='sanctuary')moon=w;
+        }
+        u.cloudAmount.value=clouds/weight;u.moonStrength.value=moon/weight;
+        lamp.intensity=sun/weight;bounce.intensity=fill/weight;
+        world.background.copy(u.horizon.value);
+      }
+      lamp.target.position.copy(foot);lamp.position.copy(foot).addScaledVector(daylight,69);
+      bounce.position.copy(groundFrame.up);
+      u.sun.value.set(daylight.dot(groundFrame.east),daylight.dot(groundFrame.up),daylight.dot(groundFrame.south));
+      const n=sky.userData.ringNormal;
+      u.ringPlane.value.set(n.dot(groundFrame.east),n.dot(groundFrame.up),n.dot(groundFrame.south));
     }
     function setDetail(mode){
       if(mode===shownMode)return;
@@ -104,10 +165,11 @@
       lamp.castShadow=ground;
       if(!ground){
         lamp.position.copy(daylight).multiplyScalar(radius*3);lamp.target.position.set(0,0,0);
-        lamp.intensity=1.42;bounce.intensity=.36;bounce.position.set(0,1,0);
+        lamp.intensity=1.16;bounce.intensity=.36;bounce.position.set(0,1,0);
       }
-      world.background=new T.Color(ground?0xb8d3be:0x071322);
-      world.fog=ground?new T.FogExp2(0xb0c5a8,.00085):null;
+      lastAirLat=lastAirLon=undefined;
+      world.background=new T.Color(ground?atmosphere.grassland.horizon:0x071322);
+      world.fog=ground?new T.FogExp2(atmosphere.grassland.haze,.00125):null;
     }
     function validPosition(p){
       return p&&Number.isFinite(p.lat)&&Math.abs(p.lat)<=Math.PI/2&&Number.isFinite(p.lon);
@@ -118,7 +180,9 @@
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-.90,.97);
       facing=Number.isFinite(saved.facing)?saved.facing:yaw;eye=Boolean(saved.eye);
-      orbitZoom=clamp(Number(saved.zoom)||3.3,1.9,4.9);
+      const savedZoom=Number(saved.zoom);
+      orbitZoom=Number.isFinite(savedZoom)&&savedZoom>0&&(saved.ringFraming||savedZoom!==3.3)
+        ?clamp(savedZoom,2.1,7):defaultOrbitZoom;
       orbitLat=clamp(Number.isFinite(saved.orbitLat)?saved.orbitLat:home.lat+.18,-1.52,1.52);
       orbitLon=Number.isFinite(saved.orbitLon)?saved.orbitLon:home.lon-.28;
       arrival='';watching=false;plotRoute(saved.targetId);lastTime=null;
@@ -134,7 +198,7 @@
     }
     function snapshot(){
       return {origin,phase:phase==='surface'||phase==='descent'?'surface':'orbit',position:{...position},
-        yaw,pitch,eye,facing,targetId,orbitLat,orbitLon,zoom:orbitZoom};
+        yaw,pitch,eye,facing,targetId,orbitLat,orbitLon,zoom:orbitZoom,ringFraming:true};
     }
     function updateUI(){
       const ground=phase==='surface',flying=phase==='ascent'||phase==='descent';
@@ -188,14 +252,7 @@
     }
     function surfaceCamera(dt){
       const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015);
-      const regional=id=>1-T.MathUtils.smoothstep(displacement(position,byId.get(id)).distance,34,87);
-      sky.material.uniforms.forestTint.value=regional('forest');
-      sky.material.uniforms.moonStrength.value=regional('sanctuary');
-      const underground=regional('core');
-      lamp.intensity=1.42*(1-.88*underground);bounce.intensity=.65*(1-.56*underground);
-      lamp.target.position.copy(p);lamp.position.copy(p).addScaledVector(daylight,69);
-      bounce.position.copy(f.up);
-      sky.material.uniforms.sun.value.set(daylight.dot(f.east),daylight.dot(f.up),daylight.dot(f.south));
+      lightSurface(f,p);
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
       const dir=f.north.clone().multiplyScalar(Math.cos(yaw)).addScaledVector(f.east,-Math.sin(yaw));
       const aim=p.clone().addScaledVector(f.up,eye?seerRobots.eyeHeight:1.08);
@@ -241,8 +298,9 @@
       const dt=lastTime===null?0:clamp((time-lastTime)/1000,0,.12);lastTime=time;
       if(!atlas.hidden)return false;
       if(phase==='orbit'){
-        setDetail('orbit');setLens(radius*.006,radius*16);local.visible=false;drill.hide();
-        view.position.copy(orbitPoint());view.up.set(0,1,0);view.lookAt(0,0,0);
+        const orbital=orbitPoint();
+        setDetail('orbit');setLens(radius*.006,orbital.length()+radius*6);local.visible=false;drill.hide();
+        view.position.copy(orbital);view.up.set(0,1,0);view.lookAt(0,0,0);
       }else if(phase==='surface'){
         setDetail('surface');setLens(.08,4200);local.visible=true;rig.root.visible=contact.mesh.visible=!eye;
         const pressed=code=>keys.has(code)||[...touch.values()].includes(code);
@@ -262,10 +320,10 @@
         const height=4*Math.pow(startHeight/4,1-s),mix=1-Math.pow(1-s,4);
         const normal=orbital.normalize().lerp(approach.up,mix).normalize();
         const distant=height>1500,near=distant?Math.max(1,height*.001):.1;
-        setDetail(distant?'orbit':'surface');setLens(near,distant?radius*16:4200);
+        setDetail(distant?'orbit':'surface');setLens(near,distant?height+radius*7:4200);
         if(shownMode==='surface'){
           body.update(position.lat,position.lon,dt);
-          lamp.target.position.copy(foot);lamp.position.copy(foot).addScaledVector(daylight,69);bounce.position.copy(approach.up);
+          lightSurface(approach,foot);
         }
         view.position.copy(normal).multiplyScalar(foot.length()+height).addScaledVector(approach.south,5*s);
         const aim=foot.clone().addScaledVector(approach.up,1).addScaledVector(approach.north,2);
@@ -275,7 +333,11 @@
         local.visible=false;drill.hide();
         if(u===1){phase=phase==='descent'?'surface':'orbit';updateUI();persist();requestFrame();}
       }
-      renderer.setRenderTarget(null);renderer.render(world,view);
+      // Use the original swatch hue through the planet's lighting pass. The
+      // ship uses its own filmic exposure for illuminated equipment and metal.
+      const shipCurve=renderer.toneMapping;
+      renderer.setRenderTarget(null);renderer.toneMapping=T.NoToneMapping;
+      try{renderer.render(world,view);}finally{renderer.toneMapping=shipCurve;}
       return phase!=='orbit';
     }
     const ns='http://www.w3.org/2000/svg';
@@ -368,7 +430,7 @@
     listen(canvas,'wheel',e=>{
       if(!['orbit','surface'].includes(phase)||!atlas.hidden)return;
       e.preventDefault();const factor=Math.exp(clamp(e.deltaY,-170,170)*.0018);
-      if(phase==='orbit')orbitZoom=clamp(orbitZoom*factor,1.9,4.9);else boom=clamp(boom*factor,2.4,8);
+      if(phase==='orbit')orbitZoom=clamp(orbitZoom*factor,2.1,7);else boom=clamp(boom*factor,2.4,8);
       requestFrame();
     },{passive:false});
     for(const b of pad.querySelectorAll('[data-step]')){
