@@ -1,7 +1,7 @@
 // Latitude and longitude are radians. One scene unit is one metre. East, up,
 // south form a right-handed local frame everywhere, including at the poles.
 const KLOSE_WORLD = (() => {
-  const radius = 780000, latitude = .32, longitude = .54;
+  const radius = 480000, latitude = .32, longitude = .54;
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
@@ -18,15 +18,27 @@ const KLOSE_WORLD = (() => {
   const routes = [['grassland','swamp'],['swamp','forest'],['swamp','vineway'],['vineway','core'],
     ['grassland','wetland'],['grassland','flame'],['grassland','sanctuary'],['wetland','flame']];
   const rings={normal:[-.068462,.759343,.647078],inner:1.64,outer:1.98};
-  return {id:'klose',name:'克洛斯星',radius,sites,routes,rings};
+  // Keep the classic walking district together. These natural clearings give
+  // a 13 m landing craft room for its wings and aft ramp, away from the trails.
+  const landingSites=[
+    ['grassland','草原南坪',2,39],['swamp','沼泽东岸',-136,29],
+    ['forest','林间南缘',-305,-40],['vineway','藤蔓通道外沿',-242,124],
+    ['wetland','湿地东岸',47,-173],['flame','烈焰丛林东缘',179,-109],
+    ['sanctuary','神宠高地东坪',177,68],
+    ['ridge','蓝脊山鞍部',14400,-7400],['delta','金河口高岸',-13600,-14700],
+    ['grove','绯叶林台',22500,9900]
+  ].map(([id,name,x,z])=>({id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude))}));
+  return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites};
 })();
 
 function createKloseSurface(T, world, definition = KLOSE_WORLD) {
-  const {radius,sites,routes} = definition;
+  const {radius,sites,routes,landingSites} = definition;
   const origin = sites[0], byId = new Map(sites.map(site=>[site.id,site]));
   const root = new T.Group(), orbital = new T.Group(), local = new T.Group();
   root.name = '帕诺星系 · 克洛斯星'; root.add(orbital,local); world.add(root);
   let mode = 'hidden';
+  const landings = new Map(landingSites.map(site=>[site.id,site]));
+  landings.set('core',landings.get('vineway'));
   const tau = 2*Math.PI, clamp = (v,a=0,b=1)=>Math.max(a,Math.min(b,v));
   function smooth(a,b,v) {
     const t = clamp((v-a)/(b-a)); return t*t*(3-2*t);
@@ -109,23 +121,72 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     const cap=.64*(1-smooth(.03,.40,Math.hypot(x-.814,y-.315,z+.488)));
     return c*1.72+.11*fractal(3+14*x,11+14*y,8+14*z)+cap-.03;
   }
-  function geography(lat,lon) {
-    const c=Math.cos(lat),x=c*Math.cos(lon),y=Math.sin(lat),z=-c*Math.sin(lon);
-    return bedrock(x,y,z);
-  }
-  function height(lat,lon) {
-    const c=chart(lat,lon),d=Math.hypot(c.x,c.z),w=smooth(8000,33000,d);
-    let localHeight=w<1?landscape(c.x,c.z):0;
-    if(d>310&&w<1) {
-      const blend=smooth(310,1700,d);
-      const hills=15.5*fractal(c.x*.002,18,c.z*.002)+28*fractal(13+c.x*.0007,29,c.z*.0007);
-      localHeight=localHeight*(1-blend)+(120+hills)*blend;
+  // The survey province outside the painted maps is a mountain watershed.
+  // One continuous field describes its drainage, forest cover and relief at
+  // every scale. The broad colour belts remain visible from deep space.
+  function landform(lat,lon,x,z,out){
+    const d=Math.hypot(x,z),globalWeight=smooth(33000,76000,d);
+    let h=120,water=0,rock=0,forest=0;
+    if(d>350 && globalWeight<1){
+      const hills=fractal(x*.00032,18,z*.00032),grain=noise(x*.0015,5,z*.0015);
+      const crest=x-(12500+z*.14+2600*Math.sin(z/7800)+950*Math.sin(z/2300));
+      const ridge=Math.exp(-((crest/3400)**2));
+      const shoulders=Math.exp(-((crest/7200)**2));
+      const bank=x-(-8100+.33*z+1320*Math.sin(z/3700)+430*Math.sin(z/1900));
+      const flood=1-smooth(110,820,Math.abs(bank));
+      const lake=Math.hypot((x+10300)/4150,(z+15100)/2050)+hills*.13;
+      const valley=lake<1.38?Math.max(flood,1-smooth(.97,1.38,lake)):flood;
+      const shelf=smooth(-.43,.18,hills)*smooth(3500,13000,z)*smooth(12000,22000,x);
+      rock=clamp(ridge*(.67+.33*grain)+shoulders*.17);
+      forest=clamp((.45+.68*hills+.19*grain+shelf*.53)*(1-rock)*(1-valley));
+      const drainage=Math.min(Math.abs(bank)-135-(hills+1)*62,(lake-1)*1670);
+      water=1-smooth(-7,8,drainage);
+      const ridgeline=540+930*(.52+.30*Math.sin(z/4650)+.18*Math.cos(z/1300));
+      const upland=158+138*hills+25*grain+ridge*ridgeline+265*shoulders+shelf*295;
+      const channel=39+Math.max(0,drainage)*.22;
+      h=T.MathUtils.lerp(upland,channel,valley);
+      const inner=smooth(350,1250,d);
+      h=120+(h-120)*inner;forest*=inner;rock*=inner;water*=inner;
     }
-    if (!w) return localHeight;
-    const plate=geography(lat,lon);
-    const global=Math.max(-1,10+Math.max(0,plate+.02)*265
-      +Math.max(0,plate-.35)*140*Math.sin(44*lat-21*lon)**2);
-    return localHeight*(1-w)+global*w;
+    if(globalWeight>0){
+      const c=Math.cos(lat),sx=c*Math.cos(lon),sy=Math.sin(lat),sz=-c*Math.sin(lon);
+      const plate=bedrock(sx,sy,sz),wide=fractal(46*sx,46*sy,46*sz);
+      const ridge=1-Math.min(1,Math.abs(fractal(31*sx,31*sy,31*sz))*3.2);
+      const mountains=smooth(.14,.72,plate)*ridge*ridge;
+      const continents=Math.max(0,plate+.18)*720+mountains*(470+640*(.5+.5*wide));
+      h=T.MathUtils.lerp(h,39+continents,globalWeight);
+      water=T.MathUtils.lerp(water,1-smooth(-.186,-.173,plate),globalWeight);
+      rock=T.MathUtils.lerp(rock,mountains,globalWeight);
+      forest=T.MathUtils.lerp(forest,smooth(-.17,.07,plate)*(1-mountains)*(.5+.48*wide),globalWeight);
+    }
+    if(d<720)h=T.MathUtils.lerp(landscape(x,z),h,smooth(350,720,d));
+    out.height=h;out.water=water;out.rock=rock;out.forest=forest;
+    return out;
+  }
+  const pads=landingSites.map(s=>({...s,elevation:landform(s.lat,s.lon,s.x,s.z,{}).height}));
+  function closestPad(x,z,limit){
+    let best=null,bestDistance=limit;
+    for(const p of pads) {
+      if(Math.abs(p.x-x)>bestDistance||Math.abs(p.z-z)>bestDistance)continue;
+      const distance=Math.hypot(p.x-x,p.z-z);
+      if(distance<bestDistance){best=p;bestDistance=distance;}
+    }
+    return best;
+  }
+  function sample(lat,lon,x,z,out){
+    landform(lat,lon,x,z,out);
+    const pad=closestPad(x,z,54);
+    if(pad){
+      const blend=smooth(20,54,Math.hypot(pad.x-x,pad.z-z));
+      out.height=T.MathUtils.lerp(pad.elevation,out.height,blend);
+      out.water*=blend;out.rock*=blend;out.forest*=blend;
+    }
+    return out;
+  }
+  const heightSample={};
+  function height(lat,lon){
+    const {x,z}=chart(lat,lon);
+    return sample(lat,lon,x,z,heightSample).height;
   }
   function point(lat,lon,above=0) {
     const r=radius+height(lat,lon)+above,c=Math.cos(lat);
@@ -210,18 +271,37 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
       mesh.quaternion.copy(rotation);orbital.add(mesh);
     }
   }
-  let builtOrbit=false;
+  let builtOrbit=false,atmosphereRim;
+  const shellCenter={value:new T.Vector3()},shellCut={value:2};
   function buildOrbit() {
     if (builtOrbit) return;
     builtOrbit=true;
-    orbital.add(new T.Mesh(new T.SphereGeometry(radius,144,88),
-      new T.MeshStandardMaterial({map:atlas(),roughness:.91})));
+    const shell=new T.SphereGeometry(1,240,152),v=new T.Vector3();
+    const pos=shell.getAttribute('position');
+    for(let i=0;i<pos.count;i++){
+      v.fromBufferAttribute(pos,i).normalize();
+      v.multiplyScalar(radius+height(Math.asin(clamp(v.y,-1,1)),Math.atan2(-v.z,v.x)));
+      pos.setXYZ(i,v.x,v.y,v.z);
+    }
+    pos.needsUpdate=true;shell.computeVertexNormals();shell.computeBoundingSphere();
+    const crust=new T.MeshStandardMaterial({map:atlas(),roughness:.91});
+    // Remove only the cap replaced by the local relief. Otherwise a coarse
+    // triangle spanning a ravine could hide its high-resolution floor.
+    crust.onBeforeCompile=shader=>{
+      shader.uniforms.shellCenter=shellCenter;shader.uniforms.shellCut=shellCut;
+      shader.vertexShader='varying vec3 surfaceRay;\n'+shader.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\n surfaceRay=normalize(position);');
+      shader.fragmentShader='uniform vec3 shellCenter;uniform float shellCut;varying vec3 surfaceRay;\n'+
+        shader.fragmentShader.replace('#include <clipping_planes_fragment>',
+          '#include <clipping_planes_fragment>\n if(dot(normalize(surfaceRay),shellCenter)>shellCut) discard;');
+    };
+    orbital.add(new T.Mesh(shell,crust));
     addRings();
     const rim=new T.ShaderMaterial({vertexShader:
       'varying vec3 n; varying vec3 v; void main(){ vec4 p=modelViewMatrix*vec4(position,1.); n=normalize(normalMatrix*normal); v=normalize(-p.xyz); gl_Position=projectionMatrix*p; }',
       fragmentShader:'varying vec3 n; varying vec3 v; void main(){ float f=pow(max(0.,1.-abs(dot(normalize(n),normalize(v)))),5.); gl_FragColor=vec4(.61,.63,.71,.26*f); }',
       transparent:true,side:T.BackSide,depthWrite:false});
-    orbital.add(new T.Mesh(new T.SphereGeometry(radius*1.009,112,64),rim));
+    atmosphereRim=new T.Mesh(new T.SphereGeometry(radius*1.009,112,64),rim);orbital.add(atmosphereRim);
   }
   // The original scene paintings give trails their local soil colour. In
   // particular, map 10 has a coral clearing framed by broad banks of blue sod.
@@ -237,7 +317,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
   };
   for (const name of Object.keys(soil)) soil[name]=soil[name].map(color);
   const grassBlue=color('#2a8cbd'),grassTip=color('#58b5d9'),grassMoss=color('#98af45');
-  const groundColor=new T.Color(),regionColor=new T.Color(),sodColor=new T.Color();
+  const groundColor=new T.Color(),regionColor=new T.Color(),sodColor=new T.Color(),beltColor=new T.Color();
+  const plains=color('#ba8170'),forestColor=color('#34698a'),stoneColor=color('#85687f');
+  const goldWater=color('#c49950'),deepWater=color('#476684');
   function grassClearing(x,z,variation,trailCoverage) {
     // North is behind the blue-topped rock ledge. Only the northeastern shelf
     // is yellow-green in map 10; the sunny foreground stays coral.
@@ -248,10 +330,14 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     sodColor.lerp(grassMoss,smooth(9,19,x)*(1-smooth(-13,-4,z)));
     regionColor.lerp(sodColor,coverage);
   }
-  function shade(lat,lon,x,z) {
-    const d=Math.hypot(x,z),c=Math.cos(lat),sx=c*Math.cos(lon),sy=Math.sin(lat),sz=-c*Math.sin(lon);
-    orbitalAlbedo(sx,sy,sz,bedrock(sx,sy,sz),groundColor).convertSRGBToLinear();
-    if (d>660) return groundColor;
+  function shade(x,z,ux,uy,uz,land,detail) {
+    const d=Math.hypot(x,z);
+    orbitalAlbedo(ux,uy,uz,0,beltColor).convertSRGBToLinear();
+    groundColor.copy(plains).lerp(beltColor,.28);
+    groundColor.lerp(forestColor,clamp(land.forest*1.4));
+    groundColor.lerp(stoneColor,.86*land.rock);
+    groundColor.lerp(d<65000?goldWater:deepWater,land.water);
+    if(d>660)return groundColor.lerp(beltColor,1-detail);
     const variation=smooth(-.66,.66,noise(x*.066,8,z*.066));
     const trailCoverage=1-smooth(1.2,4.4,trail(x,z));
     const daylight=.94+.09*variation;
@@ -265,7 +351,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
       regionColor.lerp(path,.66*trailCoverage);
       groundColor.lerp(regionColor,weight);
     }
-    return groundColor.multiplyScalar(daylight);
+    return groundColor.multiplyScalar(daylight).lerp(beltColor,1-detail);
   }
   function soilMap() {
     const canvas=document.createElement('canvas');canvas.width=canvas.height=192;
@@ -280,15 +366,118 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     const tex=new T.CanvasTexture(canvas);tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.anisotropy=4;
     tex.encoding=T.sRGBEncoding;return tex;
   }
+  // Geodetic vegetation cells keep their physical size at high latitudes.
+  // Collision and drawing request the same deterministic cell contents even
+  // when the destination is outside the camera's loaded neighbourhood.
+  const tileRows=Math.ceil(Math.PI*radius/240),cache=new Map();
+  function tileRow(lat){return clamp(Math.floor((lat/Math.PI+.5)*tileRows),0,tileRows-1);}
+  function tileCols(row){return Math.max(1,Math.round(tau*radius*Math.cos(((row+.5)/tileRows-.5)*Math.PI)/240));}
+  function tileCol(lon,n){return ((Math.floor((unwrap(lon)/tau+.5)*n)%n)+n)%n;}
+  function tile(row,col,n){
+    const key=row+'/'+col;
+    if(cache.has(key))return cache.get(key);
+    let seed=(Math.imul(row+17,73856093)^Math.imul(col+11,19349663))>>>0;
+    const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    const items=[],land={};
+    for(let i=0;i<34;i++){
+      const lat=((row+random())/tileRows-.5)*Math.PI,lon=((col+random())/n-.5)*tau;
+      const {x,z}=chart(lat,lon);
+      if(sites.some(site=>Math.abs(x-site.x)<87&&Math.abs(z-site.z)<87)||closestPad(x,z,35))continue;
+      sample(lat,lon,x,z,land);
+      if(land.water>.15)continue;
+      const chance=random(),tree=chance<land.forest*.86;
+      if(!tree && chance>.08+land.forest*.86+land.rock*.29)continue;
+      const size=(tree?4.2:1.25)*(1+.9*random()+.55*random());
+      const reach=size*(tree?.75:1.1),h=size*(tree?1.85:.76);
+      const c=Math.cos(lat),up=new T.Vector3(c*Math.cos(lon),Math.sin(lat),-c*Math.sin(lon));
+      const at=up.clone().multiplyScalar(radius+land.height);
+      const yaw=random()*tau,paint=tree?(z>3500&&x>12500?0x975879:0x477c89):(land.rock>.4?0x816276:0xc18e70);
+      items.push({lat,lon,up,at,size,h,reach,yaw,paint,tree,top:land.height+h});
+    }
+    if(cache.size>=192)cache.delete(cache.keys().next().value);
+    cache.set(key,items);return items;
+  }
+  function visitTiles(lat,lon,span,accept){
+    const center=tileRow(lat);
+    for(let row=Math.max(0,center-span);row<=Math.min(tileRows-1,center+span);row++){
+      const n=tileCols(row),mid=tileCol(lon,n);
+      for(let j=mid-span;j<=mid+span&&j<mid-span+n;j++){
+        const col=((j%n)+n)%n;
+        accept(tile(row,col,n));
+      }
+    }
+  }
+  function scatterTop(lat,lon,footprint){
+    let top=-Infinity;
+    const cos=Math.cos(lat);
+    visitTiles(lat,lon,1,items=>{
+      for(const it of items){
+        const dist=Math.hypot((it.lat-lat)*radius,unwrap(it.lon-lon)*radius*cos);
+        if(dist<footprint+it.reach)top=Math.max(top,it.top);
+      }
+    });
+    return top;
+  }
+  const groves=new T.Group();groves.name='巡航林冠与山地露岩';local.add(groves);
+  let forestRow=-1,forestCol=-1,treeTrunks,treeCrowns,rocks;
+  function updateGroves(lat,lon,altitude){
+    groves.visible=altitude<3100;
+    if(!groves.visible)return;
+    const row=tileRow(lat),col=tileCol(lon,tileCols(row));
+    if(row===forestRow&&col===forestCol)return;
+    forestRow=row;forestCol=col;
+    if(!treeTrunks){
+      const batch=(geometry,paint,tinted)=>{
+        const material=new T.MeshStandardMaterial({color:paint,roughness:.94});
+        const meshes=new T.InstancedMesh(geometry,material,34*49);
+        if(tinted)meshes.instanceColor=new T.InstancedBufferAttribute(new Float32Array(meshes.count*3),3);
+        meshes.frustumCulled=false;meshes.receiveShadow=true;groves.add(meshes);return meshes;
+      };
+      treeTrunks=batch(new T.CylinderGeometry(.56,1,1,5),0x674b49,false);
+      treeCrowns=batch(new T.IcosahedronGeometry(1,1),0xffffff,true);
+      rocks=batch(new T.DodecahedronGeometry(1),0xffffff,true);
+    }
+    const anchor=point(lat,lon);groves.position.copy(anchor);
+    const transform=new T.Object3D(),axisY=new T.Vector3(0,1,0),paint=new T.Color();
+    let trees=0,stones=0;
+    visitTiles(lat,lon,3,items=>{
+      for(const it of items){
+        transform.quaternion.setFromUnitVectors(axisY,it.up);transform.rotateY(it.yaw);
+        transform.position.copy(it.at).sub(anchor);
+        if(it.tree){
+          transform.position.addScaledVector(it.up,it.size*.58);
+          transform.scale.set(it.size*.16,it.size*1.16,it.size*.16);transform.updateMatrix();
+          treeTrunks.setMatrixAt(trees,transform.matrix);
+          transform.position.addScaledVector(it.up,it.size*.71);
+          transform.scale.set(it.reach,it.size*.56,it.reach*.87);transform.updateMatrix();
+          treeCrowns.setMatrixAt(trees,transform.matrix);treeCrowns.setColorAt(trees++,paint.setHex(it.paint).convertSRGBToLinear());
+        }else{
+          transform.position.addScaledVector(it.up,it.h*.42);
+          transform.scale.set(it.reach,it.h*.58,it.reach*.81);transform.updateMatrix();
+          rocks.setMatrixAt(stones,transform.matrix);rocks.setColorAt(stones++,paint.setHex(it.paint).convertSRGBToLinear());
+        }
+      }
+    });
+    for(const [mesh,count] of [[treeTrunks,trees],[treeCrowns,trees],[rocks,stones]]){
+      mesh.count=count;mesh.instanceMatrix.needsUpdate=true;
+      if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+    }
+  }
   const groundGroup=new T.Group(); local.add(groundGroup);
-  let lastFocus=null,terrain=null,details=null;
+  let lastFocus=null,terrain=null,details=null,groundTime=0;
+  const diskRadius=120000;
+  function padClear(x,z,margin=0){return Boolean(closestPad(x,z,30+margin));}
+  function ensureScenery(){
+    if(!details)details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear});
+    return details;
+  }
   function buildGround() {
     if (terrain) return;
-    const radii=[0,.8,1.7,2.8,4,5.5,7.2,9.2,12,15,19,24,30,37,45,55,67,81,99,120,146,180,220,270,335,415,520,660,835,1050,1350,1750,2250,3000,4200,5700,8000,11500,16500,24000,35000];
-    const sectors=96, coords=[[0,0]],indices=[];
+    const radii=[0,.8,1.7,2.8,4,5.5,7.2,9.2,12,15,19,24,30,37,45,55,67,81,99,120,146,180,220,270,335,415,520,660,835,1050,1350,1750,2250,3000,4200,5700,8000,11500,16500,24000,35000,48000,65000,85000,103000,diskRadius];
+    const sectors=96, coords=[[0,0,0]],indices=[];
     for (let ring=1;ring<radii.length;ring++) {
       for (let i=0;i<sectors;i++) {
-        const angle=tau*i/sectors;coords.push([radii[ring]*Math.cos(angle),radii[ring]*Math.sin(angle)]);
+        const angle=tau*i/sectors;coords.push([Math.cos(angle),Math.sin(angle),ring]);
         const a=1+(ring-1)*sectors+i,b=1+(ring-1)*sectors+(i+1)%sectors;
         if (ring===1) indices.push(0,b,a);
         else indices.push(a-sectors,b,a,b-sectors,b,a-sectors);
@@ -298,32 +487,109 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     for (const [attr,stride] of [['position',3],['color',3],['uv',2]]) geo.setAttribute(attr,new T.BufferAttribute(new Float32Array(coords.length*stride),stride));
     geo.setIndex(indices);
     const mesh=new T.Mesh(geo,new T.MeshStandardMaterial({map:soilMap(),vertexColors:true,roughness:.98}));
-    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo};
-    details=createKloseScenery(T,local,{sites,pools,point,frame,move,chart,trail,height});
+    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii};
+    ensureScenery();
   }
-  function placeGround(lat,lon) {
-    const {coords,geo}=terrain,anchor=point(lat,lon),f=frame(lat,lon);
+  function placeGround(lat,lon,altitude) {
+    const {coords,geo,radii}=terrain,anchor=point(lat,lon),f=frame(lat,lon);
     const pos=geo.attributes.position,col=geo.attributes.color,uv=geo.attributes.uv;
     groundGroup.position.copy(anchor);groundGroup.quaternion.copy(f.quaternion);
+    const profile=1-.39*smooth(50,13000,altitude),fine=1-smooth(3800,39000,altitude);
+    const sections=radii.map(r=>{
+      const range=diskRadius*Math.pow(r/diskRadius,profile);
+      return {sin:Math.sin(range/radius),cos:Math.cos(range/radius),detail:fine*(1-smooth(28000,90000,range))};
+    });
+    const land={},anchorRadius=anchor.length(),dir=new T.Vector3();
     for (let i=0;i<coords.length;i++) {
-      const [dx,dz]=coords[i],p=move(lat,lon,dx,-dz),q=point(p.lat,p.lon).sub(anchor);
-      pos.setXYZ(i,q.dot(f.east),q.dot(f.up),q.dot(f.south));
-      const {x,z}=chart(p.lat,p.lon),s=shade(p.lat,p.lon,x,z);
+      const [east,south,j]=coords[i],ring=sections[j];
+      dir.copy(f.up).multiplyScalar(ring.cos).addScaledVector(f.east,east*ring.sin).addScaledVector(f.south,south*ring.sin);
+      const vlat=Math.asin(clamp(dir.y,-1,1)),vlon=Math.atan2(-dir.z,dir.x),{x,z}=chart(vlat,vlon);
+      sample(vlat,vlon,x,z,land);
+      const distance=radius+land.height;
+      pos.setXYZ(i,east*ring.sin*distance,ring.cos*distance-anchorRadius,south*ring.sin*distance);
+      const s=shade(x,z,dir.x,dir.y,dir.z,land,ring.detail);
       col.setXYZ(i,s.r,s.g,s.b);uv.setXY(i,x/2.4,z/2.4);
     }
     pos.needsUpdate=col.needsUpdate=uv.needsUpdate=true;geo.computeVertexNormals();
-    lastFocus={lat,lon};
+    shellCenter.value.copy(f.up);lastFocus={lat,lon,altitude};
   }
   function setMode(next) {
-    mode=next;root.visible=next!=='hidden';orbital.visible=next==='orbit';local.visible=next==='surface';
+    if(next===mode&&next!=='hidden')return;
+    mode=next;root.visible=next!=='hidden';orbital.visible=next==='orbit'||next==='flight';
+    local.visible=next==='surface';shellCut.value=2;lastFocus=null;groundTime=0;
     if (orbital.visible) buildOrbit();
+    if(atmosphereRim)atmosphereRim.visible=next==='orbit';
     if (local.visible) buildGround();
   }
-  function update(lat,lon,dt=0) {
-    if (mode!=='surface') return;
+  function update(lat,lon,dt=0,altitude=0) {
+    if(mode!=='surface'&&mode!=='flight')return;
+    altitude=mode==='surface'?0:Math.max(0,altitude);
+    if(atmosphereRim)atmosphereRim.visible=altitude>12000;
+    local.visible=altitude<42000;
+    if(!local.visible){shellCut.value=2;lastFocus=null;return;}
+    buildGround();groundTime+=dt;
     const moved=lastFocus?Math.hypot((lat-lastFocus.lat)*radius,unwrap(lon-lastFocus.lon)*radius*Math.cos(lat)):Infinity;
-    if (moved>4) placeGround(lat,lon);
-    details.update(lat,lon,dt);
+    const tolerance=mode==='surface'?4:clamp(4+altitude*.2,4,1700);
+    const rising=lastFocus&&Math.abs(altitude-lastFocus.altitude)>Math.max(14,altitude*.1);
+    if((moved>tolerance||rising)&&(mode==='surface'||groundTime>.09||moved>Math.max(250,tolerance*3))){
+      placeGround(lat,lon,altitude);groundTime=0;
+    }
+    shellCut.value=mode==='flight'?Math.cos((diskRadius-6800)/radius):2;
+    details.update(lat,lon,dt,altitude);updateGroves(lat,lon,altitude);
+  }
+  // The flight solver samples the entire footprint before setting the gear
+  // down. Keep the lidar envelope separate from the underlying foot height:
+  // the centre of a pond is flyable, but is not a place to park the shuttle.
+  for(const pool of pools){
+    const lat=origin.lat-pool.z/radius,lon=origin.lon+pool.x/(radius*Math.cos(origin.lat));
+    pool.surface=height(lat,lon)+(pool.id==='core'?.99:.75)+.13;
+  }
+  function footprintAt(lat,lon,footprint){
+    const {x,z}=chart(lat,lon),land=sample(lat,lon,x,z,{}),pad=closestPad(x,z,20);
+    let maximum=land.height,slope=0,water=land.water>.49;
+    if(pad&&Math.hypot(x-pad.x,z-pad.z)+footprint<20){
+      return {height:land.height,top:land.height,slope,water:false,obstacle:false};
+    }
+    for(let i=0;footprint>0&&i<8;i++){
+      const angle=tau*i/8;
+      const corner=move(lat,lon,footprint*Math.cos(angle),footprint*Math.sin(angle)),c=chart(corner.lat,corner.lon);
+      const edge=sample(corner.lat,corner.lon,c.x,c.z,heightSample);
+      maximum=Math.max(maximum,edge.height);water ||= edge.water>.49;
+      slope=Math.max(slope,Math.atan2(Math.abs(edge.height-land.height),footprint));
+    }
+    let waterLevel=-Infinity;
+    for(const pool of pools){
+      if(Math.hypot((x-pool.x)/(pool.rx+footprint),(z-pool.z)/(pool.rz+footprint))<1){
+        water=true;waterLevel=Math.max(waterLevel,pool.surface);
+      }
+    }
+    let solids=scatterTop(lat,lon,footprint);
+    if(Math.abs(x)<470&&Math.abs(z)<370)
+      solids=Math.max(solids,ensureScenery().obstacleTop(x,z,footprint));
+    return {height:land.height,top:Math.max(maximum,waterLevel,solids),slope,water,
+      obstacle:solids>land.height+.38};
+  }
+  function flightHeight(lat,lon,footprint=0){return footprintAt(lat,lon,Math.max(0,footprint)).top;}
+  function landingInfo(lat,lon,footprint=12){
+    const result=footprintAt(lat,lon,Math.max(1,footprint));
+    const reason=result.water?'起落架下方有水或泥潭':result.obstacle?'机翼或坡道净空不足':
+      result.slope>.13?'坡度过大，请移向平地':'';
+    return {...result,ok:!reason,reason};
+  }
+  function walk(lat,lon,east,north){
+    let dest=details?details.walk(lat,lon,east,north):move(lat,lon,east,north);
+    const cos=Math.max(.000001,Math.cos(lat));
+    visitTiles(dest.lat,dest.lon,1,items=>{
+      for(const it of items){
+        const dx=unwrap(dest.lon-it.lon)*radius*cos,dn=(dest.lat-it.lat)*radius;
+        const distance=Math.hypot(dx,dn),limit=(it.tree?it.size*.16:it.reach)+.26;
+        if(distance<limit){
+          const push=limit-distance;
+          dest=move(dest.lat,dest.lon,distance?dx*push/distance:push,distance?dn*push/distance:0);
+        }
+      }
+    });
+    return dest;
   }
   function dispose() {
     const geometry=new Set(),materials=new Set(),textures=new Set();
@@ -333,7 +599,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
   setMode('hidden');
-  return {root,sites,radius,frame,height,point,move,siteAt,update,setMode,dispose,
-    walk:(lat,lon,east,north)=>details?details.walk(lat,lon,east,north):move(lat,lon,east,north),
+  return {root,sites,radius,frame,height,point,move,walk,siteAt,update,setMode,dispose,
+    landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
     nearestPipi:(lat,lon)=>details?details.nearestPipi(lat,lon):null};
 }

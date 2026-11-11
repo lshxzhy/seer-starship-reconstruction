@@ -2,6 +2,10 @@
 #seer-starship-3d {--ink:#12232b;--panel:#12232df9;--ice:#96e2df;--edge:#527582;--paper:#eff5f1;color:#edf5f5;font:15px/1.4 "Segoe UI","Microsoft YaHei",sans-serif;width:100%;color-scheme:dark}
 #seer-starship-3d * {box-sizing:border-box}
 .seer-stage[data-domain="planet"] .ship-dock:not(.planetary-dock){display:none}
+.shuttle-hand{position:absolute;z-index:2;bottom:75px;left:12px;display:grid;grid-template-columns:repeat(2,auto);gap:3px;touch-action:none}
+.shuttle-hand button{color:#e5f4ef;background:#18323be8;border:1px solid #668a8e;border-radius:5px;padding:4px 8px;font-size:12px}
+.seer-stage[data-console-open] .shuttle-hand{visibility:hidden}
+@container(max-width:580px){.seer-stage[data-helm] .planetary-dock{bottom:10px;max-width:calc(100% - 110px);flex-wrap:wrap;justify-content:flex-end}.seer-stage[data-helm] .planetary-dock button{font-size:11px}.shuttle-hand{bottom:110px;left:6px}}
 .planet-atlas .atlas-body{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(155px,1fr);align-items:center;overflow:auto}
 .planet-atlas svg{display:block;width:100%;height:auto;background:#142e33}
 .planet-atlas svg text{font:600 12px "Microsoft YaHei",sans-serif;fill:#eff9ee;paint-order:stroke;stroke:#122c30;stroke-width:3px;stroke-linejoin:round}

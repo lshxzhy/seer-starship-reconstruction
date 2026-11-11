@@ -45,7 +45,7 @@
   const expedition=createPlanetExpedition(requestDraw,save,origin=>{
     const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
     habitat.spawn(roomId);
-    const berth=shipTransporters.returnPose(habitat.byId.get(roomId),origin?.berthId);
+    const berth=shipTransporters.boardingPose(habitat.byId.get(roomId),origin?.berthId);
     stagedBoard={...origin?.board,roomId};
     if(berth)Object.assign(stagedBoard,{pose:berth,yaw:berth.yaw,facing:berth.yaw,pitch:.025});
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
@@ -54,9 +54,9 @@
   root.querySelector('[data-embark]').addEventListener('click',()=>{
     const berth=boarding.station();
     if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
-    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'orbit'};
+    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'transfer'};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
-    syncScene();root.querySelector('[data-land]').focus({preventScroll:true});save();
+    syncScene();canvas.focus({preventScroll:true});save();
   });
   const unitMetre=habitat.worldPosition(1,0,0).distanceTo(habitat.worldPosition(0,0,0));
   const unitBounds=new T.BoxGeometry(1,1,1);

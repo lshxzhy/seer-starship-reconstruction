@@ -1,6 +1,6 @@
 <div id="seer-starship-3d">
   <div class="seer-stage">
-    <canvas role="img" aria-label="赛尔号飞船模拟器。点击画面后用 WASD 移动，M 打开地图，B 打开背包。">需要 WebGL 才能显示三维模型。</canvas>
+    <canvas tabindex="0" role="img" aria-label="赛尔号飞船模拟器。点击画面后用 WASD 移动或驾驶，M 打开地图和航线，B 打开舰内背包。">需要 WebGL 才能显示三维模型。</canvas>
     <header class="ship-ident">
       <span class="ship-insignia" aria-hidden="true"></span>
       <div><small>SEER <span>／ SE–A015</span></small><strong data-tag>传送舱</strong></div>
@@ -9,7 +9,7 @@
     <div class="ship-route-hint" data-route-hint hidden></div>
     <div class="ship-car-display" data-lift-readout hidden><span data-car-message></span><span data-car-height></span><progress data-car-progress max="1" value="0" aria-label="升降行程"></progress></div>
     <div class="ship-actions">
-      <button type="button" class="ship-key" data-embark hidden>启动传送位</button>
+      <button type="button" class="ship-key" data-embark hidden>乘廊车去登陆艇</button>
       <button type="button" class="ship-key" data-see-pipi hidden>观察皮皮</button>
       <button type="button" class="ship-key" data-exchange hidden>能源兑换台</button>
       <button type="button" class="ship-key" data-bench hidden>领取挖矿钻头</button>
@@ -32,15 +32,20 @@
     </nav>
     <nav class="ship-dock planetary-dock" data-planet-nav aria-label="行星导航" hidden>
       <button type="button" data-atlas><i class="dock-radar" aria-hidden="true"></i><span>地表图</span><kbd>M</kbd></button>
-      <button type="button" data-land>着陆草原</button>
-      <button type="button" data-return>呼叫返舰</button>
+      <button type="button" data-land hidden>操作驾驶席</button>
+      <button type="button" data-return hidden>自动航行</button>
+      <button type="button" data-flight-view hidden>舷外视角</button>
     </nav>
     <div class="ship-overlay" data-planet-atlas hidden>
       <section class="ship-window planet-atlas" role="dialog" aria-modal="true" aria-labelledby="planet-chart-title">
-        <header class="console-head"><div><small>帕诺星系 ／ 克洛斯星</small><h2 id="planet-chart-title">地表导航图</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭地表图">×</button></header>
+        <header class="console-head"><div><small>帕诺星系 ／ 克洛斯星</small><h2 id="planet-chart-title">地表导航图</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭地图">×</button></header>
         <div class="atlas-body"><svg data-site-map role="img" aria-label="克洛斯星探索区与步行路径"></svg>
-        <section class="atlas-controls"><label>目的地 <select data-site-select></select></label><p data-site-summary></p><button class="ship-key" type="button" data-track-site>引导至此</button></section></div>
+        <section class="atlas-controls"><label>目的地 <select data-site-select></select></label><p data-site-summary></p><button class="ship-key" type="button" data-track-site>引导至此</button><button class="ship-key" type="button" data-target-only hidden>设为手动航点</button><button class="ship-key" type="button" data-unseat hidden>离开驾驶席</button></section></div>
       </section>
+    </div>
+    <div class="shuttle-hand" data-shuttle-hand hidden aria-label="登陆艇飞行操纵">
+      <button type="button" data-flight-key="Space">升</button><button type="button" data-flight-key="KeyC">降</button>
+      <button type="button" data-flight-key="ShiftLeft">加力</button><button type="button" data-flight-key="KeyX">制动</button>
     </div>
     <div class="ship-notice" data-notice role="status" hidden></div>
     <div class="ship-overlay" data-overlay hidden>

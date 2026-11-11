@@ -1,7 +1,7 @@
 // All scenery is authored geometry. Sites share one tangent chart and leave
 // the original map connections open. The historic hunting rooms share a biome.
 function createKloseScenery(T, parent, surface) {
-  const {sites,pools,height,frame,move,point,chart,trail}=surface;
+  const {sites,pools,height,frame,move,point,chart,trail,radius,padClear}=surface;
   const color=hex=>new T.Color(hex).convertSRGBToLinear();
   const shapes=new Map(),tau=Math.PI*2;
   const rough=new T.MeshStandardMaterial({color:0xffffff,roughness:.84,side:T.DoubleSide});
@@ -161,11 +161,11 @@ function createKloseScenery(T, parent, surface) {
     group.name=site.name;group.add(near,far);parent.add(group);
     group.position.copy(point(site.lat,site.lon));group.quaternion.copy(frame(site.lat,site.lon).quaternion);
     const seed=randFrom(167518+order*71837),choose=list=>list[Math.floor(seed()*list.length)];
-    const records=new Map(),baseHeight=height(site.lat,site.lon),obstacles=[];
+    const records=new Map(),baseHeight=height(site.lat,site.lon),obstacles=[],overhead=new Map();
     function obstacle(x,z,r) {obstacles.push({x:site.x+x,z:site.z+z,r});}
     function yAt(x,z) {
       const at=move(site.lat,site.lon,x,-z);
-      return height(at.lat,at.lon)-baseHeight-(x*x+z*z)/(2*780000);
+      return height(at.lat,at.lon)-baseHeight-(x*x+z*z)/(2*radius);
     }
     function stamp(key,x,y,z,sx,sy,sz,hex,rx=0,ry=0,rz=0) {
       temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(sx,sy,sz);temp.updateMatrix();
@@ -191,7 +191,7 @@ function createKloseScenery(T, parent, surface) {
       }
     }
     function blocked(x,z,pad=0) {
-      return Math.hypot(x,z)<8+pad || trail(site.x+x,site.z+z)<3+pad ||
+      return Math.hypot(x,z)<8+pad || padClear(site.x+x,site.z+z,pad) || trail(site.x+x,site.z+z)<3+pad ||
         pools.some(p=>Math.hypot((site.x+x-p.x)/(p.rx+pad),(site.z+z-p.z)/(p.rz+pad))<1.09);
     }
     function leafFan(x,y,z,s,colors,n=9) {
@@ -494,8 +494,24 @@ function createKloseScenery(T, parent, surface) {
         obstacle(px,pz,s*.26);
       }
     }
+    // Record the top of solid scenery in 3 m ground cells directly from the
+    // rendered geometry. A shuttle approaches a crown, arch or cave roof from
+    // above; the walker's trunk-only footprint cannot describe that contact.
+    const bounds=new T.Box3();
     for(const [key,items] of records) {
       const {geo,material}=shapes.get(key);
+      if(!['pool','energyPool','mud','lamp','sod','leaf'].includes(key)){
+        if(!geo.boundingBox)geo.computeBoundingBox();
+        for(const item of items){
+          bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
+          if(bounds.max.y-bounds.min.y<.34)continue;
+          const top=baseHeight+bounds.max.y;
+          for(let ix=Math.floor(bounds.min.x/3);ix<=Math.floor(bounds.max.x/3);ix++)
+            for(let iz=Math.floor(bounds.min.z/3);iz<=Math.floor(bounds.max.z/3);iz++){
+              const cell=ix*512+iz;overhead.set(cell,Math.max(overhead.get(cell)??-Infinity,top));
+            }
+        }
+      }
       function batch(target,geometry,entries) {
         if(!entries.length)return;
         const mesh=new T.InstancedMesh(geometry,material,entries.length);
@@ -510,13 +526,13 @@ function createKloseScenery(T, parent, surface) {
         return Math.max(Math.hypot(m[0],m[1],m[2]),Math.hypot(m[4],m[5],m[6]),Math.hypot(m[8],m[9],m[10]))>2.1;
       }));
     }
-    return {group,near,far,site,obstacles};
+    return {group,near,far,site,obstacles,overhead};
   }
   let elapsed=0;
-  function update(lat,lon,dt) {
+  function update(lat,lon,dt,altitude=0) {
     elapsed+=Math.min(.1,Math.max(0,dt||0));const {x,z}=chart(lat,lon);
     for(let i=0;i<sites.length;i++) {
-      const site=sites[i],dist=Math.hypot(x-site.x,z-site.z);
+      const site=sites[i],dist=Math.hypot(x-site.x,z-site.z,altitude);
       if(!batches[i]&&dist<570)batches[i]=makeSite(site,i);
       const parts=batches[i];
       if(parts){parts.group.visible=dist<670;parts.near.visible=dist<116;parts.far.visible=!parts.near.visible;}
@@ -531,6 +547,21 @@ function createKloseScenery(T, parent, surface) {
       pet.ears.forEach((ear,i)=>{ear.rotation.z=(i?1:-1)*(.065*Math.sin(t*2.1)+.1*hop);});
       pet.at=move(pet.site.lat,pet.site.lon,pet.x+dx,-pet.z-dz);
     }
+  }
+  function obstacleTop(x,z,footprint){
+    let top=-Infinity;
+    for(let i=0;i<sites.length;i++){
+      const site=sites[i],dx=x-site.x,dz=z-site.z;
+      if(Math.abs(dx)>94+footprint||Math.abs(dz)>94+footprint)continue;
+      const batch=batches[i]||(batches[i]=makeSite(site,i));
+      for(let ix=Math.floor((dx-footprint)/3);ix<=Math.floor((dx+footprint)/3);ix++)
+        for(let iz=Math.floor((dz-footprint)/3);iz<=Math.floor((dz+footprint)/3);iz++){
+          top=Math.max(top,batch.overhead.get(ix*512+iz)??-Infinity);
+        }
+      if(site.id==='forest'&&Math.hypot(dx-7,dz+11)<2.55+footprint)
+        top=Math.max(top,height(site.lat,site.lon)+3.2);
+    }
+    return top;
   }
   function nearestPipi(lat,lon) {
     const observer=chart(lat,lon);let closest=null;
@@ -562,5 +593,5 @@ function createKloseScenery(T, parent, surface) {
     }
     return move(lat,lon,x-start.x,start.z-z);
   }
-  return {update,nearestPipi,walk};
+  return {update,nearestPipi,walk,obstacleTop};
 }

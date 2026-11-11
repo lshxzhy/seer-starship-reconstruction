@@ -319,7 +319,7 @@
     function flightControls(){
       const berth=currentBerth();
       embarkButton.hidden=!berth;
-      if(berth)embarkButton.textContent=berth.name+' · 前往'+berth.destinationName;
+      if(berth)embarkButton.textContent=berth.name+' · 乘廊车去登陆艇';
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
@@ -555,8 +555,8 @@
       guide.update(pose,goal(),active&&!lifts.riding);
       const ports=shipTransporters.ports(habitat.byId.get(currentRoomId));
       const berth=ports.length?currentBerth():null;
-      const direction=(goal()?guide.hint:'') || (berth?'已进入 '+berth.name+'　／　按 E 出发':
-        ports.length&&!flight.mounted?'前往克洛斯星 · 走到任一编号机位的地面亮框，按 E 启动。':'');
+      const direction=(goal()?guide.hint:'') || (berth?'已进入 '+berth.name+'　／　按 E 接驳舷侧登陆艇':
+        ports.length&&!flight.mounted?'前往克洛斯星 · 走进编号亮框，按 E 乘登船廊车。':'');
       if(routeHint.textContent!==direction)routeHint.textContent=direction;
       routeHint.hidden=!direction||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
