@@ -51,9 +51,10 @@
     Object.assign(state,{mode:'board',room:habitat.byId.has(id)?id:'',located:'',rotate:false,wire:false});
     frameSelection();syncScene();save();
   }
-  function travelToPlanet(id){
-    const origin={roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:2,phase:'surface',mapDestination:id,origin,vehicle:parkedLanding?.vehicle,door:1};
+  function travelToPlanet(id,approachMushroom=false){
+    const current=expedition.active?expedition.snapshot():null;
+    const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
+    stagedExpedition={format:2,phase:'surface',mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -78,6 +79,12 @@
     records:spiritRecords,requestFrame:requestDraw,locationName:()=>tag.textContent,
     siteId:()=>expedition.active?expedition.fieldSite:liveBoard?boarding.roomId:null,
     setFollower:id=>{boarding.setEscortSpecies(id);expedition.setEscortSpecies(id);},
+    setFlameTool:value=>{boarding.setFlameTool(value);expedition.setFlameTool(value);},
+    visitMushroomSite:id=>{
+      if(id==='laboratory'){travelToShip('laboratory');return;}
+      if(!expedition.approachForestBoss())travelToPlanet('forest',true);
+      canvas.focus({preventScroll:true});
+    },
     setSafari:s=>expedition.setSafariState(s),enterWetland:()=>expedition.enterWetland(),
     withdraw:key=>expedition.withdrawSpirit(key),
     chat:(context,onClose)=>{

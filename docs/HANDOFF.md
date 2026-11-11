@@ -4,6 +4,8 @@
 
 ## 项目文件从哪里改
 
+蘑菇怪涉及四处。区域名单 `KLOSE_TERRITORIES` 同时供图鉴和实地生成使用。首领的护膜、照射窗口及成长前后造型在 `klose-creatures.js`，舰内与地表共用头部装备模型 `src/spirits/field-tool.js`。玩家装备、首胜、积累经验与普通战斗经验由 `src/spirits/system.js` 结算。首领的 100 体力只用于林间挑战，队伍和仓库中同名精灵按其个体计算能力。
+
 2011 年湿地的 37 种精灵按出现方式写在图鉴的 `safari` 表。`src/galaxy/klose-safari.js` 管理地面实体、入口、树木和钓竿，`src/spirits/safari-rules.js` 管理每场的限时、专用胶囊、行动与收服，`safari-terminal.js` 展示当前场次。调整地点或道具时要保留场次的截止时间、消耗和遭遇身份。三维造型入口 `createCompanionFigure` 由对战、图鉴和实地跟随共同调用。
 
 精灵的图鉴和战斗数据在 `src/spirits/catalog.json`，由离线游戏、本机服务共用。野外实体、活动触发和观察目标在 `klose-creatures.js` 与场景模块中登记。物种用图鉴编号，持有的精灵用个体 UID，野外同种的不同个体另有遭遇键。不可用物种名代替这三类标识。

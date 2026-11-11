@@ -121,6 +121,7 @@ function createKloseScenery(T, parent, surface) {
     group.position.copy(point(site.lat,site.lon));group.quaternion.copy(frame(site.lat,site.lon).quaternion);
     const seed=randFrom(167518+order*71837),choose=list=>list[Math.floor(seed()*list.length)];
     const records=new Map(),baseHeight=height(site.lat,site.lon),obstacles=[],overhead=new Map();
+    const bossGlade=site.id==='forest'?KLOSE_TERRITORIES.forest.find(([id])=>id===47):null;
     function obstacle(x,z,r) {obstacles.push({x:site.x+x,z:site.z+z,r});}
     function yAt(x,z) {
       const at=move(site.lat,site.lon,x,-z);
@@ -131,6 +132,9 @@ function createKloseScenery(T, parent, surface) {
       remember(key,hex);
     }
     function remember(key,hex) {
+      // Leave a sightline at eye height across the clearing, including the
+      // length of each frond. The random sequence for the rest of the forest is preserved.
+      if(bossGlade&&key==='leaf'&&Math.hypot(temp.position.x-bossGlade[1],temp.position.z-bossGlade[2])<5+2*temp.scale.length())return;
       if(!records.has(key))records.set(key,[]);
       records.get(key).push({matrix:temp.matrix.clone(),hex});
     }
@@ -689,7 +693,11 @@ function createKloseScenery(T, parent, surface) {
       if(!batches[i]&&Math.hypot(x-site.x,z-site.z)<111)batches[i]=makeSite(site,i);
     }
   }
-  return {update,nearestPipi,spiritObservation,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
+  function forestBossPosition(){
+    const boss=wildlife.inhabitants.find(p=>p.speciesId===47);
+    return boss?.at||null;
+  }
+  return {update,nearestPipi,spiritObservation,forestBossPosition,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
     spiritSiteHint:wildlife.hint,setSafariState:safari.setState,safariAction:safari.action,safariWalk:safari.walked,safariHint:safari.hint,
     walk,prepareWalk,obstacleTop};
 }

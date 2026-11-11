@@ -5,7 +5,7 @@ const KLOSE_WORLD = (() => {
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
-    ['forest','克洛斯星林间',-304,-91,'巨树下的菌落与蘑菇怪'],
+    ['forest','克洛斯星林间',-304,-91,'草系 SPT 首领蘑菇怪（10 级）与依依的洞口'],
     ['vineway','藤蔓通道',-198,103,'顺着盘根覆盖的斜坡进入地层'],
     ['core','克洛斯星地心',-224,191,'洞厅深处的能量池与克洛斯金刚石'],
     ['wetland','克洛斯星的湿地',4,-166,'精灵捕猎场的湿地、水道和芦苇'],
@@ -643,7 +643,8 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,
     spiritObservation:(lat,lon,key)=>details?.spiritObservation(lat,lon,key)||null,
     withdrawSpirit:key=>details?.withdrawSpirit(key)||false,
-    interactSpiritSite:(caster,lat,lon)=>details?.interactSpiritSite(caster,lat,lon)||'',
+    forestBossPosition:()=>details?.forestBossPosition()||null,
+    interactSpiritSite:(caster,lat,lon,flameTool)=>details?.interactSpiritSite(caster,lat,lon,flameTool)||'',
     spiritSiteHint:(lat,lon)=>details?.spiritSiteHint(lat,lon)||'',
     setSafariState(state){safariState=state;details?.setSafariState(state);},
     safariAction:(caster,lat,lon)=>details?.safariAction(caster,lat,lon)||null,

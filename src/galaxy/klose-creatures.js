@@ -57,7 +57,11 @@ const KLOSE_SPECIMENS={
 };
 function disposeKloseModel(root){
   const gs=new Set(),ms=new Set();
-  root.traverse(o=>{if(o.geometry)gs.add(o.geometry);if(o.material)ms.add(o.material);});
+  root.traverse(o=>{
+    if(o.geometry)gs.add(o.geometry);
+    if(Array.isArray(o.material))o.material.forEach(m=>ms.add(m));
+    else if(o.material)ms.add(o.material);
+  });
   gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());
 }
 function createKloseSpiritModel(T,id){
@@ -67,6 +71,7 @@ function createKloseSpiritModel(T,id){
   const root=new T.Group(),skeleton=new T.Group(),body=new T.Group();
   root.add(skeleton);skeleton.add(body);root.name=KLOSE_SPECIMENS[id][0];
   const colors=new Map(),shapes=new Map(),joints=[],tau=2*Math.PI;
+  let mushroomEyes;
   const dark='#26212c',cream='#fff0c5',gold='#f1bd44';
   function geometry(key){
     if(!shapes.has(key)){
@@ -157,13 +162,106 @@ function createKloseSpiritModel(T,id){
     strand('#518827',[[0,.025,0],[.08,.146,-.02],[.22,.185,-.04],[.28,.10,-.04],[.26,-.16,-.05],[.32,-.20,-.04],[.345,-.155,-.015],[.305,-.145,0]],
       [.038,.028,.025,.023,.020,.014,.009,.001],head);
   }
-  function mushroom(){
-    const star=id===4693,young=id===46;
-    const cap=star?'#ba6231':young?'#aa481c':'#99451d',spot=star?'#ffe697':'#f6d9a3';
+  function classicMushroom(){
+    const young=id===46,ochre='#a38d60',brown='#735831',ivory='#f4dda5';
+    const hood=joint(0,0,0,young?.030:.018,'x');
+    const crown=young?.975:1.025,brim=young?.37:.575;
+    // The curved front opening lifts over the eyes. The sides hang lower and curl in.
+    function surface(a,t,lift=0){
+      const end=t*Math.PI*.55,lip=t*t*t,front=Math.cos(a),side=Math.sin(a);
+      const fold=young?.013*Math.cos(3*a+.7):.039*Math.cos(3*a+.3)+.018*Math.sin(5*a);
+      const brow=young?0:Math.exp(-12*(t-.79)**2)*Math.max(0,front)*(.7+.3*Math.cos(2*a));
+      const rad=(young?.463:.494)*Math.sin(end)*(1+lip*fold)+.034*brow;
+      const y=brim+(crown-brim)*Math.cos(t*Math.PI*.5)+lip*((young?.072:.105)*front*front+.037*front+fold)-.060*brow;
+      return new T.Vector3((rad+lift)*side-.024*(1-t),(y+lift*Math.cos(end)),(rad+lift)*front*(young?.91:.88));
+    }
+    function skin(vertices,triangles,color,group){
+      const geo=new T.BufferGeometry();
+      geo.setAttribute('position',new T.Float32BufferAttribute(vertices,3));geo.setIndex(triangles);geo.computeVertexNormals();
+      return mesh(geo,color,[0,0,0],[1,1,1],group);
+    }
+    const rings=22,sectors=64,tip=surface(0,0),vertices=[tip.x,tip.y,tip.z],triangles=[];
+    for(let j=1;j<=rings+3;j++)for(let k=0;k<sectors;k++){
+      const a=k*tau/sectors,t=Math.min(j/rings,1),v=surface(a,t);
+      if(j>rings){
+        const roll=j-rings;
+        const f=[1,.971,.81,.25][roll];
+        v.x*=f;v.z*=f;v.y+=[0,-.018,-.012,.070][roll];
+      }
+      vertices.push(v.x,v.y,v.z);
+      const thisIndex=1+(j-1)*sectors+k,next=1+(j-1)*sectors+(k+1)%sectors;
+      if(j===1)triangles.push(0,thisIndex,next);
+      else triangles.push(thisIndex-sectors,thisIndex,next,next,next-sectors,thisIndex-sectors);
+    }
+    const topCount=(sectors+(rings-1)*sectors*2)*3;
+    const cap=skin(vertices,triangles,young?'#863909':'#83320c',hood);
+    cap.material.roughness=.45;
+    const colorUnder='#533217';
+    if(!colors.has(colorUnder))colors.set(colorUnder,new T.MeshStandardMaterial({color:new T.Color(colorUnder).convertSRGBToLinear(),roughness:.77}));
+    cap.geometry.addGroup(0,topCount,0);cap.geometry.addGroup(topCount,triangles.length-topCount,1);
+    cap.material=[cap.material,colors.get(colorUnder)];
+    // Each coloured island follows the actual hood surface, including its bent brim.
+    const patches=young?
+      [[-.74,.86,.34,.135],[.91,.79,.41,.205],[-.43,.36,.52,.16],[2.39,.58,.41,.20],[-2.24,.63,.46,.21],[2.19,.22,.45,.12]]:
+      [[-.64,.80,.24,.15],[.92,.79,.49,.21],[-1.36,.68,.19,.18],[.17,.39,.33,.105],[2.32,.56,.40,.17],
+        [-2.39,.67,.37,.21],[-1.75,.29,.37,.12],[2.98,.29,.31,.10]];
+    for(const [a,t,w,h] of patches){
+      const pts=[],indices=[],steps=32,ringsOnSpot=5;
+      for(let j=0;j<=ringsOnSpot;j++)for(let k=0;k<steps;k++){
+        const d=j/ringsOnSpot,p=k*tau/steps,wave=1+.10*Math.cos(3*p+a)+.07*Math.sin(2*p+2*a);
+        const s=surface(a+w*d*wave*Math.cos(p),Math.min(.991,t+h*d*wave*Math.sin(p)),.003);
+        pts.push(s.x,s.y,s.z);
+        if(j){const l=(j-1)*steps+k,r=(j-1)*steps+(k+1)%steps;indices.push(l,r,l+steps,r,r+steps,l+steps);}
+      }
+      skin(pts,indices,ivory,hood).material.side=T.DoubleSide;
+    }
+    const face=new T.Group();body.add(face);
+    if(young){
+      oval('#b09a68',0,.315,0,.212,.279,.164);
+      for(const s of [-1,1])oval('#aa945f',s*.083,.085,.010,.076,.091,.088);
+      oval('#302317',0,.526,.034,.294,.10,.165);
+      face.position.set(0,.383,.162);
+      for(const s of [-1,1]){
+        const outline=oval('#5f472a',s*.099,0,.004,.047,.094,.020,face);outline.rotation.z=-s*.065;
+        const eyeWhite=oval('#fffcef',s*.099,.005,.019,.041,.088,.019,face);eyeWhite.rotation.z=-s*.065;
+      }
+    }else{
+      body.scale.x=.92;body.scale.z=.96;
+      oval(brown,0,.40,-.018,.30,.195,.26);oval(ochre,0,.469,.006,.326,.183,.256);
+      const toes=[[-.227,-.077],[-.188,.140],[.145,.161],[.236,-.062]];
+      for(const [x,z] of toes){
+        const s=Math.sign(x),group=joint(x,.50,z,.032,'x',z*15);
+        const bend=z>0?.11:.17,pts=[],indices=[],n=20;
+        const sections=[[0,.018,0,.001],[.06,0,0,.068],[.16,-.046,.005,.105],[.25,-.104,.012,.117],
+          [.32,-.173,.026,.116],[.40,-.245,.029,.094],[.44,-.305,.031,.069],[.56,-.360,.043,.054],
+          [.73,-.397,.065,.047],[.89,-.410,.084,.032],[1,-.406,.099,.001]];
+        for(const [j,[offset,y,dz,r]] of sections.entries())for(let k=0;k<n;k++){
+          const a=k*tau/n;
+          pts.push(s*offset*bend+Math.sin(a)*r,y,dz+Math.cos(a)*r*(.88+.21*offset));
+          if(j){const l=(j-1)*n+k,rgt=(j-1)*n+(k+1)%n;indices.push(l,l+n,rgt+n,rgt+n,rgt,l);}
+        }
+        skin(pts,indices,'#9b8358',group);
+      }
+      oval('#1b140f',0,.618,.016,.310,.162,.24);face.position.set(0,.627,.25);
+      for(const s of [-1,1])oval('#fffdee',s*.097,-.004,-.004,.042,.061,.024,face);
+      strand('#806742',[[-.286,.54,.10],[-.194,.492,.192],[0,.468,.255],[.157,.511,.219],[.28,.539,.119]],
+        [.022,.037,.036,.026,.009]);
+      strand('#d7c49a',[[-.293,.544,.101],[-.184,.512,.202],[0,.486,.265],[.161,.527,.213],[.25,.546,.149]],
+        [.012,.029,.025,.018,.004]);
+      for(const [x,y,z,r] of [[.267,.440,.222,.077],[.166,.361,.310,.057]]){
+        oval('#a04617',x,y,z,r,r*1.21,r*.78);
+        oval(ivory,x+r*.41,y+r*.26,z+r*.55,r*.41,r*.57,r*.21);
+        oval('#dec997',x-r*.43,y-r*.1,z+r*.60,r*.31,r*.38,r*.17);
+      }
+    }
+    mushroomEyes=face;
+  }
+  function starMushroom(){
+    const cap='#ba6231',spot='#ffe697';
     const mantle=joint(0,0,0,.035,'z');
     for(const s of [-1,1])for(const zz of [1,-1])oval('#ad9672',s*.18,.17,zz*.13,.078,.17,.084,mantle);
     oval('#bdab85',0,.34,0,.288,.221,.224,mantle);
-    oval(young?'#96855e':'#292020',0,.50,.13,.245,.149,.157,mantle);
+    oval('#292020',0,.50,.13,.245,.149,.157,mantle);
     for(const s of [-1,1])oval('#fff3d5',s*.098,.53,.269,.032,.051,.019,mantle);
     const profile=[[0,0],[.37,-.01],[.52,.065],[.50,.16],[.41,.27],[.25,.37],[.07,.42],[0,.423]];
     mesh(new T.LatheGeometry(profile.map(([r,y])=>new T.Vector2(r,y)),40),cap,[0,.56,0],[1,1,.84],mantle);
@@ -172,12 +270,10 @@ function createKloseSpiritModel(T,id){
       const mark=oval(spot,Math.sin(a)*r,.963-r*.39,Math.cos(a)*r*.85,.067,.030,.059,mantle);
       mark.rotation.x=.44*Math.cos(a);mark.rotation.z=-.44*Math.sin(a);
     }
-    if(star){
-      const crystal=gem('#ffda80',-.28,.95,.1,.09,.20,.08,mantle);crystal.rotation.z=.37;
-      for(const side of [-1,1]){
-        strand('#8b9766',[[side*.31,.62,0],[side*.53,.86,.06],[side*.64,.91,.04],[side*.63,.77,.02]],[.020,.012,.009,.001],mantle);
-        for(let j=0;j<3;j++)oval('#ffe796',side*(.4+.05*j),.32+j*.13,.05,.026,.030,.025,mantle);
-      }
+    const crystal=gem('#ffda80',-.28,.95,.1,.09,.20,.08,mantle);crystal.rotation.z=.37;
+    for(const side of [-1,1]){
+      strand('#8b9766',[[side*.31,.62,0],[side*.53,.86,.06],[side*.64,.91,.04],[side*.63,.77,.02]],[.020,.012,.009,.001],mantle);
+      for(let j=0;j<3;j++)oval('#ffe796',side*(.4+.05*j),.32+j*.13,.05,.026,.030,.025,mantle);
     }
   }
   function yiyi(){
@@ -278,7 +374,7 @@ function createKloseSpiritModel(T,id){
   }
   switch(id){
     case 16:cactus();break;case 27:sprout();break;
-    case 46:case 47:case 4693:mushroom();break;
+    case 46:case 47:classicMushroom();break;case 4693:starMushroom();break;
     case 83:case 442:yiyi();break;case 701:simon();break;case 821:fox();break;
     case 4690:dragonPlant();break;case 4694:crystal();break;case 2197:shiningBird();break;
   }
@@ -289,17 +385,13 @@ function createKloseSpiritModel(T,id){
     clock+=dt;
     body.scale.y=1+.013*Math.sin(clock*2.3);
     body.rotation.z=.018*Math.sin(clock*1.8)+effort*.035*Math.sin(clock*8);
+    if(mushroomEyes)mushroomEyes.scale.y=.12+.88*Math.min(1,Math.abs(clock%4.7-3.2)/.086);
     joints.forEach(({g,sway,axis,phase})=>{g.rotation[axis]=sway*Math.sin(clock*(2.35+effort*3.6)+phase);});
   },dispose(){disposeKloseModel(root);}};
 }
 
-function createKloseWildlife(T,surface,meadowBirds){
-  const {move,chart,groundCorrection,pools}=surface;
-  const inhabitants=[],byKey=new Map(),switches=[];
-  let coreStep=0;
-  // x,z are offsets in the site's east/south frame, in metres. Late-era
-  // encounters appear as distinct event subjects at their historical sites.
-  const territories={
+// Offsets are measured in metres east and south of each site's centre.
+const KLOSE_TERRITORIES={
     grassland:[[164,-7,-5,1,'rare']],
     swamp:[[16,2,-5,11,'wild'],[16,-6,7,12,'wild'],[16,10,6,12,'wild'],[27,-6,-4,11,'rare']],
     forest:[[47,7,-11,10,'boss'],[83,-5,3,15,'rare'],[442,-9,-4,15,'rare']],
@@ -307,7 +399,24 @@ function createKloseWildlife(T,surface,meadowBirds){
     vineway:[[4690,3,-7,35,'event']],
     core:[[4694,4.4,-4.8,12,'rare'],[4693,-7,6,35,'event']],
     sanctuary:[[2197,2,-9,40,'event']]
-  };
+};
+function createKloseWildlife(T,surface,meadowBirds){
+  const {move,chart,groundCorrection,pools}=surface;
+  const inhabitants=[],byKey=new Map(),switches=[];
+  let coreStep=0;
+  const shieldWindowMs=6500;
+  function resetShield(p){
+    p.hits=0;p.shieldDeadline=0;p.shield.visible=true;p.radius=1.1;
+    p.shield.material.uniforms.heat.value=0;p.shield.material.uniforms.flash.value=0;
+  }
+  function shieldVisual(p,now){
+    if(!p.shield?.visible)return;
+    if(p.hits&&now>=p.shieldDeadline)resetShield(p);
+    const u=p.shield.material.uniforms;
+    u.heat.value=.47*p.hits*Math.min(1,Math.max(0,(p.shieldDeadline-now)/700));
+    u.flash.value=p.hits?Math.max(0,1-(now-(p.shieldDeadline-shieldWindowMs))/370):0;
+    u.phase.value=p.clock%100;
+  }
   function clear(p,x,z,walker,boat){
     if(Math.hypot(x,z)<1.05 || Math.hypot(x-p.homeX,z-p.homeZ)>7.6)return false;
     const radius=p.radius,dx=p.site.x+x,dz=p.site.z+z;
@@ -334,7 +443,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     p.root.rotation.y=p.yaw;
   }
   function install(site,near,yAt,hazards,cover){
-    for(const [index,row] of (territories[site.id]||[]).entries()){
+    for(const [index,row] of (KLOSE_TERRITORIES[site.id]||[]).entries()){
       const [speciesId,homeX,homeZ,level,kind]=row,size=KLOSE_SPECIMENS[speciesId][1];
       const seed=(speciesId*37+index*19)%97;
       const p={...createKloseSpiritModel(T,speciesId),key:site.id+'-'+speciesId+'-'+(index+1),speciesId,size,level,kind,
@@ -352,9 +461,28 @@ function createKloseWildlife(T,surface,meadowBirds){
       p.root.userData.kloseSpirit=p.key;
       near.add(p.root);inhabitants.push(p);byKey.set(p.key,p);pose(p);p.root.visible=false;
       if(speciesId===47){
-        const shield=new T.Mesh(new T.SphereGeometry(1,28,18),new T.MeshPhysicalMaterial({
-          color:0x79e5bb,transparent:true,opacity:.15,roughness:.30,depthWrite:false}));
-        shield.scale.set(1.1,1.04,1.1);shield.position.y=.59;p.root.add(shield);p.shield=shield;p.radius=1.1;
+        const shield=new T.Mesh(new T.SphereGeometry(1,56,32),new T.ShaderMaterial({
+          transparent:true,depthWrite:false,
+          uniforms:{heat:{value:0},flash:{value:0},phase:{value:0}},
+          vertexShader:`varying vec3 local, eye, normalEye;
+            void main(){
+              local=position;vec4 mv=modelViewMatrix*vec4(position,1.);
+              eye=-mv.xyz;normalEye=normalMatrix*normal;gl_Position=projectionMatrix*mv;
+            }`,
+          fragmentShader:`uniform float heat,flash,phase;varying vec3 local,eye,normalEye;
+            void main(){
+              float rim=pow(1.-clamp(dot(normalize(eye),normalize(normalEye)),0.,1.),1.9);
+              float glint=pow(max(0.,dot(normalize(local),normalize(vec3(-.36,.59,.72)))),26.);
+              float ripple=.5+.5*sin(local.y*11.+phase*1.6+sin(local.z*7.+phase*.7));
+              vec3 film=mix(vec3(.21,.59,.96),vec3(.010,.012,.024),heat);
+              vec3 light=mix(vec3(.51,.89,1.),vec3(.13,.16,.22),heat);
+              vec3 colour=mix(film,light,clamp(rim*.86+glint,0.,1.));
+              colour=mix(colour,vec3(1.,.56,.22),flash*(.28+rim*.38));
+              gl_FragColor=vec4(colour,min(.92,.082+rim*.56+glint*.26+heat*.31+ripple*.024));
+              #include <tonemapping_fragment>
+              #include <encodings_fragment>
+            }`}));
+        shield.scale.set(1.1,1.04,1.1);shield.position.y=.59;p.root.add(shield);p.shield=shield;resetShield(p);
       }
       if(speciesId===83||speciesId===442){
         // The animal retracts into the dark mouth below its body, not through
@@ -453,12 +581,15 @@ function createKloseWildlife(T,surface,meadowBirds){
       }
       p.walker=nearby?walker:null;
       p.root.visible=!p.cooldown&&exposed(p,walker);
-      if(p.root.visible)step(p,dt,walker,boat);
+      if(p.root.visible){
+        if(p.shield)shieldVisual(p,performance.now());
+        step(p,dt,walker,boat);
+      }
     }
   }
   function record(p,viewer){
     const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z);
-    const lock=p.speciesId===47&&p.hits===0?'点击护膜，用火焰喷射器解除防护':
+    const lock=p.shield?.visible?'装备火焰喷射器，连续照射护膜（'+p.hits+'/3）':
       p.speciesId===83&&p.hits<3?'向探头的依依照射三次（'+p.hits+'/3）':
       p.speciesId===442&&!p.hits?'对探头的闪光依依照射一次':'';
     return {key:p.key,id:p.key,speciesId:p.speciesId,name:KLOSE_SPECIMENS[p.speciesId][0],siteId:p.site.id,fieldLock:lock,
@@ -478,7 +609,7 @@ function createKloseWildlife(T,surface,meadowBirds){
   function withdraw(key){
     const p=byKey.get(key);if(!p)return false;
     p.cooldown=p.kind==='boss'?90:48;p.root.visible=false;p.path=null;p.hits=0;
-    if(p.shield){p.shield.visible=true;p.radius=1.1;}
+    if(p.shield)resetShield(p);
     if(p.speciesId===4694)coreStep=0;
     return true;
   }
@@ -487,10 +618,10 @@ function createKloseWildlife(T,surface,meadowBirds){
     const v=chart(lat,lon);
     const room=surface.sites.find(s=>Math.hypot(v.x-s.x,v.z-s.z)<25);
     if(room?.id==='core'&&coreStep<4)return '地心晶脉 · '+prompts[coreStep]+'（点按或靠近按 E）';
-    if(room?.id==='forest')return '林间调查 · 点护膜或洞口探出的依依，使用火焰喷射器';
+    if(room?.id==='forest')return '林间调查 · 装备喷射器，连续照射蘑菇怪护膜；洞边也能找到依依';
     return '';
   }
-  function interact(caster,lat,lon){
+  function interact(caster,lat,lon,flameTool=false){
     const visitor=chart(lat,lon),candidates=[];
     for(const p of inhabitants){
       if(!p.near.visible||!p.root.visible||!record(p,visitor).fieldLock)continue;
@@ -507,8 +638,14 @@ function createKloseWildlife(T,surface,meadowBirds){
     if(!best)return '';
     const p=best.p;
     if(p){
+      if(p.shield){
+        if(!flameTool)return '先去赛尔号实验室领取并装备火焰喷射器';
+        const now=performance.now();shieldVisual(p,now);p.hits++;
+        if(p.hits>=3){p.shield.visible=false;p.radius=p.size*.33;return '护膜消散 · 可以挑战蘑菇怪了';}
+        p.shieldDeadline=now+shieldWindowMs;shieldVisual(p,now);
+        return '护膜'+(p.hits===1?'开始变暗':'已变黑')+' · 连续照射 '+p.hits+' / 3';
+      }
       p.hits++;
-      if(p.shield){p.shield.visible=false;p.radius=p.size*.33;return '护膜消散 · 可以挑战蘑菇怪了';}
       const needed=p.speciesId===83?3:1;
       return p.hits<needed?'火焰照射 '+p.hits+' / '+needed:'精灵停在洞口 · 可以接触了';
     }

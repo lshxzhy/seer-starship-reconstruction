@@ -39,7 +39,7 @@
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
     let craft,dock,flight,feet=new T.Vector3(),door=1,gear=1,external=false,transferSign=1;
-    let escort=null,escortId=null,safariState=null;
+    let escort=null,escortId=null,safariState=null,flameTool=false,flameRig=null;
     let navTarget='grassland',pending=null,arrivedOnDeck=false,approachRamp=false,feedback='',feedbackUntil=0,lastStore=0;
     const picker=new T.Raycaster(),chaseBoom={length:21},originRotation=new T.Quaternion();
     const vec=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
@@ -91,6 +91,7 @@
       local=new T.Group();world.add(local);
       rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true});
       local.add(rig.root);contact=createSoleContacts(1);local.add(contact.mesh);
+      flameRig=createFieldFlameTool(T,rig);
       nono=createSuperNono(1,local);drill=createMiningDrill(world);
       escort=createSpiritEscort(T,world);escort.setSpecies(escortId);
       bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
@@ -225,7 +226,7 @@
       pending=current&&['launch','auto'].includes(saved.pending)&&phase==='helm'?saved.pending:null;
       arrival='';observedBird=null;arrivedOnDeck=!!saved.arrivedOnDeck;approachRamp=false;feedback='';
       plotRoute(saved.locating?'shuttle-ramp':saved.targetId);
-      if(phase==='surface'&&groundDestination(saved.mapDestination))relocate(saved.mapDestination);
+      if(phase==='surface'&&groundDestination(saved.mapDestination))relocate(saved.mapDestination,saved.approachMushroom===true);
       lastTime=null;lastAirLat=lastAirLon=undefined;previousFlight=flight.status().phase;
       stage.dataset.domain='planet';nav.hidden=false;atlas.hidden=true;
       seerRobots.setExpression(rig,origin?.board?.smiling?'smile':'neutral');
@@ -259,7 +260,7 @@
       const frame=body.frame(ground.lat,ground.lon);
       return body.move(ground.lat,ground.lon,metres*out.dot(frame.east),metres*out.dot(frame.north));
     }
-    function relocate(id){
+    function relocate(id,approachMushroom=false){
       const site=groundDestination(id);
       if(!site)return;
       const parked=flight.status().phase==='landed';
@@ -269,6 +270,18 @@
       // floor under the cave roof. Use walker constraints rather than the flight lidar.
       position=body.resolveArrival(at.lat,at.lon);
       yaw=facing=id==='shuttle-ramp'||nearHull?-displacement(position,spherical(flight.position)).bearing:0;
+      if(id==='forest'&&!nearHull){
+        const boss=body.forestBossPosition();
+        if(boss){
+          const toBoss=displacement(position,boss);
+          if(approachMushroom&&toBoss.distance>3){
+            const step=1-3/toBoss.distance;
+            const near=body.move(position.lat,position.lon,toBoss.east*step,toBoss.north*step);
+            position=body.resolveArrival(near.lat,near.lon);
+          }
+          yaw=facing=-displacement(position,boss).bearing;
+        }
+      }
       pitch=0;walkPhase=0;observedBird=null;approachRamp=false;feedback='';arrival=site.name;
       plotRoute(null);resetInput();
     }
@@ -354,13 +367,18 @@
       feet.copy(craft.walk(vec(q.x,0,Math.min(q.z,craft.layout.rampEnd[2])),0,0,true));
       approachRamp=false;plotRoute(null);setPhase('cabin',true);
     }
+    function useSiteTool(caster){
+      const action=body.interactSpiritSite(caster,position.lat,position.lon,flameTool);
+      if(!action)return false;
+      if(flameTool&&action.includes('护膜'))flameRig.pulse();
+      say(action);requestFrame();return true;
+    }
     function mainAction(){
       const s=flight.status();
       if(phase==='surface'){
         if(closeToRamp()){boardGround();return;}
         if(requestSafari(safariAction(null)))return;
-        const action=body.interactSpiritSite(null,position.lat,position.lon);
-        if(action){say(action);requestFrame();return;}
+        if(useSiteTool(null))return;
         if(!encounterButton.hidden)encounterButton.click();
         return;
       }
@@ -412,7 +430,12 @@
         if(bird&&bird.distance<=22){
           const aim=bird.focusPoint;
           const distance=Math.max(1.45,(bird.size||.42)*2.4);
-          view.position.copy(aim).addScaledVector(f.south,distance).addScaledVector(f.east,distance*.58).addScaledVector(f.up,distance*.35);
+          if(bird.kind==='boss'){
+            const bearing=displacement(bird,position).bearing;
+            view.position.copy(aim).addScaledVector(f.north,Math.cos(bearing)*distance)
+              .addScaledVector(f.east,Math.sin(bearing)*distance).addScaledVector(f.up,distance*.19);
+            local.visible=false;escort.hide();
+          }else view.position.copy(aim).addScaledVector(f.south,distance).addScaledVector(f.east,distance*.58).addScaledVector(f.up,distance*.35);
           view.lookAt(aim);
         }else observedBird=null;
       }
@@ -558,13 +581,15 @@
       craft.root.updateMatrixWorld(true);
       const speed=phase==='cabin'||phase==='surface'?walkInput(dt):0;
       const walking=phase==='surface',at=walking?position:{lat:s.lat,lon:s.lon},agl=walking?0:s.clearance;
+      flameRig.setVisible(walking&&flameTool&&!eye);
+      flameRig.update(dt);
       if(!walking)escort.hide();
       const groundFrame=environment(at,agl,walking,s);
       dockVisible=flight.position.distanceTo(dock.position)<18000;dock.root.visible=dockVisible;
       if(walking){
         local.visible=true;rig.root.visible=contact.mesh.visible=!eye;surfaceCamera(dt);
         walkPhase+=seerRobots.phaseStep(speed,dt);seerRobots.animate(rig,walkPhase,speed,dt);
-        contact.write(0,0,.012,0,facing,rig.bones);contact.finish(1);drill.update(rig.bones.core,dt,!eye);
+        contact.write(0,0,.012,0,facing,rig.bones);contact.finish(1);drill.update(rig.bones.core,dt,!eye&&local.visible);
       }else{
         insideCamera(s,dt);
         sky.position.copy(view.position);sky.quaternion.copy(groundFrame.quaternion);sky.scale.setScalar(agl>1800?30000:7500);
@@ -742,8 +767,7 @@
         }else if(companionInSight())greetCompanion();
         else if(phase==='surface'){
           if(requestSafari(safariAction(picker)))return;
-          const action=body.interactSpiritSite(picker,position.lat,position.lon);
-          if(action){say(action);requestFrame();return;}
+          if(useSiteTool(picker))return;
           const chosen=body.pickSpirit(picker,position.lat,position.lon);
           if(chosen&&chosen.distance<=22){observedBird=chosen.key;updateUI();encounterButton.click();}
         }
@@ -781,6 +805,8 @@
         body.nearbySpirit(position.lat,position.lon);
     }
     return {open,hide,draw,snapshot,clearInputs:resetInput,nearbySpirit,
+      setFlameTool(value){flameTool=!!value;requestFrame();},
+      approachForestBoss(){if(phase!=='surface')return false;relocate('forest',true);updateUI();persist();requestFrame();return true;},
       setSafariState(value){safariState=value;body?.setSafariState(value);},
       enterWetland(){if(phase==='surface'){relocate('wetland');updateUI();persist();requestFrame();}},
       setEscortSpecies(id){escortId=id;escort?.setSpecies(id);requestFrame();},
@@ -790,7 +816,7 @@
       get canOpenSpirits(){return phase==='surface'||phase==='cabin';},
       parkedRamp:()=>groundDestination('shuttle-ramp'),get active(){return phase!=='hidden';},dispose(){
       events.abort();observer.disconnect();if(!world)return;
-      hide();dock?.dispose();craft.dispose();drill.dispose();contact.dispose();nono.dispose();escort?.dispose();body.dispose();
+      hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();contact.dispose();nono.dispose();escort?.dispose();body.dispose();
       lamp.shadow.map?.dispose();for(const mesh of [sky,stars]){mesh.geometry.dispose();mesh.material.dispose();}
     }};
   }

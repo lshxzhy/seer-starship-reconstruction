@@ -44,6 +44,10 @@ function readSpiritTransfer(raw){
       raw.bead.phase==='incubating'&&uint(raw.bead.readyAt)&&raw.bead.readyAt>0)))reject('元神珠的孵化记录有误。');
   if(raw.collectionRewardClaimed!==undefined&&typeof raw.collectionRewardClaimed!=='boolean')reject('图鉴奖励记录有误。');
   if(raw.starterClaimed!==undefined&&typeof raw.starterClaimed!=='boolean')reject('初始伙伴领取记录有误。');
+  const defeatedMushroom=raw.bosses.includes(47);
+  if(raw.flameTool!==undefined&&typeof raw.flameTool!=='boolean')reject('火焰喷射器记录有误。');
+  if(raw.flameTool===false&&(defeatedMushroom||raw.battle?.enemy?.speciesId===47))reject('此首领进度缺少已装备的火焰喷射器。');
+  if(raw.bankedXP!==undefined&&!uint(raw.bankedXP,defeatedMushroom?3000:0))reject('先锋任务的积累经验余额有误。');
   const safari=raw.safari;
   if(safari!==undefined){
     if(!object(safari)||!uint(safari.endsAt)||safari.endsAt>Date.now()+15*60*1000||
@@ -141,7 +145,8 @@ function renderSpiritTransfer(host,{getSnapshot,importSnapshot,report}){
       const names=new Map(SEER_SPIRIT_DATA.index.map(row=>[row[0],row[1]]));
       const members=save.party.map(p=>names.get(p.speciesId)+' Lv.'+p.level).join('、');
       preview.textContent='将导入队伍 '+save.party.length+' 只'+(members?'（'+members+'）':'')+
-        '，仓库 '+save.storage.length+' 只，已见 '+save.seen.length+' 种'+(save.battle?'，对战第 '+save.battle.turn+' 回合':'')+
+        '，仓库 '+save.storage.length+' 只，已见 '+save.seen.length+' 种'+(save.bosses.includes(47)?'，已战胜蘑菇怪，积累经验 '+save.bankedXP:'')+
+        (save.battle?'，对战第 '+save.battle.turn+' 回合':'')+
         (save.safari.endsAt>Date.now()?'，捕猎场'+safariRemaining(save.safari.endsAt)+'，专用胶囊 '+save.safari.balls+
           (save.safari.encounter?'，正在接触'+names.get(save.safari.encounter.pet.speciesId):''):'')+'。';
       pending=save;confirmRow.hidden=false;

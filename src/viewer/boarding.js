@@ -45,6 +45,7 @@
     const guide=createDeliveryGuide();
     const notice=root.querySelector('[data-notice]');
     let noticeTimer=0,drillOwned=false,drillEquipped=false,samples=0,tracking=false;
+    let flameTool=false;
     let batches=[];
     const delivered=()=>batches.reduce((sum,n)=>sum+n,0);
     const mined=()=>samples+delivered();
@@ -729,12 +730,18 @@
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       clearInputs,pack,restorePack,deliver,
       setEscortSpecies(id){escort.setSpecies(id);requestFrame();},
+      setFlameTool(value){
+        const equipped=Boolean(value);
+        if(flameTool===equipped)return;
+        flameTool=equipped;pilot.setFlameTool(equipped);
+        stage.dispatchEvent(new Event('seer-pack-change'));requestFrame();
+      },
       openSpiritDialogue:(context,onClose)=>crewDialogue.openSpirit?.(context,onClose)??false,
       get inTransit(){return lifts.riding;},
       get commsOpen(){return crewDialogue.isOpen;},
       consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
         nearFlyer:active&&flight.reachable(pose),flyerStored:flight.stored,landing:flight.landing,
-        hasMap:true,companionActive:active,drillOwned,drillEquipped,samples,tracking,delivered:delivered(),
+        hasMap:true,companionActive:active,drillOwned,drillEquipped,flameTool,samples,tracking,delivered:delivered(),
         credits:delivered()*trainingTerms.unitReward,unitReward:trainingTerms.unitReward,atExchange:atExchange(),
         receipts:batches.map((count,index)=>({number:index+1,count,reward:count*trainingTerms.unitReward}))};},
       useItem(id){

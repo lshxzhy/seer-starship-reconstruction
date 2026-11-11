@@ -6,6 +6,7 @@ function createSpiritSystem(saved){
   const index=new Map(data.index.map(row=>[row[0],row]));
   const statKeys=['attack','defense','spAttack','spDefense','speed'];
   const category={1:'物理',2:'特殊',4:'属性'};
+  const mushroomRewardXP=3000;
   const statuses={poison:'中毒',burn:'烧伤',freeze:'冻伤',paralysis:'麻痹',fear:'害怕',sleep:'睡眠',tired:'疲惫',bleed:'流血'};
   const faintStatuses=['fear','sleep','tired','paralysis'];
   const effectArgSizes={1:0,2:0,3:0,4:3,5:3,6:1,7:0,8:0,9:2,10:1,11:1,12:1,13:1,14:1,15:1,16:1,20:2,31:2,
@@ -22,7 +23,8 @@ function createSpiritSystem(saved){
   const monName=id=>index.get(id)?.[1]||'未知精灵';
   const label=pet=>monName(pet.speciesId);
   const fresh=()=>({version:1,nextId:1,followerUid:null,party:[],storage:[],seen:[],owned:[],bosses:[],recent:{},
-    capsules:10,potions:5,materials:{photo:0,air:0},bead:null,starterClaimed:false,collectionRewardClaimed:false,battle:null,log:[],safari:safari.blank()});
+    capsules:10,potions:5,materials:{photo:0,air:0},bead:null,starterClaimed:false,collectionRewardClaimed:false,
+    flameTool:false,bankedXP:0,battle:null,log:[],safari:safari.blank()});
   const addLog=message=>{state.log.push(message);if(state.log.length>12)state.log.shift();};
   const done=(message,outcome)=>{addLog(message);return {ok:true,message,outcome};};
   const fail=message=>({ok:false,message});
@@ -59,6 +61,8 @@ function createSpiritSystem(saved){
   function stats(p){
     const nature=data.natures[p.nature],st=data.species[p.speciesId].base;
     return st.map((base,i)=>{
+      // The forest challenge has a fixed HP pool. Every raised individual retains the species formula.
+      if(i===0&&p.uid==='wild'&&p.speciesId===47)return 100;
       const value=Math.floor((base*2+p.iv+Math.floor(p.ev[i]/4))*p.level/100);
       return i?Math.floor((value+5)*nature[i]):value+10+p.level;
     });
@@ -84,6 +88,7 @@ function createSpiritSystem(saved){
     return {party:state.party.map(petView),storage:state.storage.map(petView),followerUid:state.followerUid,capsules:state.capsules,potions:state.potions,
       starters:[...starters],seen:[...state.seen],owned:[...state.owned],log:[...state.log],
       materials:{...state.materials},bead:state.bead?{...state.bead}:null,starterClaimed:state.starterClaimed,collectionRewardClaimed:state.collectionRewardClaimed,
+      flameTool:state.flameTool,defeatedMushroom:state.bosses.includes(47),bankedXP:state.bankedXP,
       safari:safari.view(state.safari),
       battle:b?{enemy:petView(b.enemy),activeUid:b.activeUid,encounterKey:b.encounterKey,kind:b.kind,turn:b.turn,
         needsSwitch:active()?.hp===0,area:b.area,canCapture:b.kind!=='boss',canStruggle:active()?.hp>0&&active().moves.every(m=>!m[1])}:null};
@@ -101,7 +106,11 @@ function createSpiritSystem(saved){
       p.ev[i]+=earned;budget-=earned;
     }
     const earned=Math.max(1,Math.floor((kind.yield||56)*foe.level/7));
-    if(p.level<100){p.xp+=earned;addLog(label(p)+' 获得 '+earned+' 经验。');}
+    if(p.level<100)addLog(label(p)+' 获得 '+earned+' 经验。');
+    gainExperience(p,earned,beforeHp);
+  }
+  function gainExperience(p,amount,beforeHp){
+    p.xp+=amount;
     while(p.level<100&&p.xp>=xpGoal(p.level)){
       const known=new Set(potential(p));p.xp-=xpGoal(p.level);p.level++;
       const evolution=data.species[p.speciesId].evolves;
@@ -115,8 +124,11 @@ function createSpiritSystem(saved){
         addLog(label(p)+' 学会 '+data.moves[id][0]+'。');
       }
     }
+    const unused=p.level===100?p.xp:0;
     if(p.level===100)p.xp=0;
-    p.hp=Math.min(stats(p)[0],p.hp+stats(p)[0]-beforeHp);
+    const maximum=stats(p)[0];
+    if(p.hp)p.hp=clamp(p.hp+maximum-beforeHp,1,maximum);
+    return amount-unused;
   }
   function flags(uid){
     const db=state.battle.conditions;
@@ -311,16 +323,19 @@ function createSpiritSystem(saved){
     if(!enemy.hp){
       if(enemy.speciesId===16){state.materials.photo++;addLog('获得光合能量 ×1。');}
       if(enemy.speciesId===10||enemy.speciesId===164){state.materials.air++;addLog('获得空气结晶 ×1。');}
-      const op=b.kind==='boss'&&!state.bosses.includes(enemy.speciesId);
-      if(op){
-        remember(state.bosses,enemy.speciesId);
-        const where=receive(makePet(46,1,''));addLog('首次击败蘑菇怪，小蘑菇已进入'+where+'。');
+      const firstMushroom=b.kind==='boss'&&enemy.speciesId===47&&!state.bosses.includes(47);
+      let mushroomReward='';
+      if(firstMushroom){
+        remember(state.bosses,47);
+        state.bankedXP+=mushroomRewardXP;
+        const where=receive(makePet(46,1,''));
+        mushroomReward='首次击败蘑菇怪。小蘑菇已进入'+where+'，获得 3000 点积累经验。';
       }
       for(const uid of b.participants){
         const p=state.party.find(p=>p.uid===uid);if(p)grantXP(p,enemy);
       }
       state.recent[b.encounterKey]=Date.now()+60000;state.battle=null;
-      return done('战斗胜利。','won');
+      return done(mushroomReward||'战斗胜利。','won');
     }
     if(!state.party.some(p=>p.hp)){
       state.battle=null;return done('队伍失去战斗能力，请进行精灵恢复。','lost');
@@ -333,10 +348,12 @@ function createSpiritSystem(saved){
     const id=Number(encounter?.speciesId),key=encounter?.key;
     if(!wild.has(id)||typeof key!=='string'||!key.length||key.length>120||
       !['wild','rare','boss','common','shiny'].includes(encounter.kind))return fail('该精灵当前仅可观察。');
+    if(encounter.kind==='boss'&&id!==47||id===47&&encounter.siteId!=='forest')return fail('蘑菇怪的首领挑战位于克洛斯星林间。');
+    if(id===47&&!state.flameTool)return fail('先到赛尔号实验室领取火焰喷射器，回林间破开护膜。');
     if((state.recent[key]||0)>Date.now())return fail('这只精灵刚刚离开，请寻找附近的其他个体。');
     const lead=state.party.find(p=>p.hp>0);
     if(!lead)return fail(state.party.length?'请先恢复队伍体力。':'先选择一只初始伙伴。');
-    const enemy=makePet(id,integer(encounter.level,1,100,1),'wild');
+    const enemy=makePet(id,id===47?10:integer(encounter.level,1,100,1),'wild');
     const b={enemy,kind:id===47?'boss':encounter.kind,area:String(encounter.siteId||''),encounterKey:key,
       turn:1,activeUid:lead.uid,participants:[lead.uid],conditions:{}};
     state.battle=b;remember(state.seen,id);flags(lead.uid);flags(enemy.uid);
@@ -421,6 +438,20 @@ function createSpiritSystem(saved){
     if(state.battle)return turn(a);
     if(a.type==='encounter')return begin(a.encounter);
     if(a.type==='fuse')return fuse(a);
+    if(a.type==='equipFlameTool'){
+      if(a.site!=='laboratory')return fail('请到赛尔号实验室领取火焰喷射器。');
+      if(state.flameTool)return fail('已装备火焰喷射器。');
+      state.flameTool=true;
+      return done('已装备火焰喷射器，可在克洛斯星林间对准蘑菇怪护膜。');
+    }
+    if(a.type==='allocateXP'){
+      const pet=state.party.find(p=>p.uid===a.uid);
+      if(!pet||pet.level>=100)return fail('请选择一只未满级的队伍伙伴。');
+      if(!Number.isSafeInteger(a.amount)||a.amount<=0||a.amount>state.bankedXP)return fail('分配数量需要在积累经验余额内。');
+      const used=gainExperience(pet,a.amount,stats(pet)[0]);
+      state.bankedXP-=used;
+      return done(label(pet)+' 领取了 '+used+' 点积累经验，剩余 '+state.bankedXP+' 点。');
+    }
     if(a.type==='energize'){
       if(a.site!=='forest'||state.bead?.phase!=='fresh')return fail('请携带未吸能的绿色元神珠前往克洛斯星林间。');
       state.bead={phase:'incubating',readyAt:Date.now()+24*60*60*1000};
@@ -509,6 +540,10 @@ function createSpiritSystem(saved){
     for(const key of ['seen','owned'])for(const id of Array.isArray(saved[key])?saved[key]:[])if(index.has(id))remember(state[key],id);
     state.starterClaimed=typeof saved.starterClaimed==='boolean'?saved.starterClaimed:starters.some(id=>state.owned.includes(id));
     state.bosses=Array.isArray(saved.bosses)?saved.bosses.filter(id=>id===47):[];
+    const defeated=state.bosses.includes(47);
+    state.flameTool=defeated||saved.flameTool===true;
+    // A v0.11.0 first-win record already awarded the baby, but had no experience bank.
+    state.bankedXP=defeated?integer(saved.bankedXP,0,mushroomRewardXP,mushroomRewardXP):0;
     state.capsules=integer(saved.capsules,0,9999,10);state.potions=integer(saved.potions,0,9999,5);
     state.collectionRewardClaimed=saved.collectionRewardClaimed===true;
     for(const k of ['photo','air'])state.materials[k]=integer(saved.materials?.[k],0,Number.MAX_SAFE_INTEGER);
@@ -520,6 +555,10 @@ function createSpiritSystem(saved){
     for(const [key,t] of Object.entries(saved.recent||{}))if(key.length<=120&&t>Date.now()&&t<=Date.now()+60000)state.recent[key]=t;
     const old=saved.battle,enemy=readPet(old?.enemy,'wild');
     if(!old||!enemy||(!wild.has(enemy.speciesId)&&enemy.speciesId!==701)||!enemy.hp||!state.party.some(p=>p.hp)||!state.party.some(p=>p.uid===old.activeUid))return;
+    if(enemy.speciesId===47){
+      if(old.area!=='forest'||enemy.level!==10)return;
+      state.flameTool=true;
+    }
     state.safari.encounter=null;
     const partySet=new Set(state.party.map(p=>p.uid));
     const participants=Array.isArray(old.participants)?[...new Set(old.participants.filter(id=>partySet.has(id)))]:[];

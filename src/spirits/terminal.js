@@ -1,11 +1,32 @@
 // The terminal issues commands to the rules engine. Only a committed turn
 // can consume an item or remove a creature from the landscape.
-function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setSafari,enterWetland,withdraw,requestFrame}){
+function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setSafari,setFlameTool,visitMushroomSite,enterWetland,withdraw,requestFrame}){
   const overlay=root.querySelector('[data-spirit-overlay]'),panel=overlay.querySelector('[role=dialog]');
   const content=panel.querySelector('[data-spirit-content]'),tabs=panel.querySelector('[data-spirit-tabs]');
   const feedback=panel.querySelector('[data-spirit-feedback]'),title=panel.querySelector('h2'),dismiss=panel.querySelector('[data-spirit-close]');
   const game=createSpiritSystem(),studio=createSpiritStage(T);
-  const sections={party:'队伍',storage:'仓库',dex:'图鉴',lab:'培育',safari:'捕猎场',field:'野外'};
+  const sections={party:'队伍',storage:'仓库',dex:'图鉴',spt:'SPT 首领',lab:'培育',safari:'捕猎场',field:'野外'};
+  const origins=new Map();
+  function addOrigin(id,text){
+    if(!origins.has(id))origins.set(id,new Set());
+    origins.get(id).add(text);
+  }
+  addOrigin(10,'克洛斯星草原 · 常驻');
+  for(const [site,rows] of Object.entries(KLOSE_TERRITORIES)){
+    const name=KLOSE_WORLD.sites.find(s=>s.id===site)?.name;
+    for(const [id,,,,role] of rows)addOrigin(id,name+' · '+({rare:'特殊遭遇',boss:'SPT 首领',event:'历史活动观察',wild:'野生'})[role]);
+  }
+  const safariMethods={field:'场内可见',random:'步行遭遇',fish:'垂钓',tree:'摇树',bear:'闪光晶石'};
+  for(const [key,list] of Object.entries(SEER_SPIRIT_DATA.safari)){
+    for(const id of list)addOrigin(id,'2011 年克洛斯湿地捕猎场 · '+safariMethods[key]);
+  }
+  for(const id of game.view().starters)addOrigin(id,'赛尔号 · 初始伙伴');
+  addOrigin(46,'克洛斯星林间 · 蘑菇怪首胜奖励');
+  addOrigin(301,'实验室融合 · 绿色元神珠孵化');
+  for(const id of SEER_SPIRIT_DATA.playable){
+    const evolution=SEER_SPIRIT_DATA.species[id]?.evolves;
+    if(evolution)addOrigin(evolution[1],game.species(id,false).name+'达到 '+evolution[0]+' 级进化');
+  }
   const statNames=['体力','攻击','防御','特攻','特防','速度'];
   let page='party',active=false,busy=false,recordReady=false,revision=0,opener=null,encounter=null;
   let selection=null,starter=1,query='',offset=0,dexId=1,stageJob=null,generation=0;
@@ -61,6 +82,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
         if(previous?.encounterKey)withdraw(previous.encounterKey);encounter=null;
       }
       if(result.outcome&&action.type!=='safari'){page='party';selection=game.view().party[0]?.uid??null;}
+      if(result.outcome==='won'&&previous?.kind==='boss'&&!before.bosses.includes(47))page='spt';
       if(action.type==='safari')page='safari';
       if(action.type==='starter')page=encounter?'field':'party';
       if(action.type==='withdraw')page='party';
@@ -120,6 +142,13 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       button(controls,'送入仓库',()=>act({type:'store',uid:pet.uid}),{disabled:state.party.length<=1,action:'store'});
       button(controls,'全队恢复与补给',()=>act({type:'heal'}),{action:'heal'});
     }
+    if(!inVault&&state.bankedXP>0&&pet.level<100){
+      const bank=el(host,'details');el(bank,'summary','','分配积累经验 · 余额 '+state.bankedXP);
+      const line=el(bank,'div','spirit-row'),label=el(line,'label','','经验点数 ');
+      const amount=el(label,'input');amount.type='number';amount.min='1';amount.max=String(state.bankedXP);
+      amount.value=String(Math.min(state.bankedXP,Math.max(1,pet.nextXP-pet.xp)));
+      button(line,'分给'+pet.name,()=>act({type:'allocateXP',uid:pet.uid,amount:amount.valueAsNumber}),{action:'allocate-xp'});
+    }
     if(pet.learnable?.length){
       const fold=el(host,'details');el(fold,'summary','','更换技能');const row=el(fold,'div','spirit-row');
       const move=el(row,'select');move.setAttribute('aria-label','可学习技能');
@@ -127,6 +156,32 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       const slot=el(row,'select');slot.setAttribute('aria-label','技能槽');
       for(let i=0;i<4;i++)slot.add(new Option((i+1)+' · '+(pet.moves[i]?.name||'空位'),String(i)));
       button(row,'装入技能槽',()=>act({type:'learn',uid:pet.uid,moveId:Number(move.value),slot:Number(slot.value)}),{action:'learn'});
+    }
+  }
+  function travelSpt(site){
+    if(busy)return;
+    close(false);visitMushroomSite(site);
+    if(site==='laboratory')open(null,canvas,{op:'spt'});
+  }
+  function mushroomMission(host,state){
+    const lab=siteId()==='laboratory';
+    const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
+    figure(art,[{id:47,name:'蘑菇怪'}]);
+    el(detail,'span','spirit-catalog-number','#047　草系　·　SPT 先锋队');
+    el(detail,'h3','spirit-name','发狂的蘑菇怪');
+    el(detail,'p','','克洛斯星林间　·　Lv.10　·　100 体力');
+    el(detail,'p','spirit-sub',state.defeatedMushroom?'已完成首胜　·　小蘑菇已领取':'首胜奖励　·　1 级小蘑菇和 3,000 点积累经验');
+    if(state.bankedXP>0){
+      el(detail,'p','','待分配经验　'+state.bankedXP);
+      button(detail,'到队伍分配经验',()=>{page='party';report('');render();},{action:'party-xp'});
+    }
+    if(!state.flameTool){
+      el(detail,'p','','先在赛尔号实验室领用火焰喷射器。');
+      if(lab)button(detail,'领取并装备火焰喷射器',()=>act({type:'equipFlameTool',site:siteId()}),{primary:true,action:'equip-flame'});
+      else button(detail,'前往赛尔号实验室',()=>travelSpt('laboratory'),{primary:true,action:'spt-lab'});
+    }else{
+      el(detail,'p','','火焰喷射器已装备。面向淡蓝色护膜连续照射三次，等它消散后点蘑菇怪发起挑战。');
+      button(detail,'前往林间 · 蘑菇怪',()=>travelSpt('forest'),{primary:true,action:'spt-forest'});
     }
   }
   function fieldPage(host,state){
@@ -139,7 +194,10 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     el(detail,'p','spirit-sub',(KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||'克洛斯星')+
       (encounter.kind==='boss'?'　·　首领挑战':encounter.kind==='event'?'　·　历史活动观察':'　·　可使用精灵胶囊'));
     const row=el(detail,'div','spirit-actions');
-    if(encounter.fieldLock)el(detail,'p','spirit-sub',encounter.fieldLock);
+    if(encounter.fieldLock){
+      el(detail,'p','spirit-sub',encounter.fieldLock);
+      if(encounter.kind==='boss'&&!state.flameTool)button(row,'去实验室领取喷射器',()=>travelSpt('laboratory'),{action:'spt-lab'});
+    }
     if(encounter.kind!=='event'&&!encounter.fieldLock){
       if(state.party.length)button(row,encounter.kind==='boss'?'挑战首领':'进入对战',()=>act({type:'encounter',encounter:{key:encounter.key,speciesId:info.id,level:encounter.level,kind:encounter.kind,siteId:encounter.siteId}}),{primary:true,action:'encounter'});
       else button(row,'先选择初始伙伴',()=>{page='party';render();},{primary:true,action:'choose'});
@@ -177,6 +235,9 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
         figure(art,[{id:s.id,name:s.name}]);studio.show(stageJob.mount,stageJob.entries);
       }else{studio.hide();cols.style.gridTemplateColumns='1fr';art.remove();}
       el(info,'span','spirit-catalog-number',number(s.id)+'　'+types(s)+'　'+(s.owned?'已获得':s.seen?'已观察':'未发现'));el(info,'h3','spirit-name',s.name);
+      const where=origins.get(s.id);
+      el(info,'p','spirit-sub',where?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
+      if(s.id===47)button(info,'查看 SPT 首领任务',()=>{page='spt';render();},{action:'mushroom-spt'});
       const row=SEER_SPIRIT_DATA.index.find(item=>item[0]===s.id);
       if(row?.[3]||row?.[4])el(info,'p','spirit-sub',[row[3]&&('身高 '+row[3]+' cm'),row[4]&&('体重 '+row[4]+' kg')].filter(Boolean).join('　'));
       const artLink=el(info,'a','spirit-source','查看原版头像');artLink.href='https://seerh5.61.com/resource/assets/pet/head/'+s.id+'.png';
@@ -250,7 +311,9 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   function applyFollower(saved){
     const following=saved?.party?.find(p=>p.uid===saved.followerUid);
     setFollower(following?.speciesId||null);
-    setSafari(game.view().safari);
+    const state=game.view();
+    setFlameTool(state.flameTool);
+    setSafari(state.safari);
   }
   async function replaceCollection(raw){
     if(busy||!recordReady)throw new Error('当前存档正在写入。');
@@ -295,7 +358,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       if(key==='safari'&&page!=='safari'&&siteId()!=='wetland'&&!state.safari?.active)continue;
       button(tabs,key==='party'?label+' '+state.party.length+'/6':label,()=>{page=key;report('');render();},{selected:page===key,action:key});
     }
-    title.textContent=battle?'精灵对战 · 第 '+state.battle.turn+' 回合':({party:'精灵背包',storage:'精灵仓库',dex:'精灵图鉴',field:'野外接触',lab:'融合与培育',safari:'克洛斯湿地捕猎场'})[page];
+    title.textContent=battle?(state.battle.kind==='boss'?'SPT 首领挑战':'精灵对战')+' · 第 '+state.battle.turn+' 回合':({party:'精灵背包',storage:'精灵仓库',dex:'精灵图鉴',spt:'赛尔先锋队 · 首领任务',field:'野外接触',lab:'融合与培育',safari:'克洛斯湿地捕猎场'})[page];
     const host=el(content,'div','spirit-page');
     if(!battle&&page==='party'&&state.party.length&&!state.starterClaimed){
       const initial=el(host,'details');
@@ -305,6 +368,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(battle)battlePage(host,state);
     else if(page==='field'&&encounter)fieldPage(host,state);
     else if(page==='dex')dexPage(host);
+    else if(page==='spt')mushroomMission(host,state);
     else if(page==='lab')labPage(host,state);
     else if(page==='safari'){
       renderWetlandCapture(host,state,{el,button,figure,act,chatWith,siteId:()=>atFieldGate?'wetland':siteId()});
@@ -327,7 +391,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   async function open(wild,trigger,activity=null){
     if(busy)return;
     if(active){close();return;}
-    const turn=++generation;active=true;opener=trigger||canvas;encounter=wild||null;page=activity?'safari':wild?'field':'party';
+    const turn=++generation;active=true;opener=trigger||canvas;encounter=wild||null;page=activity?.op==='spt'?'spt':activity?'safari':wild?'field':'party';
     atFieldGate=activity?.op==='enter'&&activity.destination==='wetland';
     overlay.hidden=false;stage.dataset.consoleOpen='spirits';recordReady=false;
     tabs.replaceChildren();content.replaceChildren();report('正在读取精灵背包…');dismiss.focus({preventScroll:true});
@@ -336,7 +400,8 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       if(turn!==generation)return;
       game.restore(record?.data);applyFollower(record?.data);
       revision=record?.revision||0;recordReady=true;report('');
-      if(game.view().safari?.encounter&&(activity||wild?.kind==='safari')){page='safari';render();}
+      if(activity?.op==='spt')render();
+      else if(game.view().safari?.encounter&&(activity||wild?.kind==='safari')){page='safari';render();}
       else if(activity&&!['enter','menu','resume'].includes(activity.op))await act({type:'safari',op:activity.op,speciesId:activity.speciesId,site:siteId()});
       else if(wild&&!game.view().seen.includes(wild.speciesId))await act({type:'observe',speciesId:wild.speciesId});
       else render();

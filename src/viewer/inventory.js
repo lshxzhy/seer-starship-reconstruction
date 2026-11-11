@@ -8,6 +8,8 @@
         note:'查看你所在的甲板、各舱室的入口与升降站。'},
       {id:'drill',name:'挖矿钻头',type:'采集装备',
         note:'机械室配发的双臂钻头。装备后可靠近机械室的采样工位试钻。'},
+      {id:'flame',name:'火焰喷射器',type:'先锋队装备',
+        note:'从赛尔号实验室领取。对准克洛斯星林间蘑菇怪的护膜连续命中，可开启首领挑战。'},
       {id:'sample',name:'训练矿样',type:'采集材料',
         note:'在机械室采样工位用钻头取下的矿物标本。'}
     ];
@@ -114,6 +116,17 @@
           }
           c.restore();
         }
+      }else if(id==='flame'){
+        face('M45 62L107 57L120 63L118 79L47 86L38 78L39 66Z','#41474a');
+        face('M40 65L107 58L119 63L49 71Z','#969fa0');
+        for(const [x,y] of [[63,62],[97,59]]){
+          c.save();c.translate(x,y);c.rotate(-.14);
+          face('M-7 10Q-16 1 -13 -9L-7 -22L-7 -32L4 -34L5 -19Q18 -6 10 6Z',steel);
+          face('M-10 -33L-10 -41Q-8 -50 0 -50Q8 -50 10 -42L9 -34Q4 -29 -4 -29Z','#a33136');
+          ellipse(0,-43,9,6,'#ec766a');ellipse(0,-43,3.8,3,'#321e22');
+          face('M-4 3Q-7 13 0 19L4 18Q0 12 3 3Z','#85835f');
+          c.restore();
+        }
       }else if(id==='map'){
         face('M34 24L111 13L132 73L55 94L30 34Z','#637e88');
         face('M32 25L110 11L128 69L52 88Z','#acc9cf');
@@ -153,10 +166,10 @@
     function refresh(){
       if(box.hidden)return;
       const s=getState();
-      const visible={flyer:true,map:!!s.hasMap,drill:!!s.drillOwned,sample:s.samples>0};
+      const visible={flyer:true,map:!!s.hasMap,drill:!!s.drillOwned,flame:!!s.flameTool,sample:s.samples>0};
       if(!visible[selected])selected='flyer';
       const summary={flyer:s.mounted?'驾驶中':s.flyerStored?'已收纳':s.nearFlyer?'停在身旁':'停在舰内',
-        map:'随身',drill:s.drillEquipped?'已装备':'已收纳',sample:'× '+(s.samples||0)};
+        map:'随身',drill:s.drillEquipped?'已装备':'已收纳',flame:'已装备',sample:'× '+(s.samples||0)};
       const signature=JSON.stringify([visible,summary,selected,s.active,s.landing,s.credits]);
       if(last===signature)return;
       last=signature;
@@ -172,7 +185,7 @@
       kind.textContent=item.type+' · '+summary[selected];note.textContent=item.note;
       const actions={flyer:s.landing?'正在着陆':s.mounted?'着陆下机':s.flyerStored?'取出滑翔翼':
         s.nearFlyer?'驾驶滑翔翼':'调到身旁',map:'打开舰图',drill:s.drillEquipped?'卸下钻头':'装备钻头'};
-      use.hidden=false;use.textContent=selected==='sample'?'跟随路标交付':actions[selected]||'';
+      use.hidden=selected==='flame';use.textContent=selected==='sample'?'跟随路标交付':actions[selected]||'';
       use.disabled=!s.active || (selected==='flyer'&&s.landing===true);
       stow.hidden=selected!=='flyer'||s.mounted||s.flyerStored;
       stow.disabled=!s.active;

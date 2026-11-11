@@ -8,6 +8,7 @@
     avatar.visible=false;
     scene.add(avatar);
     const drill=createMiningDrill();
+    let flameTool=null;
     const contacts=createSoleContacts(1),ground=contacts.mesh;
     ground.scale.setScalar(worldMetre);ground.visible=false;scene.add(ground);
     let facing=0,phase=0,previous=null,style='follow',distance=4.15,active=false;
@@ -102,12 +103,16 @@
       arrive,positionCamera,
       setSmile(value){seerRobots.setExpression(rig,value?'smile':'neutral');},
       setDrill(equipped){drill.set(equipped);},
+      setFlameTool(equipped){
+        if(equipped&&!flameTool)flameTool=createFieldFlameTool(T,rig);
+        flameTool?.setVisible(equipped);
+      },
       workDrill(){drill.work();},
       leave(){active=false;avatar.visible=ground.visible=false;drill.hide();previous=null;sampled=null;},
       setStyle(next){style=next==='eye'?'eye':'follow';sampled=null;},
       zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),2.4,6.6);sampled=null;},
       get style(){return style;},get facing(){return facing;},
       snapshot(){return {perspective:style,facing,boom:distance};},
-      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();drill.dispose();}
+      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();drill.dispose();flameTool?.dispose();}
     };
   }
