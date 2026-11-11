@@ -1,0 +1,41 @@
+.ship-dock .dock-capsule{width:18px;height:18px;border-radius:50%;border:2px solid #c7e9d9;background:linear-gradient(150deg,#63b7aa 0 41%,#143344 42% 55%,#d6dfd1 56%);}
+.spirit-panel{width:min(920px,100%);color:#e9f6f2;background:#142630;}
+.spirit-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 18px 18px}
+.spirit-tabs,.spirit-row,.spirit-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.spirit-tabs{border-bottom:1px solid #39545e;padding:8px 16px}
+.spirit-panel button:not(.ship-dismiss),.spirit-panel select,.spirit-panel input{border:1px solid #48616b;border-radius:6px;background:#203943;color:#eef7f3;font:inherit;padding:5px 9px}
+.spirit-panel button[aria-pressed=true],.spirit-panel .spirit-primary{background:#285954;border-color:#86cdb7}
+.spirit-panel button:hover:enabled{border-color:#94d8ca}
+.spirit-panel button:disabled{opacity:.46;cursor:default}
+.spirit-panel .spirit-count,.spirit-panel .spirit-sub{color:#accaCC;font-size:12px}
+.spirit-panel .spirit-name{margin:2px 0 5px;color:#eff8ec;font-size:clamp(17px,3cqw,24px)}
+.spirit-panel p{margin:4px 0 8px}
+.spirit-panel h3{margin:5px 0 7px;font-size:15px}
+.spirit-panel .spirit-feedback{padding:7px 16px;background:#263f42;color:#ffdd98;border-top:1px solid #44616b;margin:0;font-size:13px;white-space:pre-line;max-height:22%;overflow:auto}
+.spirit-page{display:grid;gap:13px}
+.spirit-columns{display:grid;grid-template-columns:minmax(170px,1fr) minmax(200px,1.12fr);gap:14px;align-items:start}
+.spirit-list{display:flex;flex-wrap:wrap;gap:6px}
+.spirit-list button,.spirit-moves button{text-align:left}
+.spirit-list button small,.spirit-moves button small{display:block;color:#b9d5d2;font-size:11px}
+.spirit-stage{position:relative;height:clamp(125px,24cqw,206px);background:radial-gradient(ellipse at 50% 20%,#466f73 0%,#2b4c58 51%,#1b343d 99%);border-radius:7px;overflow:hidden}
+.spirit-stage.duel{background:radial-gradient(ellipse at 50% 30%,#5b7776,#3f5b63 55%,#263a43);}
+.spirit-stage canvas{display:block;width:100%;height:100%}
+.spirit-missing{position:absolute;inset:auto 10px 8px;color:#d8e4db;font-size:12px;text-align:center}
+.spirit-battle-heads{display:grid;grid-template-columns:1fr 1fr;gap:clamp(15px,6cqw,74px);padding:0 2px}
+.spirit-meter{display:flex;align-items:center;gap:8px;min-width:0}
+.spirit-meter progress{flex:1;min-width:36px;width:100%;height:9px;accent-color:#75d4aa}
+.spirit-meter small{font:12px Consolas,monospace;white-space:nowrap;color:#d0ebdb}
+.spirit-moves{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
+.spirit-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:3px 8px;margin:5px 0 9px}
+.spirit-stats div{font-size:12px;color:#b8d1cd}
+.spirit-stats strong{display:block;color:#e5eee8;font:600 15px Consolas,monospace}
+.spirit-log{margin:6px 0 0;padding:6px 0 0 1.7em;border-top:1px solid #3c585e;font-size:13px;color:#cce2dd;max-height:6.3em;overflow:auto;}
+.spirit-panel details{margin:6px 0}.spirit-panel details summary{cursor:pointer;color:#abcfc4}
+.spirit-panel .spirit-source{display:inline-block;margin:0 8px 5px 0;color:#acd7cb;font-size:13px}
+.spirit-panel input[type=search]{width:min(245px,100%);min-width:100px}
+.spirit-panel .spirit-dex-results{max-height:116px;overflow:auto;align-items:flex-start}
+.spirit-panel .spirit-dex-results button{font-size:13px}
+.spirit-panel .spirit-dex-info{max-height:138px;overflow:auto}
+.spirit-panel .spirit-catalog-number{color:#96bcb9;font:12px Consolas,monospace}
+@container(max-width:660px){.spirit-columns{grid-template-columns:1fr}.spirit-scroll{padding:9px}.spirit-panel .spirit-stage{height:137px}.spirit-tabs{padding:5px 8px}.spirit-page{gap:8px}.spirit-row,.spirit-actions{gap:5px}}
+@container(max-width:450px){.spirit-panel .spirit-stage{height:105px}.spirit-panel button:not(.ship-dismiss){padding:4px 6px;font-size:12px}.spirit-tabs{gap:4px}}

@@ -11,6 +11,8 @@
     <div class="ship-actions">
       <button type="button" class="ship-key" data-embark hidden>乘廊车去登陆艇</button>
       <button type="button" class="ship-key" data-see-pipi hidden>观察皮皮</button>
+      <button type="button" class="ship-key" data-encounter hidden>接触精灵</button>
+      <button type="button" class="ship-key" data-wetland-action hidden>捕猎场</button>
       <button type="button" class="ship-key" data-exchange hidden>能源兑换台</button>
       <button type="button" class="ship-key" data-bench hidden>领取挖矿钻头</button>
       <button type="button" class="ship-key" data-lift-call hidden>呼叫轿厢</button>
@@ -28,10 +30,12 @@
     <nav class="ship-dock" aria-label="赛尔导航条">
       <button type="button" data-console="map" aria-label="地图（M）"><i class="dock-radar" aria-hidden="true"></i><span>地图</span><kbd>M</kbd></button>
       <button type="button" data-console="bag" aria-label="背包（B）"><i class="dock-case" aria-hidden="true"></i><span>背包</span><kbd>B</kbd></button>
+      <button type="button" data-spirit-book><i class="dock-capsule" aria-hidden="true"></i><span>精灵</span></button>
       <button type="button" data-console="terminal"><i class="dock-terminal" aria-hidden="true"></i><span>终端</span></button>
     </nav>
     <nav class="ship-dock planetary-dock" data-planet-nav aria-label="行星导航" hidden>
       <button type="button" data-atlas><i class="dock-radar" aria-hidden="true"></i><span>地表图</span><kbd>M</kbd></button>
+      <button type="button" data-spirit-book><i class="dock-capsule" aria-hidden="true"></i><span>精灵</span></button>
       <button type="button" data-land hidden>操作驾驶席</button>
       <button type="button" data-return hidden>自动航行</button>
       <button type="button" data-flight-view hidden>舷外视角</button>
@@ -50,6 +54,14 @@
       <button type="button" data-flight-key="ShiftLeft">加力</button><button type="button" data-flight-key="KeyX">制动</button>
     </div>
     <div class="ship-notice" data-notice role="status" hidden></div>
+    <div class="ship-overlay spirit-overlay" data-spirit-overlay hidden>
+      <section class="ship-window spirit-panel" role="dialog" aria-modal="true" aria-labelledby="spirit-window-title">
+        <header class="console-head"><div><small>SE–A015 ／ 精灵终端</small><h2 id="spirit-window-title">精灵背包</h2></div><button class="ship-dismiss" type="button" data-spirit-close aria-label="收起精灵终端">×</button></header>
+        <nav class="spirit-tabs" data-spirit-tabs aria-label="精灵终端栏目"></nav>
+        <div class="spirit-scroll" data-spirit-content></div>
+        <p class="spirit-feedback" role="status" data-spirit-feedback hidden></p>
+      </section>
+    </div>
     <div class="ship-overlay" data-overlay hidden>
       <section class="ship-window" role="dialog" aria-modal="true" aria-labelledby="ship-panel-title">
         <header class="console-head"><div><small>SE–A015</small><h2 id="ship-panel-title" data-panel-title></h2></div><button type="button" class="ship-dismiss" data-dismiss aria-label="关闭窗口">×</button></header>

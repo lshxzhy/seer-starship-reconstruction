@@ -1,5 +1,6 @@
 (() => {
   const game=document.querySelector('iframe[name="seer-portable"]');
+  serveSpiritStorage(game);
   const send=pack=>game.contentWindow.postMessage({type:'seer.locker.initial',pack},'*');
   const storage=openLocalPilotStore(send);
   window.addEventListener('message',e=>{

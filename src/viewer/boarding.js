@@ -28,6 +28,7 @@
     const pilot=createSeerPilot(worldMetre);
     const population=createSeerPopulation();
     const companion=createSuperNono(worldMetre);
+    const escort=createSpiritEscort(T,scene,worldMetre);
     const flight=createPersonalFlight(worldMetre,population);
     const lifts=createLiftRide(habitat.plan.lifts,habitat.liftPlant);
     let liftSelectionKey='',tripSaveKey='',lastLiftReadout=-Infinity;
@@ -441,6 +442,7 @@
     }
     function enter(roomId, saved) {
       crewDialogue.close();crewDialogue.setBoarded(true);
+      escort.hide();
       active = true;
       clearInputs();
       const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)||wardIds.has(roomId)) ? roomId :
@@ -490,7 +492,7 @@
       crewDialogue.setBoarded(false);
       active=false;clearInputs();restoreExteriorRig();clearTimeout(idleClock.timer);
       pilot.leave();population.setActive(false);populationText.hidden=true;
-      companion.leave();flight.leave();
+      companion.leave();escort.hide();flight.leave();
       habitat.setActive(false);
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
@@ -552,6 +554,8 @@
       const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride,cabin);
       pose.yaw=pilot.facing;
       if(!lifts.riding)population.update(pose,dt,sight);
+      if(ride||cabin||lifts.riding)escort.hide();
+      else escort.deck(pose,pilot.style==='eye'?yaw:pilot.facing,dt,pilot.style==='eye',population,flight);
       guide.update(pose,goal(),active&&!lifts.riding);
       const ports=shipTransporters.ports(habitat.byId.get(currentRoomId));
       const berth=ports.length?currentBerth():null;
@@ -567,6 +571,7 @@
     }
     function beginPassengerView(s){
       clearInputs();crewDialogue.close();flight.leave();
+      escort.hide();
       population.setActive(false);guide.hide();routeHint.hidden=true;
       stage.dataset.liftTravel='true';
       habitat.updateLiftLOD(s.lineId,s.center.y);
@@ -723,6 +728,8 @@
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       clearInputs,pack,restorePack,deliver,
+      setEscortSpecies(id){escort.setSpecies(id);requestFrame();},
+      openSpiritDialogue:(context,onClose)=>crewDialogue.openSpirit?.(context,onClose)??false,
       get inTransit(){return lifts.riding;},
       get commsOpen(){return crewDialogue.isOpen;},
       consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
@@ -742,6 +749,6 @@
       },
       get roomId(){return currentRoomId;},
       snapshot,station:currentBerth,
-      dispose(){guide.dispose();locker.dispose();clearTimeout(noticeTimer);crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
+      dispose(){guide.dispose();locker.dispose();clearTimeout(noticeTimer);crewDialogue.dispose();clearInputs();clearTimeout(idleClock.timer);visibility.disconnect();companion.dispose();escort.dispose();flight.dispose();pilot.dispose();population.setActive(false);population.dispose?.();restoreExteriorRig();taskLamp.shadow.map?.dispose();window.removeEventListener('keydown',startKey);window.removeEventListener('keyup',endKey);window.removeEventListener('blur',onBlur);document.removeEventListener('visibilitychange',onHidden);}
     };
   }

@@ -6,6 +6,7 @@ Run from any directory: python src/ai/server.py --open
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 import json
 import os
@@ -13,9 +14,11 @@ from pathlib import Path
 import re
 import select
 import socket
+import shutil
 import subprocess
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 import webbrowser
@@ -23,12 +26,13 @@ import webbrowser
 
 PROJECT = Path(__file__).resolve().parents[2]
 CATALOG = Path(__file__).with_name('characters.json')
+SPIRIT_CATALOG = PROJECT / 'src' / 'spirits' / 'catalog.json'
 DEFAULT_MODEL = 'qwen3.5:9b'
 THINKING = False
 CONTEXT_SIZE = 8192
 PROMPT_BUDGET = 4608
 SERVICE = 'seer-crew'
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROOMS = {
     'teleport': '传送舱', 'captain': '船长室', 'laboratory': '实验室',
     'archives': '资料室', 'instructor': '教官办公室', 'honors': '荣誉大厅',
@@ -106,6 +110,113 @@ def available_models(base, selected):
              'parameters': (candidate.get('details') or {}).get('parameter_size')}]
 
 
+def start_local_ollama(base):
+    """The play launcher can bring up an installed local runner without downloading models."""
+    if base.scheme != 'http':
+        return
+    try:
+        upstream_json(base, '/api/version', timeout=2)
+        return
+    except BridgeError:
+        pass
+    executable = shutil.which('ollama')
+    if not executable:
+        return
+    try:
+        process = subprocess.Popen(
+            [executable, 'serve'], env={**os.environ, 'OLLAMA_HOST': base.netloc},
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            start_new_session=os.name != 'nt')
+    except OSError:
+        return
+    for _ in range(24):
+        time.sleep(.25)
+        try:
+            upstream_json(base, '/api/version', timeout=.8)
+            return
+        except BridgeError:
+            if process.poll() is not None:
+                return
+
+
+@lru_cache(maxsize=1)
+def spirit_catalog():
+    try:
+        data = json.loads(SPIRIT_CATALOG.read_text(encoding='utf-8'))
+        entries = {int(row[0]): row for row in data['index']}
+        moves = data['moves']
+        sources = [{'title': '淘米页游客户端参数' if url.startswith('https://seer.61.com/') else '技能参数表',
+                    'url': url} for url in data.get('sources', []) if isinstance(url, str) and url.startswith('https://')]
+        return entries, data['species'], moves, frozenset(row[0] for row in moves.values()), sources, data['types']
+    except (OSError, ValueError, TypeError, IndexError, KeyError) as exc:
+        raise BridgeError(503, '精灵图鉴暂不可读，请使用完整的本机游戏目录。') from exc
+
+
+def spirit_character(identifier):
+    number = int(identifier.split(':', 1)[1])
+    entries, species, moves, _, sources, types = spirit_catalog()
+    record = entries.get(number)
+    if not record:
+        raise BridgeError(404, '本版图鉴尚无这个精灵编号。')
+    _, name, type_id, *measurements = record
+    ability = species.get(str(number), {})
+    learnset = [(level, moves[str(move)][0]) for level, move, *_ in ability.get('skills', [])
+                if str(move) in moves]
+    evolution = ability.get('evolves')
+    next_form = None
+    if isinstance(evolution, list) and len(evolution) == 2 and evolution[1] in entries:
+        next_form = [evolution[0], entries[evolution[1]][1]]
+    return {'id': identifier, 'kind': 'spirit', 'number': number, 'name': name,
+            'element': types.get(str(type_id), ''), 'learnset': learnset, 'evolution': next_form,
+            'measurements': measurements, 'sources': sources}
+
+
+def spirit_prompt(character, context):
+    number = character['number']
+    if type(context.get('speciesId')) is not int or context['speciesId'] != number:
+        raise BridgeError(400, '遇见的精灵与通讯对象不一致，请重新打开精灵通讯。')
+    bond = context.get('bond')
+    encounters = {'wild': '玩家正在野外观察这只精灵', 'owned': '这只精灵是玩家已获得的伙伴',
+                  'dex': '这是玩家在图鉴中发起的模拟交流，不能据此判定是否已遇见或持有该个体'}
+    if bond not in encounters:
+        raise BridgeError(400, '请选择图鉴、野外或伙伴中的精灵再发起通讯。')
+    prompt = [
+        f'你扮演经典页游《赛尔号》图鉴 {number:03d} 号的{character["name"]}。'
+        f'图鉴登记属性是{character["element"] or "未知"}。{encounters[bond]}。',
+        '用简短的中文描写这只精灵的动作或叫声，再用一句第一人称的意译回答玩家。'
+        '这是本项目的精灵行为演绎。未给出的原作剧情、战绩、捕捉条件、技能效果不要编造。'
+        '通讯只能交流。捕捉、战斗、升级、治疗、兑换等操作由游戏界面完成；不要宣称已执行这些操作。'
+    ]
+    facts = {}
+    for key, amount in zip(('图鉴身高（厘米）', '图鉴体重（千克）'), character['measurements']):
+        if type(amount) in (int, float) and amount > 0:
+            facts[key] = amount
+    if character['learnset']:
+        facts['部分可学招式（所需等级、名称）'] = [list(move) for move in character['learnset'][:5]]
+    if character['evolution']:
+        facts['本系统记录的进化（等级、形态）'] = character['evolution']
+    location = context.get('location')
+    if isinstance(location, str) and location.strip():
+        facts['玩家的位置'] = location.strip()[:64]
+    if bond != 'dex':
+        level, hp, max_hp = (context.get(key) for key in ('level', 'hp', 'maxHp'))
+        if type(level) is int and 1 <= level <= 100:
+            facts['等级'] = level
+        if type(hp) is int and type(max_hp) is int and 0 <= hp <= max_hp <= 100000:
+            facts['当前体力/上限'] = f'{hp}/{max_hp}'
+        moves = context.get('moves')
+        if isinstance(moves, list):
+            # A prior form's learned move may remain after evolution.
+            known_moves = spirit_catalog()[3]
+            names = [s for s in moves[:4] if isinstance(s, str) and s in known_moves]
+            if names:
+                facts['当前招式'] = names
+    if facts:
+        prompt.append('以下 JSON 是图鉴及本局状态数据：' + json.dumps(facts, ensure_ascii=False))
+    return prompt
+
+
 def make_messages(character, catalog, history, context):
     if not isinstance(history, list) or not history:
         raise BridgeError(400, '请先输入要对角色说的话。')
@@ -121,6 +232,14 @@ def make_messages(character, catalog, history, context):
     if not turns or turns[-1]['role'] != 'user':
         raise BridgeError(400, '会话最后一条应是玩家的问题。')
     context = context if isinstance(context, dict) else {}
+    if character.get('kind') == 'spirit':
+        prompt = spirit_prompt(character, context)
+    else:
+        prompt = crew_prompt(character, catalog, context, turns[-1]['content'])
+    return bounded_messages(prompt, turns)
+
+
+def crew_prompt(character, catalog, context, question):
     room_id = context.get('roomId') if isinstance(context.get('roomId'), str) else None
     player_room = ROOMS.get(room_id, '舰内公共区域')
     departments = {group['id']: group['name'] for group in catalog['organization']}
@@ -143,11 +262,13 @@ def make_messages(character, catalog, history, context):
                     "正通过舰上通讯与玩家交谈。")
     prompt = [identity, f'玩家在{player_room}。用中文第一人称直接回答当前问题，通常一至三句。',
               '背景为经典页游《赛尔号》。原作未确定的事如实说明；你只能交谈。']
+    ship = next((group for group in catalog['organization'] if group['id'] == 'seer'), None)
+    if ship:
+        prompt.append('赛尔号：' + ship['description'])
     if not character.get('generic'):
         prompt.append(character['persona'].replace('项目创作风格：', '语气：', 1))
         prompt.append('已知原作资料：' + ''.join(character['facts']))
 
-    question = turns[-1]['content']
     others = [c for c in catalog['characters'] if not c.get('generic') and c['id'] != character['id']]
     if (re.search(r'组织|架构|编制|部门|汇报|归谁管|哪些人|其他船员|谁负责|找谁|先锋队|SPT', question, re.I)
             or any(c['name'] in question for c in others)):
@@ -157,6 +278,10 @@ def make_messages(character, catalog, history, context):
         spt = next((g for g in catalog['organization'] if g['id'] == 'spt'), None)
         if spt:
             prompt.append(spt['description'])
+    return prompt
+
+
+def bounded_messages(prompt, turns):
     system = {'role': 'system', 'content': '\n'.join(prompt)}
     latest = turns[-1]
     # A UTF-8 byte bound is conservative for this byte-level tokenizer.
@@ -246,7 +371,7 @@ class CrewHandler(BaseHTTPRequestHandler):
                 except BridgeError:
                     reachable, version = False, None
                 self._json(200, {'ok': True, 'service': SERVICE, 'schemaVersion': SCHEMA_VERSION,
-                                 'ollamaAvailable': reachable, 'thinking': THINKING,
+                                 'ollamaAvailable': reachable, 'thinking': THINKING, 'spiritChat': True,
                                  'model': self.server.model, 'ollamaVersion': version})
             elif path == '/api/models':
                 models = available_models(self.server.ollama, self.server.model)
@@ -291,10 +416,15 @@ class CrewHandler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
                 raise BridgeError(400, '请求应为一个消息对象。')
-            catalog = read_catalog()
-            character = next((c for c in catalog['characters'] if c['id'] == data.get('characterId')), None)
-            if character is None:
-                raise BridgeError(404, '未找到这个角色，请刷新角色名册。')
+            identifier = data.get('characterId')
+            if isinstance(identifier, str) and re.fullmatch(r'spirit:[1-9]\d{0,5}', identifier):
+                catalog = None
+                character = spirit_character(identifier)
+            else:
+                catalog = read_catalog()
+                character = next((c for c in catalog['characters'] if c['id'] == identifier), None)
+                if character is None:
+                    raise BridgeError(404, '未找到这个角色，请刷新角色名册。')
             model = data.get('model') or self.server.model
             if model != self.server.model:
                 raise BridgeError(400, '模型须与舰上通讯启动时选定的模型一致。')
@@ -422,11 +552,15 @@ def main():
                 health = upstream_json(base, '/api/health', timeout=4)
             except BridgeError:
                 health = {}
+            if health.get('service') == SERVICE and health.get('schemaVersion') != SCHEMA_VERSION:
+                raise SystemExit('旧版舰上通讯仍在使用此端口。关闭旧的舰上通讯，再启动本版即可联系精灵。')
             if health.get('service') == SERVICE and health.get('schemaVersion') == SCHEMA_VERSION:
                 if health.get('model') != args.model:
                     raise SystemExit('此端口上的舰上通讯已使用其他模型，请关闭旧服务或选择另一端口。')
                 if health.get('thinking') is not THINKING:
                     raise SystemExit('此端口上的旧版舰上通讯使用不同的思考设置。请关闭旧服务后再启动。')
+                if not health.get('ollamaAvailable'):
+                    start_local_ollama(ollama)
                 webbrowser.open(address)
                 print('已打开正在运行的舰上通讯：' + address, flush=True)
                 return
@@ -445,6 +579,7 @@ def main():
         print('舰上通讯：' + address, flush=True)
         print('舰上通讯使用 ' + args.model + '，思考已关闭。关闭此进程即可停止。', flush=True)
         if args.open:
+            start_local_ollama(ollama)
             webbrowser.open(address)
         server.serve_forever()
     except KeyboardInterrupt:

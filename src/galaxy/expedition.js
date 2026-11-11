@@ -3,6 +3,9 @@
     const openChart=nav.querySelector('[data-atlas]'),land=nav.querySelector('[data-land]');
     const recall=nav.querySelector('[data-return]'),pad=stage.querySelector('[data-move-pad]');
     const watch=stage.querySelector('[data-see-pipi]');
+    const encounterButton=stage.querySelector('[data-encounter]');
+    const huntButton=stage.querySelector('[data-wetland-action]');
+    const spiritBook=nav.querySelector('[data-spirit-book]');
     const select=atlas.querySelector('[data-site-select]'),chart=atlas.querySelector('[data-site-map]');
     const summary=atlas.querySelector('[data-site-summary]'),closeButton=atlas.querySelector('[data-chart-close]');
     const hint=stage.querySelector('[data-route-hint]'),trackButton=atlas.querySelector('[data-track-site]');
@@ -36,6 +39,7 @@
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
     let craft,dock,flight,feet=new T.Vector3(),door=1,gear=1,external=false,transferSign=1;
+    let escort=null,escortId=null,safariState=null;
     let navTarget='grassland',pending=null,arrivedOnDeck=false,approachRamp=false,feedback='',feedbackUntil=0,lastStore=0;
     const picker=new T.Raycaster(),chaseBoom={length:21},originRotation=new T.Quaternion();
     const vec=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
@@ -82,11 +86,13 @@
       if(world)return;
       world=new T.Scene();world.background=new T.Color(0x071322);view=new T.PerspectiveCamera(49,1,.1,radius*8);
       body=createKloseSurface(T,world);
+      body.setSafariState(safariState);
       craft=createLandingShuttle(T);world.add(craft.root);
       local=new T.Group();world.add(local);
       rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true});
       local.add(rig.root);contact=createSoleContacts(1);local.add(contact.mesh);
       nono=createSuperNono(1,local);drill=createMiningDrill(world);
+      escort=createSpiritEscort(T,world);escort.setSpecies(escortId);
       bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
       lamp=new T.DirectionalLight(0xfff8ef,.97);world.add(bounce,lamp,lamp.target);
       lamp.shadow.mapSize.setScalar(Math.min(2048,renderer.capabilities.maxTextureSize));
@@ -228,8 +234,9 @@
     function hide(){
       if(phase==='hidden')return;
       phase='hidden';resetInput();body.setMode('hidden');shownMode='';
-      nav.hidden=pad.hidden=atlas.hidden=hand.hidden=hint.hidden=watch.hidden=true;
+      nav.hidden=pad.hidden=atlas.hidden=hand.hidden=hint.hidden=watch.hidden=encounterButton.hidden=huntButton.hidden=true;
       local.visible=false;drill.hide();craft.root.visible=false;
+      escort?.hide();
       delete stage.dataset.domain;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
@@ -303,19 +310,26 @@
       }else{
         tag.textContent=site?.name||'克洛斯星 · 野外';status.textContent='SE-00001 · 地表';
       }
-      const nearby=walking?body.nearestPipi(position.lat,position.lon,observedBird):null;
-      watch.hidden=!nearby||nearby.distance>14;if(watch.hidden)observedBird=null;
-      watch.textContent=observedBird!==null?'结束观察':'观察皮皮';
+      const nearby=walking?nearbySpirit():null;
+      const attraction=walking?safariAction(null):null;
+      huntButton.hidden=!attraction;
+      if(attraction)huntButton.textContent=attraction.label;
+      watch.hidden=!nearby||nearby.distance>22;if(watch.hidden)observedBird=null;
+      encounterButton.hidden=watch.hidden;
+      encounterButton.textContent=nearby?'接触'+nearby.name:'接触精灵';
+      watch.textContent=observedBird!==null?'结束观察':'观察'+(nearby?.name||'精灵');
+      spiritBook.hidden=!walking&&phase!=='cabin';
       if(phase!=='surface'||feedback&&performance.now()<feedbackUntil){
         if(feedback&&performance.now()<feedbackUntil)hint.textContent=feedback;return;
       }
-      if(observedBird!==null){hint.textContent='010 皮皮　／　飞行系　·　37 厘米';return;}
+      if(observedBird!==null&&nearby){hint.textContent=String(nearby.speciesId).padStart(3,'0')+' '+nearby.name+'　／　'+(site?.name||'克洛斯星');return;}
       while(path.length&&displacement(position,groundDestination(path[0])).distance<(path[0]==='shuttle-ramp'?1.65:9)){
         arrival=groundDestination(path.shift()).name;
         if(!path.length){targetId=null;persist();}
       }
       if(!path.length){
-        hint.textContent=closeToRamp()?'已到登陆艇尾坡　／　按 E 登艇':arrival?'已抵达 · '+arrival:site?.description||'打开地表图选择目的地';return;
+        const fieldHint=body.safariHint(position.lat,position.lon)||body.spiritSiteHint(position.lat,position.lon);
+        hint.textContent=closeToRamp()?'已到登陆艇尾坡　／　按 E 登艇':fieldHint|| (arrival?'已抵达 · '+arrival:site?.description||'打开地表图选择目的地');return;
       }
       const next=groundDestination(path[0]),d=displacement(position,next);
       hint.textContent=directionArrow(d.bearing+yaw)+'  '+next.name+'  '+distanceText(d.distance)+
@@ -342,7 +356,14 @@
     }
     function mainAction(){
       const s=flight.status();
-      if(phase==='surface'){boardGround();return;}
+      if(phase==='surface'){
+        if(closeToRamp()){boardGround();return;}
+        if(requestSafari(safariAction(null)))return;
+        const action=body.interactSpiritSite(null,position.lat,position.lon);
+        if(action){say(action);requestFrame();return;}
+        if(!encounterButton.hidden)encounterButton.click();
+        return;
+      }
       if(phase==='cabin'){
         if(s.phase==='docked'&&feet.z>=10.25){transferSign=-1;dock.setTravel(dock.total);setPhase('transfer');}
         else if(craft.zone(feet)==='seat'){feet.fromArray(craft.layout.seat);arrivedOnDeck=false;setPhase('helm');}
@@ -368,6 +389,8 @@
       const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015);
 
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
+      if(flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();
+      else escort.surface(body,position,eye?yaw:facing,dt,eye);
       const dir=f.north.clone().multiplyScalar(Math.cos(yaw)).addScaledVector(f.east,-Math.sin(yaw));
       const aim=p.clone().addScaledVector(f.up,eye?seerRobots.eyeHeight:1.08);
       view.up.copy(f.up);
@@ -385,10 +408,11 @@
       const peer=body.move(position.lat,position.lon,dx,-dz);
       nono.followOnPlanet(dx,body.height(peer.lat,peer.lon)-body.height(position.lat,position.lon),dz,yaw+Math.PI,dt,true);
       if(observedBird!==null){
-        const bird=body.nearestPipi(position.lat,position.lon,observedBird);
-        if(bird&&bird.distance<=14){
+        const bird=nearbySpirit();
+        if(bird&&bird.distance<=22){
           const aim=bird.focusPoint;
-          view.position.copy(aim).addScaledVector(f.south,1.45).addScaledVector(f.east,.85).addScaledVector(f.up,.50);
+          const distance=Math.max(1.45,(bird.size||.42)*2.4);
+          view.position.copy(aim).addScaledVector(f.south,distance).addScaledVector(f.east,distance*.58).addScaledVector(f.up,distance*.35);
           view.lookAt(aim);
         }else observedBird=null;
       }
@@ -408,6 +432,7 @@
         }
       }
       position=next;
+      if(phase==='surface')requestSafari(body.safariWalk(position.lat,position.lon));
       const delta=Math.atan2(-east,north)-facing;
       facing+=Math.atan2(Math.sin(delta),Math.cos(delta))*(1-Math.exp(-15*dt));arrival='';observedBird=null;
     }
@@ -502,7 +527,7 @@
     let dockVisible=true;
     function draw(time){
       if(phase==='hidden'||document.hidden||!visible)return false;
-      if((!atlas.hidden||stage.dataset.consoleOpen==='map')&&flight.status().phase!=='flying')return false;
+      if((!atlas.hidden||stage.dataset.consoleOpen==='map'||stage.dataset.consoleOpen==='spirits'||boarding.commsOpen)&&flight.status().phase!=='flying')return false;
       const dt=lastTime===null?0:clamp((time-lastTime)/1000,0,.24);lastTime=time;frameDt=dt;
       let s=flight.status();
       if(phase==='transfer'){
@@ -533,6 +558,7 @@
       craft.root.updateMatrixWorld(true);
       const speed=phase==='cabin'||phase==='surface'?walkInput(dt):0;
       const walking=phase==='surface',at=walking?position:{lat:s.lat,lon:s.lon},agl=walking?0:s.clearance;
+      if(!walking)escort.hide();
       const groundFrame=environment(at,agl,walking,s);
       dockVisible=flight.position.distanceTo(dock.position)<18000;dock.root.visible=dockVisible;
       if(walking){
@@ -621,8 +647,8 @@
       if(phase!=='surface')return;
       if(observedBird!==null)observedBird=null;
       else{
-        const nearest=body.nearestPipi(position.lat,position.lon);
-        if(nearest&&nearest.distance<=14)observedBird=nearest.id;
+        const nearest=nearbySpirit();
+        if(nearest&&nearest.distance<=22)observedBird=nearest.key;
       }
       updateUI();requestFrame();
     });
@@ -656,8 +682,16 @@
       }finally{picker.far=maxDistance;}
     }
     listen(optics,'click',toggleView);
+    function safariAction(caster){
+      return phase==='surface'?body.safariAction(caster,position.lat,position.lon):null;
+    }
+    function requestSafari(action){
+      if(!action||stage.dataset.consoleOpen||boarding.commsOpen)return false;
+      stage.dispatchEvent(new CustomEvent('seer-wetland-action',{detail:action}));return true;
+    }
+    listen(huntButton,'click',()=>requestSafari(safariAction(null)));
     listen(window,'keydown',e=>{
-      if(phase==='hidden'||stage.dataset.consoleOpen==='map'||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+      if(phase==='hidden'||['map','spirits'].includes(stage.dataset.consoleOpen)||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
       if(e.target!==window&&e.target!==document&&e.target!==document.body&&e.target!==document.documentElement&&!root.contains(e.target))return;
       if(!atlas.hidden){
         if(e.key==='Tab'){
@@ -706,6 +740,13 @@
           if(action==='manual'){if(flight.status().phase==='flying')flyCommand('manual');else flyCommand('launch');}
           if(action==='view')toggleView();
         }else if(companionInSight())greetCompanion();
+        else if(phase==='surface'){
+          if(requestSafari(safariAction(picker)))return;
+          const action=body.interactSpiritSite(picker,position.lat,position.lon);
+          if(action){say(action);requestFrame();return;}
+          const chosen=body.pickSpirit(picker,position.lat,position.lon);
+          if(chosen&&chosen.distance<=22){observedBird=chosen.key;updateUI();encounterButton.click();}
+        }
       }
       persist();
     });
@@ -734,9 +775,22 @@
       });
       listen(b,'click',e=>{if(e.detail===0&&phase!=='hidden'&&atlas.hidden){shortStep(code);requestFrame();persist();}});
     }
-    return {open,hide,draw,snapshot,parkedRamp:()=>groundDestination('shuttle-ramp'),get active(){return phase!=='hidden';},dispose(){
+    function nearbySpirit(){
+      if(phase!=='surface')return null;
+      return observedBird?body.spiritObservation(position.lat,position.lon,observedBird):
+        body.nearbySpirit(position.lat,position.lon);
+    }
+    return {open,hide,draw,snapshot,clearInputs:resetInput,nearbySpirit,
+      setSafariState(value){safariState=value;body?.setSafariState(value);},
+      enterWetland(){if(phase==='surface'){relocate('wetland');updateUI();persist();requestFrame();}},
+      setEscortSpecies(id){escortId=id;escort?.setSpecies(id);requestFrame();},
+      get fieldSite(){if(phase!=='surface')return null;const near=nearestSite(position);
+        return displacement(position,near).distance<58?(near.area||near.id):null;},
+      withdrawSpirit(key){if(body){body.withdrawSpirit(key);observedBird=null;updateUI();requestFrame();}},
+      get canOpenSpirits(){return phase==='surface'||phase==='cabin';},
+      parkedRamp:()=>groundDestination('shuttle-ramp'),get active(){return phase!=='hidden';},dispose(){
       events.abort();observer.disconnect();if(!world)return;
-      hide();dock?.dispose();craft.dispose();drill.dispose();contact.dispose();nono.dispose();body.dispose();
+      hide();dock?.dispose();craft.dispose();drill.dispose();contact.dispose();nono.dispose();escort?.dispose();body.dispose();
       lamp.shadow.map?.dispose();for(const mesh of [sky,stars]){mesh.geometry.dispose();mesh.material.dispose();}
     }};
   }

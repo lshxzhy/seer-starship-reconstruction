@@ -91,6 +91,8 @@ function createKloseScenery(T, parent, surface) {
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);
   const batches=[],pipi=[];
+  const wildlife=createKloseWildlife(T,surface,pipi);
+  const safari=createKloseSafari(T,surface);
   // The classic grassland has blue turf and one yellow-green upper terrace.
   // The hunting grounds use bluer violet banks; only the sanctuary shares
   // the azure grass. Values were sampled from the corresponding map frames.
@@ -113,51 +115,6 @@ function createKloseScenery(T, parent, surface) {
   };
   const randFrom=value=>()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
   const lerp=(a,b,t)=>a+(b-a)*t;
-  function pipiModel() {
-    const animal=new T.Group(),body=new T.Group(),ears=[],feet=[];
-    animal.add(body);animal.rotation.order='YXZ';
-    const pink='#f5b2ca',light='#ffd3e1',tip='#381b2a',cheek='#ff778f';
-    const materials=new Map();
-    function paint(hex) {
-      if (!materials.has(hex)) materials.set(hex,new T.MeshStandardMaterial({color:color(hex),roughness:.61}));
-      return materials.get(hex);
-    }
-    function oval(x,y,z,sx,sy,sz,hex) {
-      const m=new T.Mesh(shapes.get('round').geo,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);body.add(m);return m;
-    }
-    oval(0,.102,0,.104,.078,.073,pink);
-    oval(0,.067,-.083,.044,.043,.047,light);
-    const span=12,steps=32;
-    for (const side of [-1,1]) {
-      const foot=oval(side*.063,.035,.031,.050,.035,.048,pink);foot.rotation.z=side*.17;
-      animal.add(foot);feet.push(foot);
-      oval(side*.079,.088,.047,.026,.018,.014,cheek);
-      oval(side*.035,.117,.064,.012,.017,.008,'#291f2a');
-      oval(side*.035-.002,.123,.072,.0044,.005,.003,'#fff8fc');
-      const ear=new T.Group();ear.position.set(side*.055,.149,0);body.add(ear);ears.push(ear);
-      const curve=new T.CubicBezierCurve3(v(0,0,0),v(side*.028,.277,-.006),v(side*.16,.294,-.012),v(side*.175,-.024,.012));
-      const p=[],rgb=[],idx=[],base=color(pink),end=color(tip);
-      for(let j=0;j<=steps;j++) {
-        const t=j/steps,center=curve.getPoint(t),tangent=curve.getTangent(t);
-        const lateral=v(-tangent.y,tangent.x,0).normalize();
-        const rad=.016+.012*Math.sin(Math.PI*t)+.015*Math.exp(-((t-.88)**2)/.009);
-        const taper=t>.91?Math.sqrt(Math.max(0,1-((t-.91)/.09)**2)):1;
-        for(let k=0;k<span;k++) {
-          const a=tau*k/span,offset=lateral.clone().multiplyScalar(rad*taper*Math.cos(a));
-          p.push(center.x+offset.x,center.y+offset.y,center.z+.72*rad*taper*Math.sin(a));
-          const c=t>.76+.016*Math.cos(a)?end:base;rgb.push(c.r,c.g,c.b);
-          if(j) {const l=(j-1)*span+k,r=(j-1)*span+(k+1)%span;idx.push(l,r,l+span,r,r+span,l+span);}
-        }
-      }
-      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(p,3));
-      geo.setAttribute('color',new T.Float32BufferAttribute(rgb,3));geo.setIndex(idx);geo.computeVertexNormals();
-      ear.add(new T.Mesh(geo,new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.66})));
-    }
-    const bill = new T.Mesh(new T.ConeGeometry(1,1,4),paint('#43ade6'));
-    bill.position.set(0,.089,.077);bill.rotation.x=Math.PI*.47;bill.rotation.y=Math.PI*.25;bill.scale.set(.018,.027,.012);body.add(bill);
-    animal.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
-    animal.name='010 · 皮皮'; return {animal,body,ears,feet};
-  }
   function makeSite(site,order) {
     const group=new T.Group(),near=new T.Group(),far=new T.Group();
     group.name=site.name;group.add(near,far);parent.add(group);
@@ -345,12 +302,6 @@ function createKloseScenery(T, parent, surface) {
         tendril(pts,.69*r,'#a58c53',true);
         obstacle(x-5*r,z,.6*r);obstacle(x+5*r,z,.5*r);
       }
-      for(const [x,z] of [[7,-8],[-9,7],[9,11]]) {
-        const g=yAt(x,z);
-        stamp('round',x,g+.33,z,.47,.44,.44,'#709b63');
-        for(let j=0;j<12;j++) {const a=j*tau/12;stamp('crystal',x+.36*Math.cos(a),g+.34,z+.34*Math.sin(a),.11,.21,.11,'#e8cf8b',.7*Math.sin(a),0,-.7*Math.cos(a));}
-        stamp('round',x,g+.69,z,.13,.09,.12,'#e3a4a7');
-      }
     }
     if(site.id==='forest') {
       for(let i=0;i<6;i++) {
@@ -362,24 +313,7 @@ function createKloseScenery(T, parent, surface) {
           stamp('round',x+.72*s*Math.cos(a),y+s*1.02,z+.7*s*Math.sin(a),s*.16,s*.037,s*.25,'#432f28',0,a);
         }
       }
-      // 047's broad mottled cap, shadowed face, pale eyes and four stout legs
-      // distinguish the protected individual from nearby ordinary fungi.
-      const bx=7,bz=-11,base=yAt(bx,bz);
-      for(const dx of [-.42,.42])for(const dz of [-.24,.24])
-        stamp('round',bx+dx,base+.33,bz+dz,.20,.40,.19,'#b59c70',.05,0,-dx*.25);
-      stamp('round',bx,base+.52,bz,.62,.39,.43,'#bfab7c');
-      stamp('round',bx,base+.82,bz+.21,.48,.215,.26,'#39312b');
-      for(const off of [-.17,.15])stamp('round',bx+off,base+.86,bz+.46,.057,.088,.035,'#fff3da');
-      stamp('cap',bx,base+.86,bz,.88,.67,.73,'#993300',.03,.27,-.13);
-      for(let j=0;j<9;j++) {
-        const a=j*tau/9,r=j%3?.61:.32;
-        stamp('round',bx+Math.cos(a)*r,base+(j%3?1.14:1.34),bz+Math.sin(a)*r*.7,.16,.04,.14,'#f9e9bf',0,a);
-      }
-      for(const [dx,dy] of [[.51,.53],[.60,.44]])stamp('round',bx+dx,base+dy,bz+.27,.13,.16,.11,'#c19e6a');
       for(let i=0;i<18;i++){const a=seed()*tau,r=3+seed()*5;spore(7+r*Math.cos(a),-11+r*Math.sin(a),.29+.43*seed(),'#baa283','#a97d5e');}
-      const ward=new T.Mesh(shapes.get('round').geo,new T.MeshPhysicalMaterial({color:color('#8bd8bd'),transparent:true,opacity:.19,roughness:.28,side:T.FrontSide,depthWrite:false}));
-      ward.scale.set(2.55,2.6,2.55);ward.position.set(7,yAt(7,-11)+.58,-11);near.add(ward);
-      obstacle(7,-11,2.22);
       for(const [x,z] of [[-11,-7],[12,-15],[17,8],[-18,10]]) {
         for(let j=0;j<4;j++) {
           const dx=x+j*.43;const g=yAt(dx,z);
@@ -471,15 +405,6 @@ function createKloseScenery(T, parent, surface) {
       for(const [x,z,s] of [[-9,-12,4.6],[10,-13,4.2],[14,-6,3.2]])tree(x,z,s);
       const g=yAt(-14,-4);
       tendril([v(-21,g-1,-5),v(-20,g+4,-5),v(-17,g+5.4,-5),v(-13,g+5.2,-5),v(-11,g+3,-5),v(-10,g,-5)],1.6,'#814432',true);
-      const fx=-13,fz=-6,fy=yAt(fx,fz);
-      stamp('round',fx,fy+.42,fz,1,.44,.4,'#de7851',.03);
-      stamp('round',fx+.7,fy+.82,fz+.12,.44,.41,.35,'#f09c5e');
-      for(const s of [-1,1]) {
-        stamp('crystal',fx+.68,fy+1.04,fz+s*.2,.33,.56,.31,'#d87857',0,0,-.26);
-        stamp('round',fx+.95,fy+.90,fz+s*.23,.047,.066,.043,'#443740');
-      }
-      stamp('round',fx+1.02,fy+.74,fz+.12,.2,.16,.22,'#eac49b');
-      for(let j=0;j<3;j++)stamp('rock',fx-1.05,fy+.52+.24*j,fz-.3+.28*j,.82,.2,.24,'#dc714d',.1,0,-.26-j*.12);
     }
     if(site.id==='sanctuary') {
       const x=0,z=-14,g=yAt(x,z);
@@ -498,24 +423,21 @@ function createKloseScenery(T, parent, surface) {
     const bounds=new T.Box3(),birdCover=new Map();
     for(const [key,items] of records) {
       const {geo,material}=shapes.get(key);
-      // Even short turf, pebbles and leaves can hide a 37 cm bird. Register
-      // their actual ground footprints in the meadow separately from the
-      // much taller canopy used by the flight solver.
-      if(site.id==='grassland'){
-        if(!geo.boundingBox)geo.computeBoundingBox();
-        for(const item of items){
-          bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
-          if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
-          const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
-          if(bounds.min.y>yAt(cx,cz)+.62)continue;
-          const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z};
-          for(let ix=Math.floor(box.left-.30);ix<=Math.floor(box.right+.30);ix++)
-            for(let iz=Math.floor(box.back-.30);iz<=Math.floor(box.front+.30);iz++){
-              const cell=ix*256+iz;
-              if(!birdCover.has(cell))birdCover.set(cell,[]);
-              birdCover.get(cell).push(box);
-            }
-        }
+      // Ground creatures need a canopy clearance appropriate to their height.
+      if(!geo.boundingBox)geo.computeBoundingBox();
+      for(const item of items){
+        bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
+        if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
+        const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
+        const underside=bounds.min.y-yAt(cx,cz);
+        if(underside>1.80)continue;
+        const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z,underside};
+        for(let ix=Math.floor(box.left-1.1);ix<=Math.floor(box.right+1.1);ix++)
+          for(let iz=Math.floor(box.back-1.1);iz<=Math.floor(box.front+1.1);iz++){
+            const cell=ix*256+iz;
+            if(!birdCover.has(cell))birdCover.set(cell,[]);
+            birdCover.get(cell).push(box);
+          }
       }
       if(!['pool','energyPool','mud','lamp','sod','leaf'].includes(key)){
         if(!geo.boundingBox)geo.computeBoundingBox();
@@ -546,7 +468,7 @@ function createKloseScenery(T, parent, surface) {
     if(site.id==='grassland'){
       const perches=[[2,-5],[-2,-8],[3,1],[-4,5],[-10,10]];
       for(const [index,[x,z]] of perches.entries()){
-        const pet={...pipiModel(),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,cover:birdCover,
+        const pet={...createKloseSpiritModel(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
           random:randFrom(15831+pipi.length*931),yaw:0,hop:null,goal:null,idle:0,clock:0,at:null};
         // A scenery edit can shift a bed over a traditional perch. Search
         // outwards on open soil instead of instantiating inside its mesh.
@@ -559,11 +481,14 @@ function createKloseScenery(T, parent, surface) {
             pet.x=pet.homeX=px;pet.z=pet.homeZ=pz;found=true;break;
           }
         }
-        if(!found)continue;
+        if(!found){pet.dispose();continue;}
+        pet.root.userData.kloseSpirit=pet.id;
         pet.yaw=pet.random()*tau;pet.idle=pet.random()*1.1;pet.clock=pet.random()*4;
         pipi.push(pet);near.add(pet.animal);posePipi(pet);
       }
     }
+    safari.instantiate(site,near,yAt,obstacles,birdCover);
+    wildlife.install(site,near,yAt,obstacles,birdCover);
     return {group,near,far,site,obstacles,overhead};
   }
   function birdClear(pet,x,z,walker,shuttle){
@@ -571,6 +496,7 @@ function createKloseScenery(T, parent, surface) {
     if(Math.hypot(x,z)<1.05)return false;
     const boxes=pet.cover.get(Math.floor(x)*256+Math.floor(z));
     if(boxes)for(const b of boxes){
+      if(b.underside>.62)continue;
       const dx=Math.max(0,b.left-x,x-b.right),dz=Math.max(0,b.back-z,z-b.front);
       if(dx*dx+dz*dz<.30*.30)return false;
     }
@@ -582,7 +508,8 @@ function createKloseScenery(T, parent, surface) {
     }
     if(walker&&!clears(walker.x,walker.z,.68))return false;
     if(shuttle&&!clears(shuttle.x,shuttle.z,9.3))return false;
-    return pipi.every(other=>other===pet||clears(other.x,other.z,.62));
+    return pipi.every(other=>other===pet||other.cooldown||clears(other.x,other.z,.62)) &&
+      wildlife.inhabitants.every(other=>other.site.id!=='grassland'||!other.root.visible||clears(other.x,other.z,other.radius+.30));
   }
   function clearPath(pet,x,z,walker,shuttle){
     const dx=x-pet.x,dz=z-pet.z,steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.14));
@@ -668,12 +595,17 @@ function createKloseScenery(T, parent, surface) {
       const parts=batches[i];
       if(parts){parts.group.visible=dist<670;parts.near.visible=dist<116;parts.far.visible=!parts.near.visible;}
     }
-    if(!batches[0]?.near.visible)return;
     const walker=walking?{x,z}:null;
     const shuttle=shuttleStatus&&shuttleStatus.clearance<32?chart(shuttleStatus.lat,shuttleStatus.lon):null;
     const total=T.MathUtils.clamp(dt||0,0,.24),steps=Math.max(1,Math.ceil(total/.035));
-    for(let i=0;i<steps;i++)for(const pet of pipi)advancePipi(pet,total/steps,walker,shuttle);
-    for(const pet of pipi)posePipi(pet);
+    wildlife.update(total,walker,shuttle);
+    safari.update(total,walker,shuttle);
+    if(!batches[0]?.near.visible)return;
+    for(const pet of pipi){
+      pet.cooldown=Math.max(0,pet.cooldown-total);pet.root.visible=!pet.cooldown;
+    }
+    for(let i=0;i<steps;i++)for(const pet of pipi)if(!pet.cooldown)advancePipi(pet,total/steps,walker,shuttle);
+    for(const pet of pipi)if(!pet.cooldown)posePipi(pet);
   }
   function obstacleTop(x,z,footprint){
     let top=-Infinity;
@@ -685,29 +617,53 @@ function createKloseScenery(T, parent, surface) {
         for(let iz=Math.floor((dz-footprint)/3);iz<=Math.floor((dz+footprint)/3);iz++){
           top=Math.max(top,batch.overhead.get(ix*512+iz)??-Infinity);
         }
-      if(site.id==='forest'&&Math.hypot(dx-7,dz+11)<2.55+footprint)
-        top=Math.max(top,height(site.lat,site.lon)+3.2);
     }
     for(const pet of pipi){
-      if(Math.hypot(x-pet.x,z-pet.z)<footprint+.3)
+      if(!pet.cooldown&&Math.hypot(x-pet.x,z-pet.z)<footprint+.3)
         top=Math.max(top,height(pet.at.lat,pet.at.lon)+.48);
     }
-    return top;
+    for(const pet of wildlife.inhabitants){
+      if(pet.root.visible&&Math.hypot(x-pet.site.x-pet.x,z-pet.site.z-pet.z)<footprint+pet.radius)
+        top=Math.max(top,height(pet.at.lat,pet.at.lon)+pet.size);
+    }
+    return Math.max(top,safari.obstacleTop(x,z,footprint));
   }
   function nearestPipi(lat,lon,id) {
     const observer=chart(lat,lon);let closest=null,distance=Infinity;
     for(const pet of pipi) {
-      if(id&&pet.id!==id)continue;
+      if(pet.cooldown||!pet.near.visible||(id&&pet.id!==id))continue;
       const d=Math.hypot(observer.x-pet.x,observer.z-pet.z);
       if(d<distance){closest=pet;distance=d;}
     }
-    return closest?{id:closest.id,name:'皮皮',distance,lat:closest.at.lat,lon:closest.at.lon,
+    return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:.37,visible:true,distance,lat:closest.at.lat,lon:closest.at.lon,
       focusPoint:closest.animal.localToWorld(v(0,.166,.012))}:null;
+  }
+  function spiritObservation(lat,lon,key){
+    const possible=[nearestPipi(lat,lon,key),wildlife.observation(lat,lon,key),safari.observe(lat,lon,key)].filter(Boolean);
+    return possible.reduce((best,p)=>!best||p.distance<best.distance?p:best,null);
+  }
+  function withdrawSpirit(key){
+    const bird=pipi.find(p=>p.id===key);
+    if(!bird)return wildlife.withdraw(key);
+    bird.cooldown=48;bird.root.visible=false;bird.hop=bird.goal=null;return true;
+  }
+  function pickSpirit(raycaster,lat,lon){
+    const hunting=safari.pick(raycaster,lat,lon);
+    if(hunting)return hunting;
+    const viewer=chart(lat,lon),roots=[];
+    for(const p of [...pipi,...wildlife.inhabitants]){
+      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)<=22)roots.push(p.root);
+    }
+    const hit=raycaster.intersectObjects(roots,true)[0];
+    if(!hit)return null;
+    let node=hit.object;while(node&&!node.userData.kloseSpirit)node=node.parent;
+    return node?spiritObservation(lat,lon,node.userData.kloseSpirit):null;
   }
   function walk(lat,lon,east,north) {
     const start=chart(lat,lon),end=move(lat,lon,east,north),dest=chart(end.lat,end.lon);
     const candidates=batches.filter(part=>Math.hypot(start.x-part.site.x,start.z-part.site.z)<111)
-      .flatMap(part=>part.obstacles).concat(pipi.map(p=>({x:p.x,z:p.z,r:.30})))
+      .flatMap(part=>part.obstacles).concat(pipi.filter(p=>!p.cooldown).map(p=>({x:p.x,z:p.z,r:.30})),
+        wildlife.inhabitants.filter(p=>p.root.visible).map(p=>({x:p.site.x+p.x,z:p.site.z+p.z,r:p.radius})),safari.obstacles())
       .filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(east,north)+o.r+.55);
     if(!candidates.length)return end;
     // Short steps plus radial projection let the player slide around a trunk
@@ -733,5 +689,7 @@ function createKloseScenery(T, parent, surface) {
       if(!batches[i]&&Math.hypot(x-site.x,z-site.z)<111)batches[i]=makeSite(site,i);
     }
   }
-  return {update,nearestPipi,walk,prepareWalk,obstacleTop};
+  return {update,nearestPipi,spiritObservation,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
+    spiritSiteHint:wildlife.hint,setSafariState:safari.setState,safariAction:safari.action,safariWalk:safari.walked,safariHint:safari.hint,
+    walk,prepareWalk,obstacleTop};
 }

@@ -24,6 +24,7 @@ viewer = root / 'src' / 'viewer'
 ship = root / 'src' / 'ship'
 habitat = root / 'src' / 'habitat'
 population = root / 'src' / 'population'
+spirits = root / 'src' / 'spirits'
 scripts = [viewer/'start.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
 scripts.extend(ship/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
 scripts.extend([habitat/'exterior-scale.js', ship/'interior.js', habitat/'registry.js', habitat/'kit.js'])
@@ -34,12 +35,19 @@ scripts.extend([population/'berths.js',habitat/'lift-plant.js',habitat/'installa
 scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
                 viewer/'locker-record.js',viewer/'pilot-locker.js',viewer/'wayfinding.js',viewer/'ship-map.js',
                 viewer/'inventory.js',viewer/'exchange.js',viewer/'flight-deck.js',viewer/'lift-ride.js',
-                viewer/'boarding.js',root/'src'/'galaxy'/'klose-scenery.js',root/'src'/'galaxy'/'klose-surface.js',
+                viewer/'boarding.js',root/'src'/'galaxy'/'klose-safari.js',root/'src'/'galaxy'/'klose-creatures.js',root/'src'/'galaxy'/'klose-scenery.js',root/'src'/'galaxy'/'klose-surface.js',
                 root/'src'/'galaxy'/'klose-map.js',root/'src'/'galaxy'/'landing-shuttle.js',root/'src'/'galaxy'/'shuttle-flight.js',
-                root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'expedition.js',viewer/'explore.js'])
-source = '\n'.join(path.read_text('utf-8') for path in scripts)
+                root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'expedition.js'])
+scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','system.js','safari-figures.js','wetland-evolutions.js','partner-figures.js','escort.js','portrait-stage.js','storage.js','widget-records.js','save-transfer.js','safari-terminal.js','terminal.js'))
+scripts.append(viewer/'explore.js')
+def script_source(path):
+    raw = path.read_text('utf-8')
+    if path == spirits/'catalog.json':
+        return '/* spirit-catalog:start */\nconst SEER_SPIRIT_DATA = '+raw.strip().replace('<',r'\u003c')+';\n/* spirit-catalog:end */'
+    return raw
+source = '\n'.join(script_source(path) for path in scripts)
 publish_text(output/'seer-model.js',source)
-layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + '</style>'
+layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + (spirits/'terminal.css').read_text('utf-8') + '</style>'
 library = (work/'three-r128.min.js').read_text('utf-8').replace('</script','<\\/script')
 fragment = layout + '\n<script>\n' + library + '\n</script>\n<script>\n' + source + '\n</script>\n'
 publish_text(viz,fragment)
@@ -54,8 +62,8 @@ inner = f'{head}{title}<style>{style}</style><body>{fragment}</body></html>'
 document = (f'{head}{title}<style>html,body,iframe{{margin:0;border:0;width:100%;height:100%;'
             'display:block;background:#101723}}</style><body>'
             '<iframe name="seer-portable" title="SEER 三维漫游" allowfullscreen '
-            f'sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
-            '</iframe><script>' + '\n'.join((viewer/name).read_text('utf-8') for name in
+            f'sandbox="allow-scripts allow-downloads allow-popups allow-popups-to-escape-sandbox" srcdoc="{escape(inner, quote=True)}">'
+            '</iframe><script>' + (spirits/'storage.js').read_text('utf-8') + '\n' + '\n'.join((viewer/name).read_text('utf-8') for name in
                                            ('locker-record.js','pilot-locker.js','offline-locker-host.js')) +
             '</script><template id="licenses">' + escape(notices) + '</template></body></html>')
 publish_text(output/'seer-starship.html',document)

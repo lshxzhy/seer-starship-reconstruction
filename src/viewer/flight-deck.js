@@ -60,7 +60,7 @@
       if(e.target.matches('[data-perspective]')){close();focusPilot();}
     });
     function onKey(e){
-      if((stage.dataset.domain==='planet'&&!current)||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
+      if(stage.dataset.consoleOpen==='spirits'||(stage.dataset.domain==='planet'&&!current)||boarding.commsOpen||e.ctrlKey||e.metaKey||e.altKey||e.isComposing)return;
       const el=e.target;
       if(el!==window&&el!==document&&el!==document.body&&el!==document.documentElement&&!root.contains(el))return;
       if(current&&e.key==='Tab'){
@@ -89,6 +89,7 @@
       close,openMap:(target=null,fromSurface=false)=>open('map',target,fromSurface),
       get isOpen(){return current!==null;},
       sync(aboard){
+        dock.querySelector('[data-spirit-book]').hidden=!aboard;
         dock.querySelector('[data-console="bag"]').hidden=!aboard;
         if(!aboard&&(current==='bag'||current==='exchange'))close(false);
         if(current==='map')map.refresh();if(current==='bag')inventory.refresh();

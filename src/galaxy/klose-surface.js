@@ -464,7 +464,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     }
   }
   const groundGroup=new T.Group(); local.add(groundGroup);
-  let lastFocus=null,terrain=null,details=null,groundTime=0;
+  let lastFocus=null,terrain=null,details=null,groundTime=0,safariState=null;
   const diskRadius=120000;
   const groundInverse=new T.Quaternion(),groundQuery=new T.Vector3();
   // A 37 cm animal can visibly sink between samples of a coarser terrain
@@ -498,7 +498,10 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
   }
   function padClear(x,z,margin=0){return Boolean(closestPad(x,z,30+margin));}
   function ensureScenery(){
-    if(!details)details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear,groundCorrection});
+    if(!details){
+      details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear,groundCorrection});
+      details.setSafariState(safariState);
+    }
     return details;
   }
   function buildGround() {
@@ -634,7 +637,17 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
   setMode('hidden');
-  return {root,sites,radius,frame,height,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,
+  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
-    nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null};
+    nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null,
+    nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,
+    spiritObservation:(lat,lon,key)=>details?.spiritObservation(lat,lon,key)||null,
+    withdrawSpirit:key=>details?.withdrawSpirit(key)||false,
+    interactSpiritSite:(caster,lat,lon)=>details?.interactSpiritSite(caster,lat,lon)||'',
+    spiritSiteHint:(lat,lon)=>details?.spiritSiteHint(lat,lon)||'',
+    setSafariState(state){safariState=state;details?.setSafariState(state);},
+    safariAction:(caster,lat,lon)=>details?.safariAction(caster,lat,lon)||null,
+    safariWalk:(lat,lon)=>details?.safariWalk(lat,lon)||null,
+    safariHint:(lat,lon)=>details?.safariHint(lat,lon)||'',
+    pickSpirit:(caster,lat,lon)=>details?.pickSpirit(caster,lat,lon)||null};
 }

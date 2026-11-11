@@ -8,6 +8,7 @@ function createCrewDialogue(adapter) {
   const style=document.createElement('style');
   style.textContent=`
 ${scope}{position:absolute;inset:0;z-index:45;pointer-events:none;color:#e6edf2;font:14px/1.45 "Segoe UI","Microsoft YaHei",sans-serif;letter-spacing:normal;text-align:left}
+${scope}[data-spirit-chat]{pointer-events:auto;background:#08101c55}
 ${scope} *{box-sizing:border-box}
 ${scope} [hidden]{display:none!important}
 ${scope} button,${scope} select,${scope} textarea{font:inherit;color:inherit;letter-spacing:normal}
@@ -76,11 +77,11 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   panel.setAttribute('aria-label','舰上通讯');panel.setAttribute('aria-modal','false');
   launch.setAttribute('aria-controls',uid);launch.setAttribute('aria-expanded','false');
   const head=make('div','sc-head',panel);
-  make('h3','sc-title',head,'舰上通讯');
+  const title=make('h3','sc-title',head,'舰上通讯');
   const closeButton=button(head,'关闭');
   closeButton.setAttribute('aria-label','关闭舰上通讯');
   const offlineGuide=make('div','sc-offline',panel);
-  make('p','',offlineGuide,'角色通讯使用这台电脑上的 Ollama。请在项目目录双击「启动舰上通讯.cmd」，或运行以下命令。');
+  make('p','',offlineGuide,'舰上角色和精灵通讯使用这台电脑上的 Ollama。请在项目目录双击「启动舰上通讯.cmd」，或运行以下命令。');
   make('code','',offlineGuide,'python src/ai/server.py --open');
   const localLink=make('a','',offlineGuide,'服务已启动？打开本地登舰通讯版');
   localLink.href='http://127.0.0.1:8765/play';localLink.target='_blank';localLink.rel='noopener noreferrer';
@@ -101,7 +102,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   modelStatus.setAttribute('role','status');modelStatus.setAttribute('aria-live','polite');
   const problem=make('p','sc-error',controls);problem.hidden=true;problem.setAttribute('role','alert');
   const facts=make('details','sc-facts',panel);
-  make('summary','',facts,'组织与角色资料');
+  const factsTitle=make('summary','',facts,'组织与角色资料');
   const factBody=make('div','sc-factbody',facts);
   const log=make('div','sc-log',panel);log.setAttribute('role','log');
   log.setAttribute('aria-label','当前通讯记录');log.setAttribute('aria-live','off');log.tabIndex=0;
@@ -127,6 +128,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   let thinkingOffModel=null;
   let availableModels=new Set();
   let genericCharacter=null,currentKey='',serviceReady=false,catalogReady=false,disposed=false;
+  let spirit=null,boarded=false,afterSpirit=null,spiritOpener=null;
   let connectRequest=null,activeRequest=null,followBottom=true;
   const targets=new Map(),sessions=new Map(),knownCrew=new Map();
   const startupHint='请在项目目录运行 python src/ai/server.py --open，再点击“重连”。';
@@ -206,8 +208,15 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   }
   function renderFacts() {
     factBody.replaceChildren();
-    renderOrganization(factBody);
     const target=targets.get(currentKey),character=target?.character;
+    if(spirit){
+      make('p','',factBody,'图鉴 '+String(spirit.speciesId).padStart(3,'0')+' · '+spirit.name+
+        (spirit.type?' · '+spirit.type:''));
+      if(spirit.level&&spirit.bond!=='dex')make('p','',factBody,'等级 '+spirit.level+
+        (Number.isInteger(spirit.hp)&&Number.isInteger(spirit.maxHp)?' · 体力 '+spirit.hp+'/'+spirit.maxHp:''));
+      return;
+    }
+    renderOrganization(factBody);
     if(!character)return;
     const department=organization.find(item=>item.id===character.departmentId);
     make('h4','',factBody,department?department.name:character.title);
@@ -254,6 +263,13 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     return (String(crew.role||'船员'))+' · '+String(crew.id);
   }
   function rebuildTargets(preferNearby=false) {
+    if(spirit){
+      const key='spirit:'+spirit.speciesId+':'+spirit.bond+':'+(spirit.uid||'');
+      targets.clear();targets.set(key,{key,character:{id:'spirit:'+spirit.speciesId},label:spirit.name});
+      people.replaceChildren(new Option(spirit.name,key));selectTarget(key);
+      place.textContent=spirit.location?'当前位置：'+spirit.location:'';
+      return;
+    }
     const context=readContext(),nearby=context.nearby;
     const availableCrew=new Map(knownCrew);
     if(nearby?.id!==undefined&&nearby?.id!==null&&genericCharacter) {
@@ -295,7 +311,8 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     currentKey=targets.has(key)?key:'';people.value=currentKey;
     const target=targets.get(currentKey);
     if(target?.crewId)knownCrew.set(target.crewId,{id:target.crewId,role:target.role,zone:target.zone});
-    identity.textContent=target?target.crewId?'岗位船员通讯 · '+target.label:
+    identity.textContent=spirit?(spirit.bond==='owned'?'伙伴':spirit.bond==='wild'?'野外相遇':'图鉴模拟')+' · '+spirit.name:
+      target?target.crewId?'岗位船员通讯 · '+target.label:
       '职务通讯 · '+target.label+(target.character.aboard===false?' · 远程联络':''):'';
     input.value=currentKey?sessionFor().draft:'';
     input.placeholder=target?'向'+target.label+'提问…':'等待取得通讯对象…';
@@ -339,12 +356,13 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     serviceReady=false;modelStatus.textContent='正在连接本地通讯服务…';modelStatus.dataset.tone='';
     showProblem('');updateControls();
     try {
-      const results=await Promise.allSettled(['/api/catalog','/api/health','/api/models'].map(async path=>{
+      const results=await Promise.allSettled([spirit?null:'/api/catalog','/api/health','/api/models'].map(async path=>{
+        if(!path)return null;
         const response=await checkedFetch(path,{signal:controller.signal});return response.json();
       }));
       if(disposed||connectRequest!==request||panel.hidden)return;
       const [catalogResult,healthResult,modelsResult]=results;
-      if(catalogResult.status==='fulfilled') {
+      if(!spirit&&catalogResult.status==='fulfilled') {
         const data=catalogResult.value;
         if(!Array.isArray(data?.characters))throw new Error('角色目录格式不完整，请重连。');
         const seen=new Set();
@@ -360,8 +378,9 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
       const health=healthResult.status==='fulfilled'?healthResult.value:null;
       thinkingOffModel=health?.thinking===false?health.model:null;
       const needsModel=modelsResult.status==='fulfilled'&&!availableModels.has(selectedModel);
-      serviceReady=Boolean(catalogResult.status==='fulfilled'&&catalogReady&&health?.ok&&health?.ollamaAvailable&&
-        modelsResult.status==='fulfilled'&&!needsModel);
+      const oldSpiritService=Boolean(spirit&&health&&!health.spiritChat);
+      serviceReady=Boolean((spirit||catalogResult.status==='fulfilled'&&catalogReady)&&health?.ok&&health?.ollamaAvailable&&
+        modelsResult.status==='fulfilled'&&!needsModel&&!oldSpiritService);
       if(serviceReady) {
         modelStatus.textContent=modelCaption();modelStatus.dataset.tone='ready';
         showProblem('');
@@ -370,7 +389,8 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
         const failed=results.find(result=>result.status==='rejected');
         const detail=failed?.reason?.message;
         showProblem(request.timedOut?'连接超时。'+startupHint:
-          !health?startupHint:!health.ollamaAvailable?'Ollama 尚未连接。启动 Ollama 后点击“重连”。':
+          !health?startupHint:oldSpiritService?'旧版舰上通讯仍在运行。请关闭旧服务后重新双击「启动舰上通讯.cmd」。':
+          !health.ollamaAvailable?'Ollama 尚未连接。启动 Ollama 后点击“重连”。':
           needsModel?'本机暂未提供 '+selectedModel+'。请确认模型已安装，再点击“重连”。':detail||'未能取全通讯资料，请点击“重连”。');
       }
     }catch(error) {
@@ -436,7 +456,9 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     let reader=null,gotDone=false;
     const isCurrent=()=>!disposed&&activeRequest===request&&!controller.signal.aborted;
     try {
-      const sceneInfo=readContext(),context={roomId:sceneInfo.roomId,location:sceneInfo.location};
+      const sceneInfo=readContext(),context=spirit?{speciesId:spirit.speciesId,bond:spirit.bond,
+        location:spirit.location,level:spirit.level,hp:spirit.hp,maxHp:spirit.maxHp,moves:spirit.moves}:
+        {roomId:sceneInfo.roomId,location:sceneInfo.location};
       if(target.crewId){
         context.crewId=target.crewId;
         context.nearby={id:target.crewId,role:target.role,zone:target.zone};
@@ -500,17 +522,33 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   }
   function openPanel() {
     if(disposed||host.hidden)return;
+    title.textContent=spirit?'精灵通讯':'舰上通讯';
+    factsTitle.textContent=spirit?'本次精灵资料':'组织与角色资料';
+    host.toggleAttribute('data-spirit-chat',Boolean(spirit));panel.setAttribute('aria-modal',String(Boolean(spirit)));
+    peopleRow.hidden=Boolean(spirit);panel.setAttribute('aria-label',title.textContent);
+    closeButton.setAttribute('aria-label','关闭'+title.textContent);
     stopMovement();panel.hidden=false;launch.hidden=true;launch.setAttribute('aria-expanded','true');
     if(!localGame){closeButton.focus({preventScroll:true});return;}
-    if(catalogReady)rebuildTargets();
+    if(spirit||catalogReady)rebuildTargets();
     (input.disabled?closeButton:input).focus({preventScroll:true});connect();
   }
   function closePanel(restoreFocus=true) {
     if(panel.hidden)return;
     if(currentKey)sessionFor().draft=input.value;
     cancelGeneration('回复已停止');abortConnect();stopMovement();
+    const callback=afterSpirit,previousOpener=spiritOpener;
+    if(spirit){spirit=null;afterSpirit=null;spiritOpener=null;currentKey='';input.value='';}
     panel.hidden=true;launch.hidden=false;launch.setAttribute('aria-expanded','false');
-    if(restoreFocus)root.querySelector('[data-console="terminal"]').focus({preventScroll:true});
+    host.removeAttribute('data-spirit-chat');
+    host.hidden=!boarded;
+    if(restoreFocus){
+      if(callback)callback();
+      if(!callback||!document.activeElement||document.activeElement===document.body||host.contains(document.activeElement)){
+        const focus=previousOpener?.isConnected&&previousOpener.getClientRects().length?previousOpener:
+          (boarded?root.querySelector('[data-console="terminal"]'):root.querySelector('canvas'));
+        focus?.focus({preventScroll:true});
+      }
+    }
     adapter.requestFrame?.();
   }
   launch.addEventListener('click',openPanel);
@@ -539,19 +577,34 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   log.addEventListener('scroll',()=>{followBottom=log.scrollHeight-log.scrollTop-log.clientHeight<60;},{passive:true});
   host.addEventListener('focusin',stopMovement);
   host.addEventListener('pointerdown',event=>{event.stopPropagation();stopMovement();});
+  host.addEventListener('click',event=>{if(spirit&&event.target===host)closePanel();});
   host.addEventListener('wheel',event=>event.stopPropagation(),{passive:true});
   // Bubble isolation prevents both walking controls and the viewer Escape key
   // from handling text, select keys or the panel's close action.
   host.addEventListener('keydown',event=>{
     event.stopPropagation();
     if(event.key==='Escape'&&!event.isComposing&&!panel.hidden){event.preventDefault();closePanel();}
+    if(spirit&&event.key==='Tab'){
+      const controls=[...panel.querySelectorAll('button:enabled,select:enabled,textarea:enabled,a[href],summary,[tabindex="0"]')]
+        .filter(node=>node.getClientRects().length);
+      const first=controls[0],last=controls.at(-1);
+      if(first&&event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(last&&!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    }
   });
   host.addEventListener('keyup',event=>event.stopPropagation());
   updateControls();renderHistory();
   return {
     get isOpen(){return !panel.hidden;},
+    openSpirit(context,onClose=null){
+      if(disposed||!context||!Number.isSafeInteger(context.speciesId)||context.speciesId<=0||!context.name)return false;
+      if(!panel.hidden)closePanel(false);
+      spirit={...context,moves:(Array.isArray(context.moves)?context.moves:[]).map(m=>typeof m==='string'?m:m?.name).filter(Boolean).slice(0,4)};
+      spiritOpener=document.activeElement;afterSpirit=typeof onClose==='function'?onClose:null;
+      host.hidden=false;openPanel();return true;
+    },
     close(){closePanel(false);},
-    setBoarded(boarded){if(!boarded)closePanel(false);host.hidden=!boarded;},
+    setBoarded(value){boarded=value;if(!boarded)closePanel(false);host.hidden=!boarded;},
     dispose() {
       if(disposed)return;
       disposed=true;cancelGeneration();abortConnect();

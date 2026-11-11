@@ -35,6 +35,7 @@
   let selected=null, frame=0, lastTime=0, disposed=false;
   let stagedBoard=null, liveBoard=false, lastSaved='';
   let stagedExpedition=null,parkedLanding=null;
+  let spiritArchive=null;
   const recentSaves=[];
   const shuttleAway=()=>parkedLanding?.vehicle?.phase==='landed';
   const boarding=createBoardingController(requestDraw,save,shuttleAway);
@@ -68,6 +69,39 @@
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
     syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
   },()=>cockpit.openMap(null,true));
+  const spiritRecords=window.openai?.setWidgetState?
+    createWidgetSpiritRecords(()=>spiritArchive,async archive=>{
+      const previous=spiritArchive;spiritArchive=archive;
+      try{await save(true);}catch(error){spiritArchive=previous;throw error;}
+    }):createSpiritPersistence();
+  const spiritTerminal=createSpiritTerminal({
+    records:spiritRecords,requestFrame:requestDraw,locationName:()=>tag.textContent,
+    siteId:()=>expedition.active?expedition.fieldSite:liveBoard?boarding.roomId:null,
+    setFollower:id=>{boarding.setEscortSpecies(id);expedition.setEscortSpecies(id);},
+    setSafari:s=>expedition.setSafariState(s),enterWetland:()=>expedition.enterWetland(),
+    withdraw:key=>expedition.withdrawSpirit(key),
+    chat:(context,onClose)=>{
+      if(typeof boarding.openSpiritDialogue!=='function')return false;
+      return boarding.openSpiritDialogue(context,onClose);
+    }
+  });
+  function openSpirits(trigger,contact=false){
+    if(boarding.inTransit||boarding.commsOpen||stage.dataset.consoleOpen||
+      (state.mode!=='board'&&!expedition.canOpenSpirits))return;
+    const wild=contact?expedition.nearbySpirit():null;
+    if(contact&&(!wild||wild.distance>22))return;
+    boarding.clearInputs();expedition.clearInputs();
+    if(wild?.kind==='safari')spiritTerminal.open(null,trigger,{op:wild.method==='field'?'field':'menu',speciesId:wild.speciesId});
+    else spiritTerminal.open(wild,trigger);
+  }
+  for(const trigger of root.querySelectorAll('[data-spirit-book]'))trigger.addEventListener('click',()=>openSpirits(trigger));
+  const wildTrigger=root.querySelector('[data-encounter]');
+  wildTrigger.addEventListener('click',()=>openSpirits(wildTrigger,true));
+  stage.addEventListener('seer-wetland-action',e=>{
+    if(!expedition.canOpenSpirits||stage.dataset.consoleOpen||boarding.commsOpen)return;
+    expedition.clearInputs();spiritTerminal.open(null,canvas,e.detail);
+  });
+  root.querySelector('[data-see-pipi]').addEventListener('click',()=>spiritTerminal.observe(expedition.nearbySpirit()));
   root.querySelector('[data-embark]').addEventListener('click',()=>{
     const berth=boarding.station();
     if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
@@ -192,6 +226,7 @@
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
     boarding.restorePack(saved.pack);
+    spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
     state.mode=saved.mode;
@@ -209,9 +244,12 @@
     state.distance=T.MathUtils.clamp(state.distance,boardable()?unitMetre*3:2.1,52);
     state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
   }
-  function save(){
+  function save(requireArchive=false){
     const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
-      expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding};
+      expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding,spiritArchive};
+    if(requireArchive===true&&new TextEncoder().encode(JSON.stringify(privateContent)).length>15850){
+      throw new Error('聊天存档空间不足，请在本机游戏中继续扩充队伍。');
+    }
     lastSaved=JSON.stringify(privateContent);
     if(window.openai?.setWidgetState){
       recentSaves.push(lastSaved);
@@ -219,6 +257,7 @@
     }
     const room=state.mode==='planet'?tag.textContent:state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
     const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
+    if(requireArchive===true)return promise;
     promise?.catch?.(()=>{});
   }
   function draw(time){
@@ -325,7 +364,7 @@
     requestDraw();clearTimeout(wheelTimer);wheelTimer=setTimeout(save,240);
   },{passive:false});
   root.addEventListener('keydown',e=>{
-    if(expedition.active||cockpit.isOpen||e.target.tagName==='SELECT')return;
+    if(expedition.active||cockpit.isOpen||spiritTerminal.active||boarding.commsOpen||e.target.tagName==='SELECT')return;
     if(state.mode==='board'){
       if(e.key==='Escape'){e.preventDefault();applySelection('section');}
       return;
@@ -345,6 +384,7 @@
     const saved=e.detail?.globals?.widgetState?.privateContent;
     if(!saved||saved.version!==3||boarding.inTransit||recentSaves.includes(JSON.stringify(saved)))return;
     restore(saved);syncScene();resize();
+    spiritTerminal.refreshFollower();
   }
   ship.updateMatrixWorld(true);
   frameSelection();
@@ -355,7 +395,7 @@
   window.addEventListener('pagehide',e=>{
     if(e.persisted)return;
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
-    expedition.dispose();cockpit.dispose();boarding.dispose();
+    spiritTerminal.dispose();expedition.dispose();cockpit.dispose();boarding.dispose();
     window.removeEventListener('openai:set_globals',loadHostState);
     const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
     scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});
@@ -365,4 +405,5 @@
     finishing.dispose();reflections.dispose();renderer.dispose();
   },{once:true});
   syncScene();resize();
+  spiritTerminal.refreshFollower();
 })();
