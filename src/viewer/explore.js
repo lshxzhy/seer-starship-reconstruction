@@ -38,14 +38,16 @@
   let spiritArchive=null;
   const recentSaves=[];
   const voyageStore=window.openai?.setWidgetState?null:createVoyageStore();
-  const shuttleAway=()=>parkedLanding?.vehicle?.phase==='landed';
-  const boarding=createBoardingController(requestDraw,save,shuttleAway);
+  const parkedPlanetName=()=>parkedLanding?.vehicle?.phase==='landed'
+    ?(PANO_NAVIGATION.regions[parkedLanding.vehicle.planetId||'klose']?.definition.name||'星球地表'):'';
+  const boarding=createBoardingController(requestDraw,save,parkedPlanetName);
   function travelToShip(id,pose){
     const trip=expedition.active?expedition.snapshot():null;
     if(trip){
       if(trip.vehicle.phase==='docked')dockedVehicle=trip.vehicle;
       parkedLanding=trip.vehicle.phase==='landed'?{
-        origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId},vehicle:trip.vehicle,ramp:expedition.parkedRamp()}:null;
+        origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId},vehicle:trip.vehicle,
+        navTarget:trip.navTarget,ramp:expedition.parkedRamp()}:null;
     }
     const passenger=trip?.origin.board||(liveBoard?boarding.snapshot():null);
     stagedBoard={...passenger,roomId:id||'teleport',pose,yaw:pose?.yaw,pitch:pose?.yaw===undefined?undefined:.02,
@@ -56,7 +58,8 @@
   function travelToPlanet(id,approachMushroom=false,planetId='klose'){
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:3,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,door:1};
+    stagedExpedition={format:3,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
+      vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,navTarget:current?.navTarget||parkedLanding?.navTarget,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -117,9 +120,12 @@
   root.querySelector('[data-see-pipi]').addEventListener('click',()=>spiritTerminal.observe(expedition.nearbySpirit()));
   root.querySelector('[data-embark]').addEventListener('click',()=>{
     const berth=boarding.station();
-    if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
-    if(shuttleAway()){cockpit.openMap('shuttle-ramp');return;}
-    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'transfer',vehicle:dockedVehicle};
+    if(!berth||boarding.commsOpen||cockpit.isOpen)return;
+    if(parkedPlanetName()){cockpit.openMap('shuttle-ramp');return;}
+    const target=PANO_NAVIGATION.flights.get(berth.landingSiteId);
+    if(!target||target.planetId!==berth.destination)return;
+    stagedExpedition={format:3,origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},
+      phase:'transfer',navTarget:target.id,vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
   });

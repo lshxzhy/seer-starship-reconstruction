@@ -27,7 +27,7 @@
 ## 舰内空间、角色和运输
 
 - **总体与专业舱室。** `src/ship/` 管舰壳、内层和涂装。`src/habitat/installation.js` 给出十一舱、公共通道和四层驻舱的米制坐标；`layout-record.js` 输出同一套安装表。公共舱改 `civic.js`，机务舱改 `engineering.js`，科研指挥舱改 `science.js`。新舱沿用稳定 ID，局部原点设在地面中心，Y 向上、+Z 指门口；大件在 `kit.block` 登记占地，公共门净宽 3.4 米、高 3.1 米。[原作来源](SOURCES.md)
-- **两条升降线与四个登艇机位。** 实体门、井道和轿体在 `lift-plant.js`，站表和运行在 `lift-ride.js`。玩家、镜头和伙伴同乘轿厢。机位触发与地面亮框来自同一份 `civic.js` 配置，舱内装置在 `transporter.js`，返程使用出发泊位。[舰内升降](舰内升降系统.md) · [传送舱接口](舰内传送舱接口.md)
+- **两条升降线与四个登艇机位。** 实体门、井道和轿体在 `lift-plant.js`，站表和运行在 `lift-ride.js`。玩家、镜头和伙伴同乘轿厢。机位触发与地面亮框来自同一份 `civic.js` 配置，舱内装置在 `transporter.js`。每个机位的星体 ID 指向导航表，机位牌和驾驶席读取同一着陆点。01、02 默认去草原南坪，03、04 默认去浅海登陆平台。航程分别保存返舰机位 `origin.berthId` 和可更改的航点 `navTarget`。[舰内升降](舰内升降系统.md) · [传送舱接口](舰内传送舱接口.md)
 - **路标与采样。** `wayfinding.js` 把路线接到舱门、走廊和候梯区。`exchange.js` 显示操作，机械室与动力室分别提供矿架和投入口。训练矿样、精灵奖励黑晶矿与星球上的矿物地标用途不同。[原版兑换及项目结算](动力室物资兑换图证.md)
 - **玩家与船员。** `src/population/robot.js` 定义共用机体、屏面、步态和第一人称眼位，玩家由 `player.js` 驱动，驻舱与近场船员由 `berths.js`、`population.js` 管理。NoNo 用 `super-nono.js`；奥飞滑翔翼的踏面、机身与驾驶包络分别在 `personal-flyer.js`、`personal-flight.js`。门洞、碰撞宽度、玩家脚底和载具踏面必须用同一米制基准。[面盘](面盘表情图证.md) · [NoNo](超能NoNo图证.md) · [滑翔翼](单人飞行器图证.md)
 

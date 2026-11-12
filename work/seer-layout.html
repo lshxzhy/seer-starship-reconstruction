@@ -43,8 +43,8 @@
     </nav>
     <div class="ship-overlay" data-planet-atlas hidden>
       <section class="ship-window planet-atlas" role="dialog" aria-modal="true" aria-labelledby="planet-chart-title">
-        <header class="console-head"><div><small>帕诺星系 ／ 克洛斯星</small><h2 id="planet-chart-title">地表导航图</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭地图">×</button></header>
-        <div class="atlas-body"><svg data-site-map role="img" aria-label="克洛斯星探索区与步行路径"></svg>
+        <header class="console-head"><div><small>帕诺星系</small><h2 id="planet-chart-title">地表导航图</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭地图">×</button></header>
+        <div class="atlas-body"><svg data-site-map role="img" aria-label="行星导航图"></svg>
         <section class="atlas-controls"><label>目的地 <select data-site-select></select></label><p data-site-summary></p>
           <div class="atlas-actions"><button class="ship-key" type="button" data-track-site>步行引导</button><button class="ship-key" type="button" data-site-transport hidden>传送到此</button><button class="ship-key" type="button" data-target-only hidden>设为手动航点</button><button class="ship-key" type="button" data-unseat hidden>离开驾驶席</button></div>
           <button class="ship-key" type="button" data-browse-ship hidden>赛尔号舰内图</button></section></div>
@@ -77,6 +77,7 @@
           <section data-boarding-controls><h3>赛尔操控</h3><div class="ship-row">
             <label>镜头 <select data-perspective><option value="follow">跟随</option><option value="eye">第一人称</option></select></label>
             <button type="button" data-face-player>看正面</button><button type="button" data-smile aria-pressed="false">微笑</button><button type="button" data-nono>招呼超能 NoNo</button>
+            <label data-berth-picker hidden>登乘机位 <select data-berth-select></select></label>
             <button type="button" data-inspect-workstation hidden>近看设备</button><button type="button" data-comms>舰上通讯</button>
           </div><h3 class="ship-job-title">动力室物资交接</h3><p class="ship-job-record" data-delivery-record></p>
           <button type="button" data-delivery-track>引导至机械室矿架</button></section>

@@ -62,8 +62,13 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
   const dark=0x243d50,cyan=0x64e4ec,gold=0xe9ad50;
   const {paint,casting}=castings;
   const installed=root.userData.shipTransporterPorts||[];
-  const stations=placements.map(site=>Object.freeze({...site,
-    id:roomId+':'+site.slot,name:site.slot+' 号传送位'}));
+  const stations=placements.map(site=>{
+    const planet=PANO_NAVIGATION.regions[site.destination]?.definition;
+    const landing=planet?.landingSites[0];
+    return Object.freeze({...site,id:roomId+':'+site.slot,name:site.slot+' 号传送位',
+      destinationName:planet?.name??site.destinationName??'',landingSiteId:landing?.id??null,
+      landingSiteName:landing?.name??''});
+  });
   const ids=[...installed,...stations].map(site=>site.id);
   if(new Set(ids).size!==ids.length)throw new Error(roomId+'的传送位编号重复');
   function faceShape(points) {
@@ -238,8 +243,12 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
         beam([s*jambX,2.64,scanZ],[s*(jambX-.31),2.98,scanZ],.18,.28,ivory);
         stamp(frame,roundPin,alloy,[s*jambX,.40,scanZ+.20],[.11,.07,.11],[PI/2,0,0]);
       }
-      box(0,2.99,scanZ,2*(jambX-.28),.26,.29,steel);
-      text(0,2.995,scanZ+.155,slot+'  '+destinationName,2.08,.22,white);
+      const routeColor=PANO_ORBITS[site.destination]?.colour??tint;
+      // Anchor the larger route plate to the original gate lintel; its lower edge stays at 2.86 m.
+      box(0,3.24,scanZ,3.46,.76,.29,dark);
+      box(0,3.595,scanZ+.15,3.40,.045,.025,routeColor,{glow:.36});
+      text(0,3.37,scanZ+.167,slot+'  '+destinationName,3.25,.45,white);
+      text(0,3.015,scanZ+.168,site.landingSiteName,2.85,.26,routeColor);
       // Opposed three-lens scan heads sit flush on the outside jambs. Their
       // smoked hood and inset cyan optics keep the passage physically clear.
       for(const s of [-1,1]){
@@ -405,8 +414,27 @@ function buildShipTransporterRoom(kit,roomId,placements) {
   for(const s of [-1,1])box(s*1.72,4.18,-13.76,.46,.08,.04,cyan,{glow:.4});
   text(0,2.55,-13.77,'航 路 定 位',3.4,.38,white);
   text(0,7.2,-14.2,'传 送 舱',6.4,.76,ivory);
-  text(0,6.44,-14.15,'TRANSFER / '+stations.map(site=>site.slot).join(' · '),5.2,.30,cyan);
   block(0,-14.24,5.3,.76);
+
+  // Mark each destination on the approach floor and the rear bulkhead. The doorway and
+  // queue stay clear; the room, gate and flight deck all use the same installed addresses.
+  const routes=new Map();
+  for(const site of [...stations].sort((a,b)=>a.x-b.x)){
+    if(!routes.has(site.destination))routes.set(site.destination,[]);
+    routes.get(site.destination).push(site);
+  }
+  for(const [i,bank] of [...routes.values()].entries()){
+    const site=bank[0],slots=bank.map(p=>p.slot).join(' / ');
+    const routeColor=PANO_ORBITS[site.destination]?.colour??site.tint;
+    const rearX=bank.reduce((sum,p)=>sum+p.x,0)/bank.length;
+    const frontX=(i+.5-routes.size/2)*Math.min(5.2,W*.55/routes.size);
+    const frontZ=kit.D/2-5.45,wallZ=-kit.D/2+.74;
+    box(rearX,8.44,wallZ,5.5,1.20,.20,dark);
+    box(rearX,8.98,wallZ+.102,5.43,.075,.023,routeColor,{glow:.4});
+    text(rearX,8.44,wallZ+.122,slots+'  '+site.destinationName,5.15,.72,white);
+    box(frontX,.071,frontZ,4.26,.024,.94,dark);
+    text(frontX,.090,frontZ,slots+'  '+site.destinationName,4.05,.75,routeColor,{rx:-PI/2});
+  }
 
   // The small orange unit in front of the green/purple bays is a separate
   // apparatus in the reference. Its exact function is not established there.

@@ -40,7 +40,7 @@
     const keys=new Set(),touch=new Map(),pendingSteps=new Map(),events=new AbortController();
     const listen=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:events.signal});
     let world,body,pano,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight;
-    let dockCenter=null;
+    let dockCenter=null,departurePort=null;
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
     let craft,dock,flight,feet=new T.Vector3(),door=1,gear=1,external=false,transferSign=1;
@@ -232,6 +232,7 @@
       habitat.spawn(room.id);
       if(!shipTransporters.ports(room).length){room=habitat.byId.get('teleport');habitat.spawn(room.id);}
       const berth=shipTransporters.ports(room).find(p=>p.id===origin?.berthId)||shipTransporters.ports(room)[0];
+      departurePort=berth;
       origin={...origin,roomId:room.id,berthId:berth.id};
       dock?.dispose();dock=createCarrierDock(T,world,bodies.klose,room,berth.id);
       dockCenter=dock.root.position.clone();
@@ -247,7 +248,10 @@
       door=clamp(current&&Number.isFinite(saved.door)?saved.door:1,0,1);gear=flight.status().phase==='flying'?0:1;
       feet.set(0,0,11.8);
       if(current&&Array.isArray(saved.feet)&&saved.feet.length===3&&saved.feet.every(Number.isFinite))feet.fromArray(saved.feet);
-      navTarget=flights.has(saved.navTarget)?saved.navTarget:definition.landingSites[0].id;
+      const portTarget=flights.has(departurePort.landingSiteId)?departurePort.landingSiteId:definition.landingSites[0].id;
+      const vehiclePhase=flight.status().phase;
+      const legacyTarget=vehiclePhase==='landed'?'dock':phase==='transfer'||vehiclePhase==='docked'?portTarget:definition.landingSites[0].id;
+      navTarget=flights.has(saved.navTarget)?saved.navTarget:legacyTarget;
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
@@ -286,7 +290,11 @@
       const p=id==='dock'?dock.position.clone():bodies[s.planetId].point(s.lat,s.lon);
       return p.add(pano.offset(flight.planetId,s.planetId,flight.orbitTime));
     }
-    function targetName(){return flights.get(navTarget)?.name||home.name;}
+    function targetName(){
+      const target=flights.get(navTarget);
+      if(!target)return home.name;
+      return navTarget==='dock'?target.name:regions[target.planetId].definition.name+' · '+target.name;
+    }
     function setPhase(next,keepWalking=false){
       phase=next;
       if(keepWalking){pendingSteps.clear();lastTime=null;}else resetInput();
@@ -347,7 +355,7 @@
       hint.hidden=false;
       if(phase==='transfer'){
         tag.textContent='赛尔号 · 登船廊车';status.textContent=origin.berthId.split(':').pop()+' 号泊位';
-        hint.textContent=(transferSign>0?'驶往登陆艇':'驶回传送舱')+'　'+Math.round(transferSign>0?dock.total-dock.travel:dock.travel)+' m';
+        hint.textContent=(transferSign>0?'前往 L-01 · '+targetName():'驶回传送舱 · '+departurePort.name)+'　'+Math.round(transferSign>0?dock.total-dock.travel:dock.travel)+' m';
       }else if(!walking){
         tag.textContent=seated?'L-01 · 驾驶席':'L-01 · 登陆艇';
         status.textContent=s.stage+'　'+(s.speed>=1000?(s.speed/1000).toFixed(2)+' km/s':Math.round(s.speed)+' m/s')+'　高 '+distanceText(s.clearance);
@@ -645,7 +653,8 @@
       dock.root.updateMatrixWorld(true);
       if(s.phase!==previousFlight){
         arrivedOnDeck=s.phase!=='flying';
-        if(s.phase==='landed')navTarget='dock';else if(s.phase==='docked')navTarget='grassland';
+        if(s.phase==='landed')navTarget='dock';
+        else if(s.phase==='docked')navTarget=departurePort.landingSiteId||definition.landingSites[0].id;
         previousFlight=s.phase;persist();
       }
       const wantGear=s.phase!=='flying'||s.clearance<90||(flight.planetId==='klose'&&flight.position.distanceTo(dock.position)<170)?1:0;

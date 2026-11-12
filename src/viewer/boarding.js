@@ -1,6 +1,6 @@
   // The visitor's position is a foot point in ship-wide metres. Geometry and
   // collision use the same habitat layout. Only the camera uses render units.
-  function createBoardingController(requestFrame, persist, shuttleAway=()=>false) {
+  function createBoardingController(requestFrame, persist, parkedPlanetName=()=>'') {
     const liftControl = root.querySelector('[data-lift-control]');
     const liftPicker = root.querySelector('[data-lift]');
     const callButton=root.querySelector('[data-lift-call]');
@@ -142,6 +142,8 @@
     const mount=root.querySelector('[data-flyer]');
     const climb=root.querySelector('[data-climb]'),descend=root.querySelector('[data-descend]');
     const detailVisit=root.querySelector('[data-inspect-workstation]');
+    const berthPicker=root.querySelector('[data-berth-picker]'),berthSelect=berthPicker.querySelector('select');
+    let portGuide='';
     const populationText=root.querySelector('[data-population]');
     const idleClock={timer:0,lastReadout:-1};
     let inView=true;
@@ -269,14 +271,13 @@
       const ports=shipTransporters.ports(room);
       if(ports.length){
         if(flight.mounted)return;
-        const order=ports.slice(1).concat(ports.slice(0,1));
-        for(const port of order){
-          const p=shipTransporters.boardingPose(room,port.id);
-          if(!p||!habitat.canStand(p)||population.nearest(p,.92))continue;
+        const port=ports.find(item=>item.id===berthSelect.value);
+        const p=port&&shipTransporters.boardingPose(room,port.id);
+        if(p&&habitat.canStand(p)&&!population.nearest(p,.92)){
           enter(room.id,{...snapshot(),pose:p,yaw:p.yaw,facing:p.yaw,pitch:.045});
           focusFlightControls();persist();return;
         }
-        notifyPlayer('传送位有船员经过，请稍后靠近地面亮框。');return;
+        notifyPlayer('所选机位暂时无法站立，请稍候或走到相应亮框。');return;
       }
       if(!view)return;
       const sign=room.side===1?-1:1;
@@ -327,10 +328,14 @@
     const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
     function flightControls(){
       const berth=currentBerth();
+      const parkedAt=parkedPlanetName();
       const officer=nearbyDuty();dutyButton.hidden=!officer;
       if(officer)dutyButton.textContent='拜访'+officer.name;
       embarkButton.hidden=!berth;
-      if(berth)embarkButton.textContent=shuttleAway()?'登陆艇已着陆 · 查看艇位':berth.name+' · 乘廊车去登陆艇';
+      if(berth){
+        embarkButton.textContent=parkedAt?'L-01 停在'+parkedAt+' · 查看艇位':berth.slot+' 号 · 登艇去'+berth.destinationName;
+        if(!stage.dataset.consoleOpen)berthSelect.value=berth.id;
+      }
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
@@ -405,8 +410,15 @@
       if(force || currentRoomId!==(room?.id||null) || !room)placeCabinLamps(room);
       currentPlace = identity;
       currentRoomId = room?.id || null;
-      detailVisit.hidden=!workstationViews[currentRoomId]&&!shipTransporters.ports(room).length;
-      detailVisit.textContent=shipTransporters.ports(room).length?'前往传送位':currentRoomId==='machine'?'前往装备工位':'近看设备';
+      const ports=shipTransporters.ports(room),preferred=berthSelect.value;
+      berthPicker.hidden=!ports.length;
+      if(ports.length){
+        berthSelect.replaceChildren(...ports.map(p=>new Option(p.slot+' 号 · '+p.destinationName+' · '+p.landingSiteName,p.id)));
+        berthSelect.value=currentBerth()?.id||ports.find(p=>p.id===preferred)?.id||ports.find(p=>p.slot==='02')?.id||ports[0].id;
+        portGuide='航线：'+[...new Set(ports.map(p=>p.destinationName))].join(' ／ ')+' · 走进对应编号亮框后按 E';
+      }
+      detailVisit.hidden=!workstationViews[currentRoomId]&&!ports.length;
+      detailVisit.textContent=ports.length?'前往所选机位':currentRoomId==='machine'?'前往装备工位':'近看设备';
       if(currentRoomId==='machine')updateSamples();
       root.querySelector('[data-locate-room]').hidden=!currentRoomId;
       const levelName = place.levelName || habitat.levels.find(l=>l.id===place.level)?.name || '';
@@ -569,8 +581,9 @@
       guide.update(pose,goal(),active&&!lifts.riding);
       const ports=shipTransporters.ports(habitat.byId.get(currentRoomId));
       const berth=ports.length?currentBerth():null;
-      const direction=(goal()?guide.hint:'') || (berth?'已进入 '+berth.name+'　／　按 E 接驳舷侧登陆艇':
-        ports.length&&!flight.mounted?'前往克洛斯星 · 走进编号亮框，按 E 乘登船廊车。':'');
+      const atPort=berth?(parkedPlanetName()?'L-01 停在'+parkedPlanetName()+'　／　按 E 查看艇位':
+        berth.name+' · '+berth.destinationName+' · '+berth.landingSiteName+'　／　按 E 乘登船廊车'):'';
+      const direction=atPort||(goal()?guide.hint:'')||(ports.length&&!flight.mounted?portGuide:'');
       if(routeHint.textContent!==direction)routeHint.textContent=direction;
       routeHint.hidden=!direction||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
