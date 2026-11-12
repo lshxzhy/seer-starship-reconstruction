@@ -1,9 +1,13 @@
   // The carrier's orbital frame uses the habitat's installed metre coordinates.
   // The cradle, rail car and departure controller share the same berth transform.
+  function kloseCarrierStation(body){
+    const home=body.sites.find(s=>s.id==='grassland');
+    return body.point(home.lat+.18,home.lon+.05,145000);
+  }
   function createCarrierDock(T,world,body,room,berthId){
     const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
     const home=body.sites.find(s=>s.id==='grassland');
-    const center=body.point(home.lat+.18,home.lon+.05,145000);
+    const center=kloseCarrierStation(body);
     const radial=center.clone().normalize(),back=center.clone().sub(body.point(home.lat,home.lon)).normalize();
     const right=radial.clone().cross(back).normalize(),up=back.clone().cross(right).normalize();
     const orientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(right,up,back));

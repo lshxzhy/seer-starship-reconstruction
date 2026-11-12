@@ -40,6 +40,7 @@ function readSpiritTransfer(raw){
   if(raw.owned.some(id=>!seen.has(id))||[...raw.party,...raw.storage].some(p=>!owned.has(p.speciesId)))
     reject('持有的伙伴与图鉴收藏记录不一致。');
   if(raw.materials!==undefined&&(!object(raw.materials)||!uint(raw.materials.photo)||!uint(raw.materials.air)))reject('融合材料数量有误。');
+  if(raw.materials?.blackCrystal!==undefined&&!uint(raw.materials.blackCrystal,raw.bosses.includes(34)?1:0))reject('钢牙鲨的黑晶矿数量有误。');
   if(raw.bead!=null&&(!object(raw.bead)||!(raw.bead.phase==='fresh'&&raw.bead.readyAt===null||
       raw.bead.phase==='incubating'&&uint(raw.bead.readyAt)&&raw.bead.readyAt>0)))reject('元神珠的孵化记录有误。');
   if(raw.collectionRewardClaimed!==undefined&&typeof raw.collectionRewardClaimed!=='boolean')reject('图鉴奖励记录有误。');

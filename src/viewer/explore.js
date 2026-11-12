@@ -17,7 +17,7 @@
     }
     outerMeshes.push({part,source});
   });
-  const modes={board:'登舰',exterior:'外观',section:'纵剖',deck:'分层',planet:'克洛斯星'};
+  const modes={board:'登舰',exterior:'外观',section:'纵剖',deck:'分层',planet:'帕诺星系'};
   const regions=interiorModel.deckData;
   const deckSelect=root.querySelector('[data-deck]');
   const roomSelect=root.querySelector('[data-room]');
@@ -34,14 +34,16 @@
   const raycaster=new T.Raycaster();
   let selected=null, frame=0, lastTime=0, disposed=false;
   let stagedBoard=null, liveBoard=false, lastSaved='';
-  let stagedExpedition=null,parkedLanding=null;
+  let stagedExpedition=null,parkedLanding=null,dockedVehicle=null;
   let spiritArchive=null;
   const recentSaves=[];
+  const voyageStore=window.openai?.setWidgetState?null:createVoyageStore();
   const shuttleAway=()=>parkedLanding?.vehicle?.phase==='landed';
   const boarding=createBoardingController(requestDraw,save,shuttleAway);
   function travelToShip(id,pose){
     const trip=expedition.active?expedition.snapshot():null;
     if(trip){
+      if(trip.vehicle.phase==='docked')dockedVehicle=trip.vehicle;
       parkedLanding=trip.vehicle.phase==='landed'?{
         origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId},vehicle:trip.vehicle,ramp:expedition.parkedRamp()}:null;
     }
@@ -51,16 +53,19 @@
     Object.assign(state,{mode:'board',room:habitat.byId.has(id)?id:'',located:'',rotate:false,wire:false});
     frameSelection();syncScene();save();
   }
-  function travelToPlanet(id,approachMushroom=false){
+  function travelToPlanet(id,approachMushroom=false,planetId='klose'){
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:2,phase:'surface',mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle,door:1};
+    stagedExpedition={format:2,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
   }
-  const cockpit=createFlightDeck(boarding,travelToShip,requestDraw,travelToPlanet,()=>parkedLanding?.ramp);
+  const cockpit=createFlightDeck(boarding,travelToShip,requestDraw,travelToPlanet,
+    ()=>expedition.active?expedition.parkedRamp():parkedLanding?.ramp,
+    (svg,selected,onSelect)=>expedition.drawSystemChart(svg,selected,onSelect,parkedLanding?.vehicle||dockedVehicle));
   const expedition=createPlanetExpedition(requestDraw,save,origin=>{
+    dockedVehicle=expedition.snapshot().vehicle;
     const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
     habitat.spawn(roomId);
     const berth=shipTransporters.boardingPose(habitat.byId.get(roomId),origin?.berthId);
@@ -82,6 +87,7 @@
     setFlameTool:value=>{boarding.setFlameTool(value);expedition.setFlameTool(value);},
     visitMushroomSite:id=>{
       if(id==='laboratory'){travelToShip('laboratory');return;}
+      if(id==='ocean-floor'){travelToPlanet(id,false,'ocean');return;}
       if(!expedition.approachForestBoss())travelToPlanet('forest',true);
       canvas.focus({preventScroll:true});
     },
@@ -113,7 +119,7 @@
     const berth=boarding.station();
     if(!berth||berth.destination!==KLOSE_WORLD.id||boarding.commsOpen||cockpit.isOpen)return;
     if(shuttleAway()){cockpit.openMap('shuttle-ramp');return;}
-    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'transfer'};
+    stagedExpedition={origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},phase:'transfer',vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
   });
@@ -232,7 +238,8 @@
   function restore(saved){
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
-    boarding.restorePack(saved.pack);
+    if(saved.pack)boarding.restorePack(saved.pack);
+    dockedVehicle=saved.dockedVehicle?.phase==='docked'?saved.dockedVehicle:null;
     spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
@@ -253,17 +260,18 @@
   }
   function save(requireArchive=false){
     const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
-      expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding,spiritArchive};
+      expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding,dockedVehicle:state.mode==='planet'||parkedLanding?null:dockedVehicle,spiritArchive};
     if(requireArchive===true&&new TextEncoder().encode(JSON.stringify(privateContent)).length>15850){
       throw new Error('聊天存档空间不足，请在本机游戏中继续扩充队伍。');
     }
+    voyageStore?.write(privateContent);
     lastSaved=JSON.stringify(privateContent);
     if(window.openai?.setWidgetState){
       recentSaves.push(lastSaved);
       if(recentSaves.length>24)recentSaves.shift();
     }
     const room=state.mode==='planet'?tag.textContent:state.mode==='board'?habitat.byId.get(boarding.roomId)?.name:selected?.name;
-    const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:modes[state.mode],room:room||null},privateContent});
+    const promise=window.openai?.setWidgetState?.({modelContent:{model:'赛尔号扩建舰',view:state.mode==='planet'?expedition.planetName:modes[state.mode],room:room||null},privateContent});
     if(requireArchive===true)return promise;
     promise?.catch?.(()=>{});
   }
@@ -395,11 +403,13 @@
   }
   ship.updateMatrixWorld(true);
   frameSelection();
-  restore(window.openai?.widgetState?.privateContent);
+  const savedVoyage=voyageStore?.read(saved=>{restore(saved);syncScene();resize();spiritTerminal.refreshFollower();});
+  restore(window.openai?.widgetState?.privateContent||savedVoyage);
   window.addEventListener('openai:set_globals',loadHostState);
   const observer=new ResizeObserver(resize);observer.observe(stage);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();showError('图形上下文已中断，请重新打开模型。');});
   window.addEventListener('pagehide',e=>{
+    if(voyageStore)save();
     if(e.persisted)return;
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
     spiritTerminal.dispose();expedition.dispose();cockpit.dispose();boarding.dispose();

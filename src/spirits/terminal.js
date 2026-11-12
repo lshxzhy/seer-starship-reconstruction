@@ -16,6 +16,10 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const name=KLOSE_WORLD.sites.find(s=>s.id===site)?.name;
     for(const [id,,,,role] of rows)addOrigin(id,name+' · '+({rare:'特殊遭遇',boss:'SPT 首领',event:'历史活动观察',wild:'野生'})[role]);
   }
+  for(const habitat of Object.values(OCEAN_HABITATS)){
+    for(const id of habitat.animals)addOrigin(id,habitat.name+' · '+(id===34?'SPT 首领':'野生'));
+  }
+  addOrigin(108,'海洋星 · 三层轮换的历史稀有遭遇');
   const safariMethods={field:'场内可见',random:'步行遭遇',fish:'垂钓',tree:'摇树',bear:'闪光晶石'};
   for(const [key,list] of Object.entries(SEER_SPIRIT_DATA.safari)){
     for(const id of list)addOrigin(id,'2011 年克洛斯湿地捕猎场 · '+safariMethods[key]);
@@ -28,7 +32,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(evolution)addOrigin(evolution[1],game.species(id,false).name+'达到 '+evolution[0]+' 级进化');
   }
   const statNames=['体力','攻击','防御','特攻','特防','速度'];
-  let page='party',active=false,busy=false,recordReady=false,revision=0,opener=null,encounter=null;
+  let page='party',active=false,busy=false,recordReady=false,revision=0,opener=null,encounter=null,chiefId=47;
   let selection=null,starter=1,query='',offset=0,dexId=1,stageJob=null,generation=0;
   const period=20;
   let huntTimer=0,atFieldGate=false;
@@ -78,11 +82,13 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       }
       revision=committed.record.revision;
       if(action.type==='safari'&&action.op==='enter'&&atFieldGate){enterWetland();atFieldGate=false;}
-      if(action.type!=='safari'&&(result.outcome==='won'||result.outcome==='caught')){
+      if(action.type!=='safari'&&['won','caught','escapedWild'].includes(result.outcome)){
         if(previous?.encounterKey)withdraw(previous.encounterKey);encounter=null;
       }
       if(result.outcome&&action.type!=='safari'){page='party';selection=game.view().party[0]?.uid??null;}
-      if(result.outcome==='won'&&previous?.kind==='boss'&&!before.bosses.includes(47))page='spt';
+      if(result.outcome==='won'&&previous?.kind==='boss'&&!before.bosses.includes(previous.enemy.speciesId)){
+        chiefId=previous.enemy.speciesId;page='spt';
+      }
       if(action.type==='safari')page='safari';
       if(action.type==='starter')page=encounter?'field':'party';
       if(action.type==='withdraw')page='party';
@@ -163,7 +169,22 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     close(false);visitMushroomSite(site);
     if(site==='laboratory')open(null,canvas,{op:'spt'});
   }
-  function mushroomMission(host,state){
+  function sptMission(host,state){
+    const switcher=el(host,'div','spirit-row');
+    for(const [id,label] of [[47,'克洛斯星 · 蘑菇怪'],[34,'海洋星 · 钢牙鲨']]){
+      button(switcher,label,()=>{chiefId=id;render();},{selected:chiefId===id,action:'spt-'+id});
+    }
+    if(chiefId===34){
+      const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
+      figure(art,[{id:34,name:'钢牙鲨'}]);
+      el(detail,'span','spirit-catalog-number','#034　水系　·　SPT 先锋队');
+      el(detail,'h3','spirit-name','钢牙鲨');
+      el(detail,'p','','海洋星海底　·　Lv.25　·　200 体力');
+      el(detail,'p','spirit-sub',state.defeatedShark?'已完成首胜　·　持有黑晶矿 ×'+state.materials.blackCrystal:'首胜奖励　·　黑晶矿 ×1');
+      el(detail,'p','','深水区可以捕获利牙鱼。将它培养到 20 级，会进化成自己的钢牙鲨。');
+      button(detail,'前往海底 · 钢牙鲨',()=>travelSpt('ocean-floor'),{primary:true,action:'spt-ocean-floor'});
+      return;
+    }
     const lab=siteId()==='laboratory';
     const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
     figure(art,[{id:47,name:'蘑菇怪'}]);
@@ -191,12 +212,12 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const columns=el(host,'div','spirit-columns'),art=el(columns,'div'),detail=el(columns,'div');
     figure(art,[{id:info.id,name:info.name}]);el(detail,'span','spirit-catalog-number',number(info.id)+'　'+types(info));
     el(detail,'h3','spirit-name',info.name);el(detail,'p','',role+'　Lv.'+encounter.level);
-    el(detail,'p','spirit-sub',(KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||'克洛斯星')+
+    el(detail,'p','spirit-sub',(OCEAN_HABITATS[encounter.siteId]?.name||KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||locationName())+
       (encounter.kind==='boss'?'　·　首领挑战':encounter.kind==='event'?'　·　历史活动观察':'　·　可使用精灵胶囊'));
     const row=el(detail,'div','spirit-actions');
     if(encounter.fieldLock){
       el(detail,'p','spirit-sub',encounter.fieldLock);
-      if(encounter.kind==='boss'&&!state.flameTool)button(row,'去实验室领取喷射器',()=>travelSpt('laboratory'),{action:'spt-lab'});
+      if(encounter.speciesId===47&&!state.flameTool)button(row,'去实验室领取喷射器',()=>travelSpt('laboratory'),{action:'spt-lab'});
     }
     if(encounter.kind!=='event'&&!encounter.fieldLock){
       if(state.party.length)button(row,encounter.kind==='boss'?'挑战首领':'进入对战',()=>act({type:'encounter',encounter:{key:encounter.key,speciesId:info.id,level:encounter.level,kind:encounter.kind,siteId:encounter.siteId}}),{primary:true,action:'encounter'});
@@ -237,7 +258,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       el(info,'span','spirit-catalog-number',number(s.id)+'　'+types(s)+'　'+(s.owned?'已获得':s.seen?'已观察':'未发现'));el(info,'h3','spirit-name',s.name);
       const where=origins.get(s.id);
       el(info,'p','spirit-sub',where?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
-      if(s.id===47)button(info,'查看 SPT 首领任务',()=>{page='spt';render();},{action:'mushroom-spt'});
+      if(s.id===47||s.id===34)button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:s.id===47?'mushroom-spt':'shark-spt'});
       const row=SEER_SPIRIT_DATA.index.find(item=>item[0]===s.id);
       if(row?.[3]||row?.[4])el(info,'p','spirit-sub',[row[3]&&('身高 '+row[3]+' cm'),row[4]&&('体重 '+row[4]+' kg')].filter(Boolean).join('　'));
       const artLink=el(info,'a','spirit-source','查看原版头像');artLink.href='https://seerh5.61.com/resource/assets/pet/head/'+s.id+'.png';
@@ -368,7 +389,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(battle)battlePage(host,state);
     else if(page==='field'&&encounter)fieldPage(host,state);
     else if(page==='dex')dexPage(host);
-    else if(page==='spt')mushroomMission(host,state);
+    else if(page==='spt')sptMission(host,state);
     else if(page==='lab')labPage(host,state);
     else if(page==='safari'){
       renderWetlandCapture(host,state,{el,button,figure,act,chatWith,siteId:()=>atFieldGate?'wetland':siteId()});
@@ -392,6 +413,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(busy)return;
     if(active){close();return;}
     const turn=++generation;active=true;opener=trigger||canvas;encounter=wild||null;page=activity?.op==='spt'?'spt':activity?'safari':wild?'field':'party';
+    chiefId=OCEAN_HABITATS[siteId()]?34:47;
     atFieldGate=activity?.op==='enter'&&activity.destination==='wetland';
     overlay.hidden=false;stage.dataset.consoleOpen='spirits';recordReady=false;
     tabs.replaceChildren();content.replaceChildren();report('正在读取精灵背包…');dismiss.focus({preventScroll:true});

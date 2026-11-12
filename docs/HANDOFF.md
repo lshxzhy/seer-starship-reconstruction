@@ -4,6 +4,8 @@
 
 ## 项目文件从哪里改
 
+两星的初始投影、当前日心位置及星图见 `src/galaxy/pano-system.js`。航行中只有一份 L-01 速度与姿态，星际段和两星的局部米制坐标由 `pano-transfer.js` 换算，近地着陆继续调用 `shuttle-flight.js`。人员传送只换观察星及站点，停放位置从艇的 `planetId` 恢复。旧版航程若无该字段则归入克洛斯星。海洋星地形、平台与水下能见度见 `ocean-surface.js`，水下精灵见 `ocean-ecology.js`。单文件游戏通过外层文档保存导航，本机版在同源浏览器保存，聊天版使用原宿主快照。[飞行与水下场景](帕诺轨道与海洋星.md)
+
 蘑菇怪涉及四处。区域名单 `KLOSE_TERRITORIES` 同时供图鉴和实地生成使用。首领的护膜、照射窗口及成长前后造型在 `klose-creatures.js`，舰内与地表共用头部装备模型 `src/spirits/field-tool.js`。玩家装备、首胜、积累经验与普通战斗经验由 `src/spirits/system.js` 结算。首领的 100 体力只用于林间挑战，队伍和仓库中同名精灵按其个体计算能力。
 
 2011 年湿地的 37 种精灵按出现方式写在图鉴的 `safari` 表。`src/galaxy/klose-safari.js` 管理地面实体、入口、树木和钓竿，`src/spirits/safari-rules.js` 管理每场的限时、专用胶囊、行动与收服，`safari-terminal.js` 展示当前场次。调整地点或道具时要保留场次的截止时间、消耗和遭遇身份。三维造型入口 `createCompanionFigure` 由对战、图鉴和实地跟随共同调用。

@@ -1,6 +1,6 @@
 // Original companion sculpts. Forward is +Z, feet are on y=0.
 function createCompanionFigure(T,id){
-  return createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
+  return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
 function createPartnerFigure(T,id){
   const root=new T.Group(),body=new T.Group();

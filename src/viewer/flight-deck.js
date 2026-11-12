@@ -1,4 +1,4 @@
-  function createFlightDeck(boarding,onTravel,requestFrame,onPlanetTravel,parkedRamp){
+  function createFlightDeck(boarding,onTravel,requestFrame,onPlanetTravel,parkedRamp,drawSystemChart){
     const overlay=root.querySelector('[data-overlay]'),dialog=overlay.querySelector('[role="dialog"]');
     const title=overlay.querySelector('[data-panel-title]'),dismiss=overlay.querySelector('[data-dismiss]');
     const dock=root.querySelector('.ship-dock'),triggers=[...dock.querySelectorAll('[data-console]')];
@@ -8,9 +8,9 @@
     const getState=()=>boarding.consoleState();
     const exchange=createSupplyExchange({container:pages.get('exchange'),getState,onDeliver:boarding.deliver,onClose:close});
     root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
-    const map=createShipMap({container:pages.get('map'),getState,parkedRamp,
+    const map=createShipMap({container:pages.get('map'),getState,parkedRamp,drawSystemChart,
       onTravel:(id,pose)=>{close(false);onTravel(id,pose);canvas.focus({preventScroll:true});},
-      onPlanetTravel:id=>{close(false);onPlanetTravel(id);canvas.focus({preventScroll:true});}});
+      onPlanetTravel:(id,planetId)=>{close(false);onPlanetTravel(id,false,planetId);canvas.focus({preventScroll:true});}});
     const inventory=createPilotInventory({container:pages.get('bag'),getState,onUse:id=>{
       if(id==='map'||id==='locateDrill'){open('map',id==='locateDrill'?'machine':null);return;}
       boarding.useItem(id);
@@ -36,7 +36,7 @@
       current=key;stage.dataset.consoleOpen=key;
       for(const [id,page] of pages)page.hidden=key!==id;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded',String(trigger.dataset.console===key));
-      overlay.hidden=false;title.textContent=fromSurface?'赛尔号舰内图':labels[key];
+      overlay.hidden=false;title.textContent=fromSurface?'舰载导航图':labels[key];
       if(key==='map')map.open(target);
       if(key==='bag')inventory.open();
       if(key==='exchange')exchange.open();

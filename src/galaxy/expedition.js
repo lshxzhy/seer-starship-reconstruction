@@ -12,10 +12,10 @@
     const transportButton=atlas.querySelector('[data-site-transport]'),shipMapButton=atlas.querySelector('[data-browse-ship]');
     const optics=nav.querySelector('[data-flight-view]'),hand=stage.querySelector('[data-shuttle-hand]');
     const targetOnly=atlas.querySelector('[data-target-only]'),unseat=atlas.querySelector('[data-unseat]');
-    const sites=KLOSE_WORLD.sites,groundSites=kloseMapDestinations();
-    const byId=new Map(groundSites.map(s=>[s.id,s])),home=byId.get('grassland');
-    const walkingLinks=[...KLOSE_WORLD.routes,...groundSites.filter(s=>s.area).map(s=>[s.area,s.id])];
-    const radius=KLOSE_WORLD.radius,clamp=T.MathUtils.clamp;
+    const planets={klose:KLOSE_WORLD,ocean:OCEAN_WORLD},bodies={};
+    let definition=KLOSE_WORLD,sites=definition.sites,groundSites=kloseMapDestinations(),radius=definition.radius;
+    let byId=new Map(groundSites.map(s=>[s.id,s])),home=sites[0],walkingLinks=[];
+    const clamp=T.MathUtils.clamp;
     // The exposed sky strip in maps 10, 12, 550 and 943 sets the local horizon.
     // In enclosed areas, extend the distant canopy or cave mouth into the haze.
     function air(horizon,zenith,haze,clouds,sun,fill){
@@ -29,13 +29,18 @@
       core:air(0x473a31,0x262026,0x50453e,0,.18,.30),
       wetland:air(0xffc990,0xc65e83,0xe6a27f,.20,.98,.55),
       flame:air(0xffaa64,0x963669,0xb57872,.14,.90,.49),
-      sanctuary:air(0x99d8f3,0x326dc4,0x8ab8dd,.33,.99,.54)
+      sanctuary:air(0x99d8f3,0x326dc4,0x8ab8dd,.33,.99,.54),
+      'ocean-shallows':air(0x88d8dc,0x397ca1,0x65aeb8,.24,.9,.7),
+      'ocean-depths':air(0x3c7e9c,0x18416c,0x397d91,.06,.63,.70),
+      'ocean-floor':air(0x22556b,0x142f4b,0x255565,.01,.62,.75),
+      'ocean-sanctum':air(0x245a76,0x10273c,0x234354,0,.56,.71)
     };
-    const airWeights=new Float32Array(sites.length);
+    let airWeights=new Float32Array(sites.length);
     let lastAirLat,lastAirLon;
     const keys=new Set(),touch=new Map(),pendingSteps=new Map(),events=new AbortController();
     const listen=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:events.signal});
-    let world,body,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight;
+    let world,body,pano,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight;
+    let dockCenter=null;
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
     let craft,dock,flight,feet=new T.Vector3(),door=1,gear=1,external=false,transferSign=1;
@@ -51,14 +56,35 @@
     observer.observe(stage);
     const keyNames=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','Space','KeyC','KeyX','KeyQ','KeyR']);
     function resetInput(){keys.clear();touch.clear();pendingSteps.clear();drag=null;lastTime=null;}
-    const displacement=kloseDisplacement;
+    const displacement=(a,b)=>kloseDisplacement(a,b,radius);
+    function usePlanet(id){
+      body?.setMode('hidden');body=bodies[id]||bodies.klose;
+      definition=planets[id]||KLOSE_WORLD;sites=definition.sites;radius=definition.radius;
+      groundSites=kloseMapDestinations(definition);byId=new Map(groundSites.map(s=>[s.id,s]));home=sites[0];
+      walkingLinks=[...definition.routes,...groundSites.filter(s=>s.area).map(s=>[s.area,s.id])];
+      airWeights=new Float32Array(sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
+      stage.dataset.planet=definition.id;
+      if(sky){
+        const rings=definition.rings;
+        sky.userData.ringNormal.fromArray(rings?.normal||[0,0,0]);
+        sky.material.uniforms.ringBounds.value.set(rings?.inner||0,rings?.outer||0);
+      }
+    }
+    function localVehicle(){return flight?.planetId===definition.id;}
+    function destination(id){
+      if(id==='dock')return {planetId:'klose',name:'赛尔号泊位'};
+      for(const def of Object.values(planets)){
+        const site=def.landingSites.find(s=>s.id===id);
+        if(site)return {...site,planetId:def.id};
+      }
+      return null;
+    }
     function nearestSite(at){
       return groundSites.reduce((a,b)=>displacement(at,a).distance<=displacement(at,b).distance?a:b);
     }
     function groundDestination(id){
       if(id!=='shuttle-ramp')return byId.get(id);
-      if(flight?.status().phase!=='landed')return null;
-      return {id,name:'登陆艇尾坡',description:'L-01 当前停放的位置',...rampApproach(1.1)};
+      return localVehicle()?parkedRamp():null;
     }
     function plotRoute(id){
       const destination=groundDestination(id);
@@ -85,7 +111,8 @@
     function buildWorld(){
       if(world)return;
       world=new T.Scene();world.background=new T.Color(0x071322);view=new T.PerspectiveCamera(49,1,.1,radius*8);
-      body=createKloseSurface(T,world);
+      bodies.klose=createKloseSurface(T,world);bodies.ocean=createOceanSurface(T,world);
+      pano=createPanoSystem(T,world);usePlanet('klose');
       body.setSafariState(safariState);
       craft=createLandingShuttle(T);world.add(craft.root);
       local=new T.Group();world.add(local);
@@ -155,7 +182,7 @@
           total+=airWeights[i];
         }
         // Return to the open grassland sky beyond the documented sites.
-        const open=atmosphere.grassland;
+        const open=atmosphere[home.id];
         let weight=Math.max(0,1-total);
         u.horizon.value.copy(open.horizon);u.zenith.value.copy(open.zenith);world.fog.color.copy(open.haze);
         let sun=open.sun*weight,fill=open.fill*weight,clouds=open.clouds*weight,moon=0;
@@ -179,7 +206,7 @@
     function environment(at,agl,walking,shuttleStatus){
       const mode=walking?'surface':'flight',density=1-T.MathUtils.smoothstep(agl,1200,20000);
       if(mode!==shownMode){body.setMode(mode);shownMode=mode;}
-      body.update(at.lat,at.lon,frameDt,agl,shuttleStatus);
+      body.update(at.lat,at.lon,frameDt,agl,localVehicle()?shuttleStatus:null);
       const f=body.frame(at.lat,at.lon),ground=body.point(at.lat,at.lon);
       if(!world.fog)world.fog=new T.FogExp2(0x84655e,.00125);
       position=at;lightSurface(f,ground);
@@ -187,8 +214,16 @@
       sky.material.uniforms.airDensity.value=density;
       world.background.setHex(0x071322);
       world.fog.density=.00125*density/(1+agl/160);
+      const depth=walking&&body.waterDepth?body.waterDepth(at.lat,at.lon):0;
+      if(depth>1.7){
+        sky.visible=false;stars.visible=false;world.background.copy(world.fog.color);
+        world.fog.density=.009+.00024*Math.min(70,depth);
+      }
       lamp.castShadow=agl<65;
-      if(agl>1400){lamp.position.copy(daylight).multiplyScalar(radius*3);lamp.target.position.set(0,0,0);}
+      if(agl>1400){
+        lamp.position.copy(pano.offset(definition.id,'star',flight.orbitTime)).normalize().multiplyScalar(radius*3);
+        lamp.target.position.set(0,0,0);
+      }
       return f;
     }
     function validPosition(p){
@@ -200,11 +235,13 @@
       if(!shipTransporters.ports(room).length){room=habitat.byId.get('teleport');habitat.spawn(room.id);}
       const berth=shipTransporters.ports(room).find(p=>p.id===origin?.berthId)||shipTransporters.ports(room)[0];
       origin={...origin,roomId:room.id,berthId:berth.id};
-      dock?.dispose();dock=createCarrierDock(T,world,body,room,berth.id);
+      dock?.dispose();dock=createCarrierDock(T,world,bodies.klose,room,berth.id);
+      dockCenter=dock.root.position.clone();
     }
     function open(saved){
       buildWorld();origin=saved.origin;configureDock();
-      flight=createShuttleFlight(T,body,dock,saved.vehicle);
+      flight=createPanoFlight(T,bodies,dock,pano,saved.vehicle);
+      usePlanet(saved.phase==='surface'&&planets[saved.planetId]?saved.planetId:flight.planetId);
       const current=saved.format===2;
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
@@ -212,8 +249,7 @@
       door=clamp(current&&Number.isFinite(saved.door)?saved.door:1,0,1);gear=flight.status().phase==='flying'?0:1;
       feet.set(0,0,11.8);
       if(current&&Array.isArray(saved.feet)&&saved.feet.length===3&&saved.feet.every(Number.isFinite))feet.fromArray(saved.feet);
-      navTarget=typeof saved.navTarget==='string'&&(saved.navTarget==='dock'||body.landingSite(saved.navTarget))
-        ?saved.navTarget:'grassland';
+      navTarget=destination(saved.navTarget)?saved.navTarget:home.id;
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
@@ -238,16 +274,19 @@
       nav.hidden=pad.hidden=atlas.hidden=hand.hidden=hint.hidden=watch.hidden=encounterButton.hidden=huntButton.hidden=true;
       local.visible=false;drill.hide();craft.root.visible=false;
       escort?.hide();
-      delete stage.dataset.domain;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
+      delete stage.dataset.domain;delete stage.dataset.planet;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
-      return {format:2,origin,phase,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
+      return {format:2,origin,phase,planetId:definition.id,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
         door,transfer:dock.travel,transferSign,external,navTarget,pending,arrivedOnDeck,yaw,pitch,eye,facing,targetId};
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
-    function flightTarget(){return navTarget==='dock'?dock.position:sitePoint(navTarget);}
-    function sitePoint(id){const s=body.landingSite(id)||body.landingSite('grassland');return body.point(s.lat,s.lon);}
-    function targetName(){return navTarget==='dock'?'赛尔号泊位':body.landingSite(navTarget)?.name||'草原着陆区';}
+    function flightTarget(id=navTarget){
+      const s=destination(id)||destination(home.id);
+      const p=id==='dock'?dock.position.clone():bodies[s.planetId].point(s.lat,s.lon);
+      return p.add(pano.offset(flight.planetId,s.planetId,flight.orbitTime));
+    }
+    function targetName(){return destination(navTarget)?.name||home.name;}
     function setPhase(next,keepWalking=false){
       phase=next;
       if(keepWalking){pendingSteps.clear();lastTime=null;}else resetInput();
@@ -257,13 +296,16 @@
     function rampFoot(){return vec(...craft.layout.rampEnd).applyQuaternion(flight.quaternion).add(flight.position);}
     function rampApproach(metres){
       const ground=spherical(rampFoot()),out=vec(0,0,1).applyQuaternion(flight.quaternion);
-      const frame=body.frame(ground.lat,ground.lon);
-      return body.move(ground.lat,ground.lon,metres*out.dot(frame.east),metres*out.dot(frame.north));
+      const groundBody=bodies[flight.planetId],frame=groundBody.frame(ground.lat,ground.lon);
+      return groundBody.move(ground.lat,ground.lon,metres*out.dot(frame.east),metres*out.dot(frame.north));
+    }
+    function parkedRamp(){
+      return flight?.status().phase==='landed'?{id:'shuttle-ramp',planetId:flight.planetId,name:'登陆艇尾坡',description:'L-01 当前停放的位置',...rampApproach(1.1)}:null;
     }
     function relocate(id,approachMushroom=false){
       const site=groundDestination(id);
       if(!site)return;
-      const parked=flight.status().phase==='landed';
+      const parked=localVehicle()&&flight.status().phase==='landed';
       const nearHull=parked&&body.point(site.lat,site.lon).distanceTo(flight.position)<9;
       const at=nearHull?rampApproach(1.1):site;
       // The authored scene centres are clear footpaths, including the chamber
@@ -286,7 +328,7 @@
       plotRoute(null);resetInput();
     }
     function playerPoint(){return body.point(position.lat,position.lon);}
-    function closeToRamp(){return flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
+    function closeToRamp(){return localVehicle()&&flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
     function updateUI(){
       if(phase==='hidden')return;
       const s=flight.status(),walking=phase==='surface',seated=phase==='helm',aboard=phase==='cabin';
@@ -297,7 +339,7 @@
       land.hidden=!(seated||aboard&&(zone==='seat'||dockDoor)||walking&&closeToRamp());
       land.textContent=walking?'沿尾坡登艇':aboard?(dockDoor?'乘廊车回舰':'进入驾驶席'):
         pending?'正在锁舱':s.auto?'手动接管':arrivedOnDeck&&s.phase!=='flying'?'离席下船':docked?'手动离泊':s.phase==='landed'?'手动起飞':s.canCapture?'锁定对接口':s.canLand?'就地着陆':'制动';
-      recall.hidden=!(walking&&s.phase==='landed'||seated&&!pending&&!s.auto);
+      recall.hidden=!(walking&&localVehicle()&&s.phase==='landed'||seated&&!pending&&!s.auto);
       recall.textContent=walking?'定位登陆艇':'自动飞往'+targetName();
       optics.hidden=!seated;optics.textContent=external?'驾驶舱视角':'艇外视角';
       pad.hidden=phase==='transfer';hand.hidden=!seated;
@@ -321,7 +363,7 @@
             '　／　'+targetName()+' '+distanceText(range)+' '+mark;
         }
       }else{
-        tag.textContent=site?.name||'克洛斯星 · 野外';status.textContent='SE-00001 · 地表';
+        tag.textContent=site?.name||definition.name+' · 野外';status.textContent='SE-00001 · '+(walking&&body.waterDepth?.(position.lat,position.lon)>1.7?'水下':'地表');
       }
       const nearby=walking?nearbySpirit():null;
       const attraction=walking?safariAction(null):null;
@@ -335,7 +377,7 @@
       if(phase!=='surface'||feedback&&performance.now()<feedbackUntil){
         if(feedback&&performance.now()<feedbackUntil)hint.textContent=feedback;return;
       }
-      if(observedBird!==null&&nearby){hint.textContent=String(nearby.speciesId).padStart(3,'0')+' '+nearby.name+'　／　'+(site?.name||'克洛斯星');return;}
+      if(observedBird!==null&&nearby){hint.textContent=String(nearby.speciesId).padStart(3,'0')+' '+nearby.name+'　／　'+(site?.name||definition.name);return;}
       while(path.length&&displacement(position,groundDestination(path[0])).distance<(path[0]==='shuttle-ramp'?1.65:9)){
         arrival=groundDestination(path.shift()).name;
         if(!path.length){targetId=null;persist();}
@@ -354,7 +396,8 @@
       if(kind==='manual'){flight.manual();updateUI();persist();return;}
       if(flight.status().phase!=='flying'&&door>0){pending=kind;updateUI();requestFrame();persist();return;}
       if(kind==='auto'){
-        if(!flight.autopilot(navTarget==='dock'?'dock':'surface',navTarget==='dock'?undefined:body.landingSite(navTarget)))
+        const dest=destination(navTarget);
+        if(!dest||!flight.autopilot(navTarget==='dock'?'dock':'surface',navTarget==='dock'?undefined:dest,dest.planetId))
           say('已位于目标，或该处暂时无法进场');
       }else flight.launch();
       updateUI();requestFrame();persist();
@@ -407,7 +450,7 @@
       const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015);
 
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
-      if(flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();
+      if(localVehicle()&&flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();
       else escort.surface(body,position,eye?yaw:facing,dt,eye);
       const dir=f.north.clone().multiplyScalar(Math.cos(yaw)).addScaledVector(f.east,-Math.sin(yaw));
       const aim=p.clone().addScaledVector(f.up,eye?seerRobots.eyeHeight:1.08);
@@ -419,6 +462,7 @@
         const behind=body.move(position.lat,position.lon,Math.sin(yaw)*back,-Math.cos(yaw)*back);
         const minHeight=body.height(behind.lat,behind.lon)-body.height(position.lat,position.lon)+.35;
         view.position.copy(aim).addScaledVector(dir,-back).addScaledVector(f.up,Math.max(minHeight-1.08,boom*Math.sin(angle)));
+        body.clipCamera?.(aim,view.position);
         view.lookAt(aim.clone().addScaledVector(dir,1.35));
       }
       const side=eye?.98:1.45,forward=eye?2.5:-.24;
@@ -431,12 +475,12 @@
           const aim=bird.focusPoint;
           const distance=Math.max(1.45,(bird.size||.42)*2.4);
           if(bird.kind==='boss'){
-            const bearing=displacement(bird,position).bearing;
+            const bearing=bird.portraitBearing??displacement(bird,position).bearing;
             view.position.copy(aim).addScaledVector(f.north,Math.cos(bearing)*distance)
               .addScaledVector(f.east,Math.sin(bearing)*distance).addScaledVector(f.up,distance*.19);
             local.visible=false;escort.hide();
           }else view.position.copy(aim).addScaledVector(f.south,distance).addScaledVector(f.east,distance*.58).addScaledVector(f.up,distance*.35);
-          view.lookAt(aim);
+          body.clipCamera?.(aim,view.position);view.lookAt(aim);
         }else observedBird=null;
       }
       sky.position.copy(view.position);sky.quaternion.copy(f.quaternion);sky.scale.setScalar(1800);
@@ -446,7 +490,7 @@
       const len=Math.hypot(forward,side);if(!len||!metres)return;
       const east=(side*Math.cos(yaw)-forward*Math.sin(yaw))/len,north=(side*Math.sin(yaw)+forward*Math.cos(yaw))/len;
       const next=body.walk(position.lat,position.lon,east*metres,north*metres);
-      if(flight.status().phase==='landed'){
+      if(localVehicle()&&flight.status().phase==='landed'){
         const q=body.point(next.lat,next.lon).sub(flight.position).applyQuaternion(originRotation.copy(flight.quaternion).invert());
         const tip=craft.layout.rampEnd[2];
         if(Math.abs(q.y)<4){
@@ -525,8 +569,8 @@
     function drawWorld(agl,walking){
       const above=agl>1800&&!walking,curve=renderer.toneMapping,clear=renderer.autoClear;
       const back=world.background,visibleLocal=local.visible,visibleSky=sky.visible,visibleStars=stars.visible;
-      const nearDock=flight.position.distanceTo(dock.position)<1800;
-      const viewFar=Math.max(radius*3+agl,view.position.length()+radius*6);
+      const nearDock=definition.id==='klose'&&localVehicle()&&flight.position.distanceTo(dock.position)<1800;
+      const viewFar=Math.max(pano.far,view.position.length()+radius*6);
       renderer.setRenderTarget(null);renderer.toneMapping=T.NoToneMapping;
       try{
         if(above){
@@ -535,15 +579,16 @@
           local.visible=craft.root.visible=false;dock.root.visible=!nearDock&&dockVisible;
           setLens(Math.max(3,agl*.0005),viewFar);renderer.render(world,view);
           renderer.autoClear=false;renderer.clearDepth();world.background=null;
-          body.root.visible=sky.visible=stars.visible=false;local.visible=visibleLocal;craft.root.visible=true;
+          pano.root.visible=body.root.visible=sky.visible=stars.visible=false;local.visible=visibleLocal;craft.root.visible=true;
           dock.root.visible=nearDock;setLens(.055,3200);renderer.render(world,view);
         }else{
+          pano.root.visible=false;
           setLens(.075,walking?7000:Math.max(11000,Math.sqrt(2*radius*(agl+8))*1.45));
           renderer.render(world,view);
         }
       }finally{
         renderer.autoClear=clear;renderer.toneMapping=curve;world.background=back;
-        local.visible=visibleLocal;body.root.visible=true;craft.root.visible=true;
+        pano.root.visible=true;local.visible=visibleLocal;body.root.visible=true;craft.root.visible=localVehicle();
         dock.root.visible=dockVisible;sky.visible=visibleSky;stars.visible=visibleStars;
       }
     }
@@ -569,14 +614,19 @@
         strafe:axis('KeyR','KeyQ'),pitch:axis('ArrowUp','ArrowDown'),lift:axis('Space','KeyC'),
         boost:pressed('ShiftLeft')||pressed('ShiftRight'),brake:pressed('KeyX')||time<brakeUntil}:{});
       s=flight.status();
+      if(phase!=='surface'&&definition.id!==flight.planetId)usePlanet(flight.planetId);
+      pano.update(definition.id,flight.orbitTime,{showOrbits:false});
+      dock.root.position.copy(dockCenter).add(pano.offset(definition.id,'klose',flight.orbitTime));
+      dock.root.updateMatrixWorld(true);
       if(s.phase!==previousFlight){
         arrivedOnDeck=s.phase!=='flying';
         if(s.phase==='landed')navTarget='dock';else if(s.phase==='docked')navTarget='grassland';
         previousFlight=s.phase;persist();
       }
-      const wantGear=s.phase!=='flying'||s.clearance<90||flight.position.distanceTo(dock.position)<170?1:0;
+      const wantGear=s.phase!=='flying'||s.clearance<90||(flight.planetId==='klose'&&flight.position.distanceTo(dock.position)<170)?1:0;
       gear+=clamp(wantGear-gear,-dt*.8,dt*.8);
-      craft.root.position.copy(flight.position);craft.root.quaternion.copy(flight.quaternion);craft.root.visible=true;
+      craft.root.position.copy(flight.position).add(pano.offset(definition.id,flight.planetId,flight.orbitTime));
+      craft.root.quaternion.copy(flight.quaternion);craft.root.visible=localVehicle();
       craft.update({door,gear,thrust:s.throttle,speed:s.speed,altitude:s.clearance,mode:s.stage,destination:targetName()});
       craft.root.updateMatrixWorld(true);
       const speed=phase==='cabin'||phase==='surface'?walkInput(dt):0;
@@ -585,7 +635,7 @@
       flameRig.update(dt);
       if(!walking)escort.hide();
       const groundFrame=environment(at,agl,walking,s);
-      dockVisible=flight.position.distanceTo(dock.position)<18000;dock.root.visible=dockVisible;
+      dockVisible=definition.id==='klose'&&localVehicle()&&flight.position.distanceTo(dock.position)<18000;dock.root.visible=dockVisible;
       if(walking){
         local.visible=true;rig.root.visible=contact.mesh.visible=!eye;surfaceCamera(dt);
         walkPhase+=seerRobots.phaseStep(speed,dt);seerRobots.animate(rig,walkPhase,speed,dt);
@@ -602,9 +652,23 @@
     }
     function paintChart(){
       const flying=phase!=='surface';
-      drawKloseMap(chart,{sites:flying?body.landingSites:groundSites,selected:select.value,
-        ramp:flying?null:groundDestination('shuttle-ramp'),observer:flying?spherical(flight.position):position,flying,
+      if(flying){
+        drawSystemChart(chart,destination(select.value)?.planetId||definition.id,id=>{
+          select.value=id==='dock'?'dock':planets[id].landingSites[0].id;showSelection();
+        });return;
+      }
+      drawKloseMap(chart,{definition,sites:groundSites,selected:select.value,
+        ramp:groundDestination('shuttle-ramp'),observer:position,
         onSelect:id=>{select.value=id;showSelection();}});
+    }
+    function drawSystemChart(svg,selected,onSelect,storedVehicle){
+      buildWorld();
+      const current=phase==='hidden'?'klose':definition.id;
+      const time=phase==='hidden'&&storedVehicle?storedVehicle.orbitTime||0:flight?.orbitTime||0;
+      const carrier=dock?.position||kloseCarrierStation(bodies.klose);
+      const restored=phase==='hidden'?storedVehicle:null;
+      pano.drawChart(svg,{time,current,selected,onSelect,carrier,
+        vehicle:restored?.p?vec(...restored.p):flight?.position||carrier,vehiclePlanet:restored?.planetId||flight?.planetId||'klose'});
     }
     function showSelection(){
       const id=select.value;
@@ -613,8 +677,8 @@
         summary.textContent=at?at.description+'　／　距你 '+distanceText(displacement(position,at).distance):'';
       }
       else{
-        const dest=id==='dock'?dock.position:sitePoint(id);
-        summary.textContent=(id==='dock'?'对接最初的母舰泊位':body.landingSite(id)?.description||'可供登陆艇停放的自然地坪')+
+        const dest=flightTarget(id),name=destination(id);
+        summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':planets[name.planetId].name+' · '+name.name)+
           '　／　直距 '+distanceText(dest.distanceTo(flight.position));
       }
       paintChart();
@@ -633,16 +697,21 @@
         ]){
           const group=document.createElement('optgroup');group.label=label;
           for(const at of entries)group.append(new Option(at.name,at.id));
-          select.append(group);
+          if(entries.length)select.append(group);
         }
         if(groundDestination('shuttle-ramp'))select.add(new Option('L-01 · 登陆艇尾坡','shuttle-ramp'));
       }else{
-        for(const site of body.landingSites)select.add(new Option(site.name,site.id));
+        for(const def of Object.values(planets)){
+          const group=document.createElement('optgroup');group.label=def.name;
+          for(const site of def.landingSites)group.append(new Option(def.name+' · '+site.name,site.id));
+          select.append(group);
+        }
         select.add(new Option('赛尔号 · 原泊位','dock'));
       }
       select.value=walking?(targetId||nearestSite(position).id):navTarget;
-      atlas.querySelector('h2').textContent=walking?'地表导航图':'登陆艇航线';
-      chart.setAttribute('aria-label',walking?'克洛斯星地点与步行路径，可使用目的地列表选择':'克洛斯星着陆点与登陆艇地面投影');
+      atlas.querySelector('small').textContent=walking?'帕诺星系 ／ '+definition.name:'帕诺星系 ／ L-01';
+      atlas.querySelector('h2').textContent=walking?'地表导航图':'行星轨道与登陆艇航线';
+      chart.setAttribute('aria-label',walking?definition.name+'地点与步行路径':'帕诺星系行星轨道、舰艇位置与目的地');
       trackButton.textContent=walking?'步行引导':'自动飞往此处';trackButton.hidden=!walking&&!helm;
       transportButton.hidden=!walking;shipMapButton.hidden=!walking||!browseShipMap;
       targetOnly.hidden=walking;unseat.hidden=!helm||!!pending;atlas.hidden=false;stage.dataset.consoleOpen='planet';
@@ -806,17 +875,18 @@
     }
     return {open,hide,draw,snapshot,clearInputs:resetInput,nearbySpirit,
       setFlameTool(value){flameTool=!!value;requestFrame();},
-      approachForestBoss(){if(phase!=='surface')return false;relocate('forest',true);updateUI();persist();requestFrame();return true;},
-      setSafariState(value){safariState=value;body?.setSafariState(value);},
+      approachForestBoss(){if(phase!=='surface'||definition.id!=='klose')return false;relocate('forest',true);updateUI();persist();requestFrame();return true;},
+      setSafariState(value){safariState=value;bodies.klose?.setSafariState(value);},
       enterWetland(){if(phase==='surface'){relocate('wetland');updateUI();persist();requestFrame();}},
       setEscortSpecies(id){escortId=id;escort?.setSpecies(id);requestFrame();},
       get fieldSite(){if(phase!=='surface')return null;const near=nearestSite(position);
         return displacement(position,near).distance<58?(near.area||near.id):null;},
       withdrawSpirit(key){if(body){body.withdrawSpirit(key);observedBird=null;updateUI();requestFrame();}},
       get canOpenSpirits(){return phase==='surface'||phase==='cabin';},
-      parkedRamp:()=>groundDestination('shuttle-ramp'),get active(){return phase!=='hidden';},dispose(){
+      parkedRamp,drawSystemChart,get planetName(){return definition.name;},get active(){return phase!=='hidden';},dispose(){
       events.abort();observer.disconnect();if(!world)return;
-      hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();contact.dispose();nono.dispose();escort?.dispose();body.dispose();
+      hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();contact.dispose();nono.dispose();escort?.dispose();pano.dispose();
+      for(const surface of Object.values(bodies))surface.dispose();
       lamp.shadow.map?.dispose();for(const mesh of [sky,stars]){mesh.geometry.dispose();mesh.material.dispose();}
     }};
   }

@@ -1,0 +1,423 @@
+// Taomei's map table connects 20 → 21 → 22 and, in a later chapter, 22 → 737.
+// The floating L-01 berth is expedition equipment. All natural ground is submerged.
+const OCEAN_WORLD=(()=>{
+  const radius=410000,lat=.24,lon=-.43;
+  const at=(id,name,x,z,description,mapId)=>({id,name,x,z,description,mapId,
+    lat:lat-z/radius,lon:lon+x/(radius*Math.cos(lat))});
+  const sites=[
+    at('ocean-shallows','海洋星浅水区',0,0,'粉色管珊瑚、贝尔与甲烷气泡泉',20),
+    at('ocean-depths','海洋星深水区',-108,47,'白色岩台、黄晶矿与利牙鱼口腔护理站',21),
+    at('ocean-floor','海洋星海底',-203,105,'海沟石阶与钢牙鲨的岩洞',22),
+    at('ocean-sanctum','深海禁地',-149,193,'后期水下遗址 · 青光石柱与深海拱门',737)
+  ];
+  const routes=sites.slice(1).map((site,i)=>[sites[i].id,site.id]);
+  const landingSites=[at('ocean-shallows','浅海登陆平台',24,-37,'海洋星水面上的 L-01 人工泊台',null)];
+  return {id:'ocean',name:'海洋星',radius,sites,landingSites,routes};
+})();
+
+function createOceanSurface(T,world){
+  const {radius,sites,landingSites}=OCEAN_WORLD,origin=sites[0],pad=landingSites[0];
+  const tau=2*Math.PI,clamp=T.MathUtils.clamp,smooth=T.MathUtils.smoothstep;
+  const root=new T.Group(),district=new T.Group(),terrain=new T.Group(),fauna=new T.Group();
+  root.name='海洋星';root.add(terrain,district,fauna);world.add(root);
+  const v=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
+  const color=hex=>new T.Color(hex).convertSRGBToLinear();
+  function frame(lat,lon){
+    const c=Math.cos(lat),s=Math.sin(lat),a=Math.cos(lon),b=Math.sin(lon);
+    const up=v(c*a,s,-c*b),east=v(-b,0,-a),north=v(-s*a,c,s*b),south=north.clone().negate();
+    return {east,up,north,south,quaternion:new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(east,up,south))};
+  }
+  const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+  function move(lat,lon,east,north){
+    const dist=Math.hypot(east,north);
+    if(!dist)return {lat,lon};
+    const angle=dist/radius,cz=Math.cos(angle),sz=Math.sin(angle),c=Math.cos(lat),s=Math.sin(lat);
+    const radial=c*cz-s*north/dist*sz,side=east/dist*sz;
+    return {lat:Math.atan2(s*cz+c*north/dist*sz,Math.hypot(radial,side)),lon:wrap(lon+Math.atan2(side,radial))};
+  }
+  const chart=(lat,lon)=>({x:wrap(lon-origin.lon)*radius*Math.cos(origin.lat),z:(origin.lat-lat)*radius});
+  const fromXZ=(x,z)=>({lat:origin.lat-z/radius,lon:origin.lon+x/(radius*Math.cos(origin.lat))});
+  const depthMarks=[6,27,49,64];
+  function seaFloor(x,z){
+    const rough=.46*Math.sin(x*.095+z*.041)*Math.cos(z*.08)+.18*Math.sin(x*.27-z*.10);
+    const reach=Math.hypot(x+86,z-57);
+    if(reach>520)return -89+12*Math.sin(x*.00038)*Math.cos(z*.00051);
+    // Blend the shelves by distance; give each named site's central courtyard a level floor.
+    let weight=0,sum=0;
+    for(let i=0;i<sites.length;i++){
+      const dx=x-sites[i].x,dz=z-sites[i].z;
+      const t=1/(60+dx*dx+dz*dz),w=t*t;
+      sum+=w*depthMarks[i];weight+=w;
+    }
+    const local=-sum/weight+rough;
+    return T.MathUtils.lerp(local,-89+12*Math.sin(x*.00038)*Math.cos(z*.00051),smooth(reach,285,520));
+  }
+  const pierRadius=22,pierLevel=1.65;
+  const pierDistance=Math.hypot(pad.x,pad.z),acrossX=-pad.x/pierDistance,acrossZ=-pad.z/pierDistance;
+  function support(x,z){
+    const ground=seaFloor(x,z),dx=x-pad.x,dz=z-pad.z;
+    if(dx*dx+dz*dz<=pierRadius*pierRadius)return pierLevel;
+    const along=dx*acrossX+dz*acrossZ,across=dx*acrossZ-dz*acrossX;
+    if(Math.abs(across)<=2.25&&along>=pierRadius-1&&along<=pierDistance+1){
+      const mix=clamp((along-pierRadius)/(pierDistance-pierRadius),0,1);
+      return Math.max(ground,T.MathUtils.lerp(pierLevel,seaFloor(0,0),mix));
+    }
+    return ground;
+  }
+  function height(lat,lon){const {x,z}=chart(lat,lon);return support(x,z);}
+  function point(lat,lon,above=0){
+    const r=radius+height(lat,lon)+above,c=Math.cos(lat);
+    return v(r*c*Math.cos(lon),r*Math.sin(lat),-r*c*Math.sin(lon));
+  }
+  function siteAt(lat,lon){
+    const {x,z}=chart(lat,lon);let nearest=null,best=58;
+    for(const site of sites){const d=Math.hypot(x-site.x,z-site.z);if(d<best){nearest=site;best=d;}}
+    return nearest;
+  }
+  const cut={value:2},capCenter={value:v(1,0,0)};
+  function globeTexture(){
+    const c=document.createElement('canvas');c.width=1024;c.height=512;
+    const ctx=c.getContext('2d'),bg=ctx.createLinearGradient(0,0,120,512);
+    bg.addColorStop(0,'#88aebd');bg.addColorStop(.32,'#91a9c8');bg.addColorStop(.58,'#687fa9');
+    bg.addColorStop(.82,'#6d86a8');bg.addColorStop(1,'#b3c8db');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,1024,512);
+    let seed=328293;
+    const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    for(let i=0;i<58;i++){
+      const cx=rnd()*1024,cy=14+484*rnd(),r=6+30*rnd(),stretch=1.15/Math.max(.44,Math.sin(cy*Math.PI/512));
+      const bend=rnd()*tau;
+      for(const x of [cx-1024,cx,cx+1024]){
+        ctx.save();ctx.translate(x,cy);ctx.scale(stretch,1);
+        for(const [ratio,tint,weight] of [[1.25,'#556f8b',.14],[1.06,'#ced8ef',.19],[.91,'#f1f2ef',.14],[.74,'#5b8faa',.12],[.62,'#687da3',.18]]){
+          ctx.beginPath();
+          for(let k=0;k<=40;k++){
+            const a=tau*k/40,len=r*ratio*(1+.11*Math.cos(a*4+bend)+.055*Math.cos(3*a-bend));
+            const px=len*Math.cos(a),py=len*Math.sin(a);if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+          }
+          ctx.closePath();ctx.strokeStyle=tint;ctx.lineWidth=r*weight;ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+    const tex=new T.CanvasTexture(c);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;return tex;
+  }
+  const oceanPaint=new T.MeshStandardMaterial({map:globeTexture(),roughness:.72,metalness:.06});
+  oceanPaint.onBeforeCompile=s=>{
+    s.uniforms.uCap=cut;s.uniforms.uCapCenter=capCenter;
+    s.vertexShader='varying vec3 vOceanNormal;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvOceanNormal=normal;');
+    s.fragmentShader='uniform float uCap;uniform vec3 uCapCenter;varying vec3 vOceanNormal;\n'+
+      s.fragmentShader.replace('#include <clipping_planes_fragment>','#include <clipping_planes_fragment>\nif(dot(normalize(vOceanNormal),uCapCenter)>uCap)discard;');
+  };
+  const globe=new T.Mesh(new T.SphereGeometry(radius,128,80),oceanPaint);root.add(globe);
+  const fixedFrame=frame(origin.lat,origin.lon),anchor=fixedFrame.up.clone().multiplyScalar(radius);
+  district.position.copy(anchor);district.quaternion.copy(fixedFrame.quaternion);
+  // Local geometry is surveyed in the same east/south chart as the collision model.
+  function groundY(x,z){return seaFloor(x,z)-(x*x+z*z)/(2*radius);}
+  const blockers=[],shapes=new Map(),entries=new Map();
+  const makeMat=()=>new T.MeshStandardMaterial({color:0xffffff,roughness:.70,metalness:.08});
+  function shape(name,g,m=makeMat()){shapes.set(name,{g,m});}
+  shape('rock',new T.IcosahedronGeometry(1,0));
+  shape('lobe',new T.SphereGeometry(1,12,8));
+  shape('rod',new T.CylinderGeometry(.76,1,1,7));
+  shape('box',new T.BoxGeometry(1,1,1));
+  shape('disk',new T.CylinderGeometry(1,1,1,48));
+  shape('ring',new T.TorusGeometry(1,.11,7,22));
+  shape('tube',new T.LatheGeometry([[.51,0],[.83,.5],[1,.89],[.98,1],[.71,1.02],[.64,.79],[.50,.60]].map(([a,b])=>new T.Vector2(a,b)),14),
+    new T.MeshStandardMaterial({color:0xffffff,roughness:.58,side:T.DoubleSide}));
+  const temp=new T.Object3D();
+  function record(id,tint){
+    if(!entries.has(id))entries.set(id,[]);
+    entries.get(id).push({matrix:temp.matrix.clone(),tint});
+  }
+  function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
+    temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
+  }
+  function rod(x,y,z,xx,yy,zz,r,tint){
+    const dir=v(xx-x,yy-y,zz-z),len=dir.length();
+    temp.position.set((x+xx)*.5,(y+yy)*.5,(z+zz)*.5);
+    temp.quaternion.setFromUnitVectors(v(0,1,0),dir.divideScalar(len));
+    temp.scale.set(r,len,r);temp.updateMatrix();record('rod',tint);
+  }
+  let seed=832491;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  function boulder(x,z,w,h,d,tint){
+    stamp('rock',x,groundY(x,z)+h*.42,z,w,h,d,tint,.10*random(),random()*.9,.05);
+    if(w>1.35)blockers.push({x,z,r:Math.min(w,d)*.64,top:groundY(x,z)+h*1.42});
+  }
+  function sponge(x,z,s,shade){
+    const base=groundY(x,z)-.08;
+    for(let j=0;j<8;j++){
+      const a=j*2.4,l=s*(.45+random()*.71);
+      const dx=s*Math.sin(a)*.56,dz=s*Math.cos(a)*.56,r=.12*s+.10*l;
+      stamp('tube',x+dx,base,z+dz,r,l,r,shade,Math.cos(a)*.14,0,-Math.sin(a)*.15);
+    }
+  }
+  function fan(x,z,s,tint){
+    const base=groundY(x,z),tilt=random()*tau,c=Math.cos(tilt),d=Math.sin(tilt);
+    function branch(u,h,angle,length,thick,n){
+      const uu=u+Math.sin(angle)*length,hh=h+Math.cos(angle)*length;
+      rod(x+c*u,base+h,z+d*u,x+c*uu,base+hh,z+d*uu,thick,tint);
+      if(n){branch(uu,hh,angle-.37-random()*.16,length*.68,thick*.71,n-1);branch(uu,hh,angle+.34+random()*.20,length*.72,thick*.68,n-1);}
+    }
+    branch(0,0,-.17,s*.42,s*.075,4);
+  }
+  function shell(x,z,s){
+    const y=groundY(x,z),c=0xd4b887;
+    stamp('lobe',x,y+.15*s,z,.62*s,.20*s,.48*s,c,0,.23);
+    for(let j=0;j<3;j++)stamp('ring',x-.07*s,y+(.22+.03*j)*s,z,(.42-.11*j)*s,(.30-.08*j)*s,.3*s,0xa98a60,-Math.PI/2,.04);
+  }
+  function belfry(x,z,s){
+    const base=groundY(x,z);
+    stamp('disk',x,base+.16*s,z,1.65*s,.27*s,1.35*s,0x686880);
+    stamp('rod',x,base+1.05*s,z,.65*s,1.75*s,.65*s,0xcac6cb);
+    stamp('lobe',x,base+1.72*s,z,1.15*s,.65*s,.84*s,0x596d86);
+    stamp('lobe',x,base+1.79*s,z+.72*s,.79*s,.31*s,.13*s,0x9cf1d4);
+    rod(x-.69*s,base+1.1*s,z,x-1.42*s,base+1.75*s,z+.3*s,.12*s,0xc8cee0);
+    stamp('tube',x-1.42*s,base+1.7*s,z+.3*s,.23*s,.32*s,.23*s,0xf2e1bf);
+    blockers.push({x,z,r:1.2*s,top:base+2.4*s});
+  }
+  function grotto(x,z,scale,dark,open=false){
+    const base=groundY(x,z);
+    for(let i=0;i<9;i++){
+      const a=Math.PI*(i/8),xx=x+6.2*scale*Math.cos(a),yy=base+7.5*scale*Math.sin(a);
+      stamp('rock',xx,yy,z,2.45*scale,2.75*scale,2.4*scale,i%2?dark:0x51657a,-.17,.17,a-.8);
+      if(i<2||i>6)blockers.push({x:xx,z,r:1.65*scale,top:yy+2.5*scale});
+    }
+    if(!open){
+      stamp('lobe',x,base+2.1*scale,z-2.9*scale,5.6*scale,4.4*scale,1.5*scale,0x1b3244);
+      for(let j=-2;j<=2;j++)blockers.push({x:x+j*1.95*scale,z:z-3*scale,r:1.5*scale,top:base+4.5*scale});
+      for(let j=0;j<3;j++)boulder(x+(j-1)*5.8*scale,z-5*scale,3.6*scale,4*scale,3.8*scale,dark);
+    }
+  }
+  const corridors=[[pad,origin],...sites.slice(1).map((s,i)=>[sites[i],s])];
+  function corridorGap(x,z){
+    let nearest=Infinity;
+    for(const [a,b] of corridors){
+      const dx=b.x-a.x,dz=b.z-a.z,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1);
+      nearest=Math.min(nearest,Math.hypot(x-a.x-t*dx,z-a.z-t*dz));
+    }
+    return nearest;
+  }
+  // Branching, open-tipped colonies, regional shelf rock and named set pieces are original meshes.
+  for(const [i,site] of sites.entries()){
+    const tones=[[0xb0a4b7,0x8186a5,0xccbdbd],[0x9994a1,0xd4d4ca,0x777187],
+      [0x4d6d70,0x686682,0x618a85],[0x294c69,0x377290,0x526c9a]][i];
+    for(let j=0;j<63;j++){
+      const a=(j+random())*2.4,r=14+random()*57,x=site.x+Math.cos(a)*r,z=site.z+Math.sin(a)*r;
+      if(Math.hypot(x-pad.x,z-pad.z)<pierRadius+4||Math.hypot(x,z)<11)continue;
+      const t=random();
+      if(t<.23){
+        const w=2+random()*4,h=1.5+random()*4.1,d=2+random()*3;
+        if(corridorGap(x,z)>w+4)boulder(x,z,w,h,d,tones[j%3]);
+      }
+      else if(t<.48&&i!==1)sponge(x,z,.7+random()*2.1,i===0?(j%2?0xce88bc:0xb96372):i===2?0x6aa88b:0x5684a2);
+      else if(t<.68&&i<3)fan(x,z,.9+random()*2.8,i===0?0xdb699a:i===1?0x968297:0x88a786);
+      else shell(x,z,.35+random());
+    }
+  }
+  // Place the immediately recognisable landmarks in the visitor's forward field.
+  sponge(-6,-10,2.25,0xdb87b5);sponge(-9,-12,1.55,0xb66f9d);fan(9,-12,3.7,0xc1587f);
+  boulder(-14,-20,6,4.3,4.7,0x818caf);boulder(17,-19,4,3.4,4.8,0xc6bfbc);
+  const creviceY=groundY(17,-19);
+  stamp('lobe',17,creviceY+1.52,-15.9,1.52,.91,.45,0x454156);
+  for(let i=0;i<6;i++){
+    const t=i/6,u=(i+1)/6;
+    rod(17+.73*Math.sin(t*4),creviceY+1.45-.76*t,-15.52+1.6*t,
+      17+.73*Math.sin(u*4),creviceY+1.45-.76*u,-15.52+1.6*u,.23-.13*t,0xca899c);
+  }
+  for(let i=0;i<8;i++)stamp('tube',12+Math.sin(i*2.4)*2.1,groundY(12,4)-.17,4+Math.cos(i*2.4)*1.8,.38,.63,.41,0x6fb99e);
+  const depths=sites[1],floor=sites[2],end=sites[3];
+  belfry(depths.x+8,depths.z-11,1.35);
+  for(let i=0;i<13;i++){
+    const x=depths.x-10+(i%4)*.51,z=depths.z-8+Math.floor(i/4)*.58,h=1.2+random()*1.1;
+    stamp('rock',x,groundY(x,z)+h*.45,z,.31,h,.41, i%3?0xe8ba48:0xffdf7c,.10,.13,i*.09-.48);
+  }
+  grotto(floor.x,floor.z-16,1,0x525269);
+  grotto(end.x-26,end.z-7,1.29,0x264c69,true);grotto(end.x+17,end.z-23,1.16,0x2b526b,true);
+  for(let j=0;j<4;j++){
+    const x=end.x+10,z=end.z-10,y=groundY(x,z);
+    stamp('rock',x,y+1.25+j*1.47,z,2-j*.18,1.35,1.64-j*.12,j%2?0x58b7bc:0x77daca,.02,j*.39);
+  }
+  // An over-water platform, landing stripe and descending access ramp share the support function.
+  const pierY=pierLevel-(pad.x*pad.x+pad.z*pad.z)/(2*radius);
+  stamp('disk',pad.x,pierY-.44,pad.z,pierRadius,.88,pierRadius,0x567982);
+  stamp('disk',pad.x,pierY-.026,pad.z,pierRadius-.15,.052,pierRadius-.15,0x9caaa5);
+  stamp('ring',pad.x,pierY+.04,pad.z,12.2,12.2,.20,0xf0db8f,Math.PI/2);
+  for(const off of [-1,1])stamp('box',pad.x+off*2,pierY+.045,pad.z,.42,.06,5.8,0xede7b8);
+  stamp('box',pad.x,pierY+.046,pad.z,4,.062,.46,0xede7b8);
+  const railRadius=pierRadius-.45,face=Math.atan2(acrossZ,acrossX);
+  let railLast=null;
+  for(let i=0;i<=42;i++){
+    const a=face+.116+(tau-.232)*i/42,x=pad.x+railRadius*Math.cos(a),z=pad.z+railRadius*Math.sin(a);
+    rod(x,pierY,z,x,pierY+.84,z,.078,0x75888e);
+    if(railLast)rod(...railLast,x,pierY+.84,z,.065,0xdfcb8f);
+    railLast=[x,pierY+.84,z];
+  }
+  const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=pierLevel-seaFloor(0,0);
+  const plank=new T.BoxGeometry(4.4,.23,Math.hypot(rampRun,rampDrop));shape('ramp',plank);
+  const rampMid=(rampStart+rampEnd)*.5;
+  const rampOrientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(
+    v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
+    v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
+  temp.position.set(pad.x+acrossX*rampMid,(pierLevel+seaFloor(0,0))*.5-.13,pad.z+acrossZ*rampMid);
+  temp.quaternion.copy(rampOrientation);temp.scale.set(1,1,1);temp.updateMatrix();record('ramp',0x7696a0);
+  for(const sign of [-1,1]){
+    let last=null;
+    for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
+      const x=pad.x+acrossX*along+acrossZ*2.04*sign,z=pad.z+acrossZ*along-acrossX*2.04*sign;
+      const y=T.MathUtils.lerp(pierLevel,seaFloor(0,0),(along-rampStart)/rampRun);
+      rod(x,y,z,x,y+1,z,.055,0x70868e);if(last)rod(...last,x,y+1,z,.062,0xffce74);
+      last=[x,y+1,z];
+    }
+  }
+  for(const [id,items] of entries){
+    const {g,m}=shapes.get(id),batch=new T.InstancedMesh(g,m,items.length);
+    for(const [i,it] of items.entries()){batch.setMatrixAt(i,it.matrix);batch.setColorAt(i,color(it.tint));}
+    batch.instanceMatrix.needsUpdate=batch.instanceColor.needsUpdate=true;batch.receiveShadow=true;batch.castShadow=true;
+    district.add(batch);
+  }
+  const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),rise=[];
+  for(let i=0;i<bubbleCount;i++){
+    const s=sites[i%4],spring=i%4===0&&i%3===0;
+    const x=spring?12+random()*3-1.5:s.x+(random()-.5)*66,z=spring?4+random()*3-1.5:s.z+(random()-.5)*65;
+    rise.push({x,z,y:groundY(x,z),h:Math.max(4,-groundY(x,z)-.3),phase:random(),speed:.22+random()*.38});
+  }
+  const bubblesAttr=new T.BufferAttribute(bubbles,3);lights.setAttribute('position',bubblesAttr);
+  const bubbleShade=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},
+    vertexShader:'varying float d;void main(){vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;gl_Position=projectionMatrix*p;gl_PointSize=clamp(65./max(1.,d),1.,6.);}',
+    fragmentShader:'varying float d;void main(){float z=length(gl_PointCoord-.5);if(z>.49)discard;float a=(.14+.62*smoothstep(.27,.46,z))*(1.-smoothstep(18.,85.,d));gl_FragColor=vec4(.47,.89,.95,a);}'});
+  const particulate=new T.Points(lights,bubbleShade);particulate.frustumCulled=false;district.add(particulate);
+  // A camera-centred spherical patch resolves metre-scale walking and joins the orbital shell.
+  const radii=[0,1.4,3,5,7,10,14,19,26,34,46,62,86,120,174,260,420,720,1400,3500,8500,20000,47000,95000];
+  const sectors=96,coords=[[0,0,0]],indices=[];
+  for(let j=1;j<radii.length;j++)for(let i=0;i<sectors;i++){
+    const a=tau*i/sectors,n=coords.length,next=1+(j-1)*sectors+(i+1)%sectors;
+    coords.push([Math.cos(a),Math.sin(a),j]);
+    if(j===1)indices.push(0,next,n);else indices.push(n-sectors,next,n,next-sectors,next,n-sectors);
+  }
+  const groundGeo=new T.BufferGeometry(),seaGeo=new T.BufferGeometry();
+  for(const g of [groundGeo,seaGeo]){
+    g.setIndex(indices);
+    g.setAttribute('position',new T.Float32BufferAttribute(new Float32Array(coords.length*3),3));
+    g.setAttribute('uv',new T.Float32BufferAttribute(new Float32Array(coords.length*2),2));
+  }
+  groundGeo.setAttribute('color',new T.Float32BufferAttribute(new Float32Array(coords.length*3),3));
+  const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92}),tideTime={value:0};
+  sandMat.onBeforeCompile=s=>{
+    s.uniforms.tideTime=tideTime;
+    s.vertexShader='varying vec2 floorUV;varying float sunWater;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;sunWater=1.-smoothstep(5.,47.,-position.y);');
+    s.fragmentShader='uniform float tideTime;varying vec2 floorUV;varying float sunWater;\n'+s.fragmentShader.replace('#include <color_fragment>',
+      '#include <color_fragment>\nfloat ripple=sin(floorUV.x*3.+sin(floorUV.y*1.14)+floorUV.y*.75);float gleam=abs(sin(floorUV.x*.85+1.3*sin(floorUV.y*.60+tideTime*.21))+sin(floorUV.y*.73+.84*cos(floorUV.x*.49-tideTime*.14)));diffuseColor.rgb*=1.+(.07*ripple+.18*sunWater*(1.-smoothstep(.02,.18,gleam)))/(1.+.04*length(fwidth(floorUV)));');
+  };
+  sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
+  const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;
+  const seaMat=new T.ShaderMaterial({uniforms:{uTime:{value:0}},side:T.DoubleSide,transparent:true,depthWrite:false,
+    vertexShader:'varying vec2 wuv;varying float vz;void main(){wuv=uv;vec4 p=modelViewMatrix*vec4(position,1.);vz=max(0.,-p.z);gl_Position=projectionMatrix*p;}',
+    fragmentShader:`varying vec2 wuv;varying float vz;uniform float uTime;void main(){
+      float a=sin(.52*wuv.y+.9*sin(.23*wuv.x+uTime*.38)+uTime*.72);
+      float b=sin(.41*wuv.x-.18*wuv.y+.8*cos(.28*wuv.y-uTime*.17));
+      float cut=1.-smoothstep(55.,680.,vz);
+      float gleam=pow(max(0.,(a+b)*.50),8.)*cut;
+      vec3 c=mix(vec3(.14,.39,.59),vec3(.35,.62,.75),.48+.15*(a+b)*cut);
+      if(!gl_FrontFacing)c=mix(c,vec3(.31,.72,.79),.51);
+      gl_FragColor=vec4(c+vec3(.23,.36,.32)*gleam,gl_FrontFacing?mix(.56,.98,smoothstep(18.,400.,vz)):.34);
+      #include <tonemapping_fragment>
+      #include <encodings_fragment>
+    }`});
+  const water=new T.Mesh(seaGeo,seaMat);water.frustumCulled=false;water.renderOrder=3;terrain.add(seabed,water);
+  const shallowsColor=color(0xccbf8e),deepColor=color(0xadaab4),floorColor=color(0x597d7b),abyssColor=color(0x3b657b);
+  function placePatch(lat,lon){
+    const f=frame(lat,lon);terrain.position.copy(f.up).multiplyScalar(radius);terrain.quaternion.copy(f.quaternion);
+    const gp=groundGeo.attributes.position,wp=seaGeo.attributes.position,gc=groundGeo.attributes.color;
+    const gu=groundGeo.attributes.uv,wu=seaGeo.attributes.uv,tone=new T.Color();
+    for(const [i,[dx,dz,j]] of coords.entries()){
+      const range=radii[j],ang=range/radius,cs=Math.cos(ang),ss=Math.sin(ang);
+      const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=seaFloor(x,z),r=radius+h;
+      gp.setXYZ(i,dx*ss*r,cs*r-radius,dz*ss*r);wp.setXYZ(i,dx*ss*radius,cs*radius-radius,dz*ss*radius);
+      gu.setXY(i,x,z);wu.setXY(i,x,z);
+      tone.copy(shallowsColor).lerp(deepColor,smooth(-h,10,28)).lerp(floorColor,smooth(-h,31,49)).lerp(abyssColor,smooth(-h,50,65));
+      tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
+    }
+    for(const attr of [gp,wp,gu,wu,gc])attr.needsUpdate=true;
+    groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(90000/radius);
+  }
+  function canSwim(lat,lon,margin=.4){
+    const {x,z}=chart(lat,lon);
+    return blockers.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+margin);
+  }
+  function walk(lat,lon,east,north){
+    const at=move(lat,lon,east,north),p=chart(at.lat,at.lon);
+    const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
+    if(dist>0&&Math.abs(dist-railRadius)<=.38+Math.hypot(east,north)&&
+        (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
+      const old=chart(lat,lon),side=Math.hypot(old.x-pad.x,old.z-pad.z)<railRadius?-1:1;
+      if(side*(dist-railRadius)<.38){const edge=railRadius+side*.38;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
+    }
+    for(const b of blockers){
+      const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28;
+      if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
+    }
+    return fromXZ(p.x,p.z);
+  }
+  function landingInfo(lat,lon,footprint=12){
+    const {x,z}=chart(lat,lon),onPier=Math.hypot(x-pad.x,z-pad.z)+footprint<=pierRadius;
+    const h=support(x,z),top=Math.max(0,h);
+    return {ok:onPier,height:h,top,slope:0,water:!onPier,obstacle:false,
+      reason:onPier?'':'下方是海水，请返回浅海登陆平台'};
+  }
+  function clipCamera(aim,eye){
+    // Clip the third-person boom at the near edge of any reef its line crosses.
+    const here=aim.clone().sub(anchor),sight=eye.clone().sub(aim),x=here.dot(fixedFrame.east),z=here.dot(fixedFrame.south);
+    const y=here.dot(fixedFrame.up),dx=sight.dot(fixedFrame.east),dz=sight.dot(fixedFrame.south),dy=sight.dot(fixedFrame.up);
+    const length2=dx*dx+dz*dz;if(length2<.001)return;
+    let limit=1;
+    for(const b of blockers){
+      const rx=x-b.x,rz=z-b.z,t=-(rx*dx+rz*dz)/length2,r=b.r+.24;
+      if(t<0||t>1+r/Math.sqrt(length2))continue;
+      const chord2=r*r-(rx+t*dx)**2-(rz+t*dz)**2;
+      if(chord2<=0)continue;
+      const entry=Math.max(.06,t-Math.sqrt(chord2/length2)-.035);
+      if(entry<limit&&y+dy*entry<=b.top+.18)limit=entry;
+    }
+    if(limit<1)eye.copy(aim).addScaledVector(sight,limit);
+  }
+  let mode='hidden',elapsed=0,last=null;
+  const body={root,sites,radius,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
+    resolveArrival:(lat,lon)=>walk(lat,lon,0,0),groundCorrection:()=>0,waterDepth:(lat,lon)=>Math.max(0,-height(lat,lon)),
+    landingInfo,flightHeight:(lat,lon,footprint=0)=>{
+      const {x,z}=chart(lat,lon);
+      return Math.hypot(x-pad.x,z-pad.z)<=pierRadius+footprint?pierLevel:Math.max(0,support(x,z));
+    },setMode,update,dispose,forestBossPosition:()=>null,nearestPipi:()=>null,setSafariState(){},
+    safariAction:()=>null,safariWalk:()=>null,safariHint:()=>'',interactSpiritSite:()=>'',
+    spiritSiteHint:(lat,lon)=>height(lat,lon)>.4?'浅海登陆平台 · 沿西南侧黄色护栏斜坡步行下水':
+      ecology.hint(lat,lon)||siteAt(lat,lon)?.description||'沿海床探访各处栖息地。',
+    nearbySpirit:(lat,lon)=>ecology.nearbySpirit(lat,lon),spiritObservation:(lat,lon,key)=>ecology.spiritObservation(lat,lon,key),
+    pickSpirit:(caster,lat,lon)=>ecology.pickSpirit(caster,lat,lon),withdrawSpirit:key=>ecology.withdrawSpirit(key)};
+  const ecology=createOceanEcology(T,fauna,OCEAN_WORLD,body);
+  function setMode(next){
+    if(next!==mode)last=null;mode=next;root.visible=next!=='hidden';if(next==='hidden')return;
+    globe.visible=true;terrain.visible=district.visible=fauna.visible=false;cut.value=2;
+  }
+  function update(lat,lon,dt=0,altitude=0,shuttleStatus=null){
+    if(mode==='hidden')return;
+    const near=mode==='surface'||(mode==='flight'&&altitude<53000);
+    terrain.visible=near;fauna.visible=near&&mode==='surface';
+    const c=chart(lat,lon);district.visible=near&&altitude<1250&&Math.hypot(c.x+80,c.z-60)<2700;
+    if(!near){last=null;cut.value=2;return;}
+    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>Math.min(1800,4+altitude*.18)){placePatch(lat,lon);last=c;}
+    elapsed+=dt;tideTime.value=seaMat.uniforms.uTime.value=elapsed;
+    if(district.visible)for(const [i,p] of rise.entries()){
+      const y=p.y+.18+p.h*((p.phase+elapsed*p.speed/p.h)%1);
+      bubblesAttr.setXYZ(i,p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y));
+    }
+    bubblesAttr.needsUpdate=district.visible;
+    ecology.update(lat,lon,dt,mode==='surface',shuttleStatus);
+  }
+  function dispose(){
+    ecology.dispose();const geometry=new Set(),materials=new Set();
+    root.traverse(obj=>{if(obj.geometry)geometry.add(obj.geometry);if(obj.material)materials.add(obj.material);if(obj.isInstancedMesh)obj.dispose?.();});
+    for(const {g,m} of shapes.values()){geometry.add(g);materials.add(m);}
+    for(const g of geometry)g.dispose();
+    for(const m of materials){m.map?.dispose();m.dispose();}world.remove(root);
+  }
+  setMode('hidden');return body;
+}

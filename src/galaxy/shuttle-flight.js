@@ -10,7 +10,7 @@ function createShuttleFlight(T,body,dock,saved){
   const gate=dock.position.clone().addScaledVector(dockForward,corridor+16);
   const outer=dock.position.clone().addScaledVector(dockForward,1050).addScaledVector(dockUp,180);
   const padFootprint=7.4;
-  const home=body.landingSite('grassland');
+  const home=body.landingSites[0];
   const heading=new T.Vector3(),desired=new T.Vector3(),right=new T.Vector3(),up=new T.Vector3();
   const eastAxis=new T.Vector3(),northAxis=new T.Vector3();
   const attitude=new T.Quaternion(),basis=new T.Matrix4(),bankPitch=new T.Euler(0,0,0,'YXZ');
@@ -131,6 +131,12 @@ function createShuttleFlight(T,body,dock,saved){
     if(leg!=='undock'&&leg!=='rise')leg='';
     auto=destination;target=place;detour=null;detourClock=0;
     stage=leg==='undock'?'解锁出坞':leg==='rise'?'垂直起飞':'航线已接通';return true;
+  }
+  function departSystem(){
+    if(phase!=='flying')launch();
+    if(leg==='latch')leg='undock';
+    if(leg!=='undock'&&leg!=='rise')leg='';
+    auto='outbound';target=detour=null;stage='驶向星际航路';return true;
   }
   function canCapture(){
     return phase==='flying'&&position.distanceTo(gate)<65&&velocity.length()<22;
@@ -336,6 +342,11 @@ function createShuttleFlight(T,body,dock,saved){
       desired.copy(up).multiplyScalar(closing(Math.max(0,riseLevel-altitude),12,9));
       stage='垂直起飞';accel=15;
       if(altitude>=riseLevel-.7)leg='';
+    }else if(auto==='outbound'){
+      if(near<2000){
+        const exit=probe.copy(dock.position).addScaledVector(dockForward,2400);
+        seek(exit,near<180?35:Math.min(limit,320),20);stage='离开母舰航道';
+      }else{desired.copy(up).multiplyScalar(limit);stage='爬升至转移轨道';}
     }else if(auto==='dock'&&((near<2400&&velocity.length()<132)||leg)){
       dockGuidance(dt);accel=leg==='latch'?5:20;dockPose=leg==='latch'||leg==='gate';
     }else if(auto)planetaryGuidance(limit,accel);
@@ -384,7 +395,7 @@ function createShuttleFlight(T,body,dock,saved){
     }
     if(altitude<ground){position.setLength(R+ground+2);currentFrame();}
     target=validSite(s.target)?{...s.target}:null;
-    auto=s.auto==='surface'&&target?'surface':s.auto==='dock'?'dock':null;
+    auto=s.auto==='surface'&&target?'surface':s.auto==='dock'?'dock':s.auto==='outbound'?'outbound':null;
     leg=['undock','rise','outer','gate','latch'].includes(s.leg)?s.leg:'';
     if(!auto&&['outer','gate','latch'].includes(leg))leg='';
     riseLevel=Number.isFinite(s.riseLevel)?s.riseLevel:altitude+10;
@@ -397,5 +408,5 @@ function createShuttleFlight(T,body,dock,saved){
       canCapture:canCapture(),canLand:canLand(),landingReason:pad?.reason||''};
   }
   settleDock();if(saved)restore(saved);
-  return {position,quaternion,velocity,tick,status,launch,land,captureDock,manual,autopilot,placeOnSurface,snapshot,restore};
+  return {position,quaternion,velocity,tick,status,launch,land,captureDock,manual,autopilot,departSystem,placeOnSurface,snapshot,restore};
 }
