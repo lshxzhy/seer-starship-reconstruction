@@ -691,7 +691,12 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       if(u<-.00001||v<-.00001||u+v>1.00001)return null;
       return pts.getY(a)*(1-u-v)+pts.getY(b)*u+pts.getY(c)*v-y;
     }
-    for(let j=Math.max(1,ring-1);j<=Math.min(terrain.radii.length-1,ring+1);j++){
+    const first=Math.max(1,ring-1),last=Math.min(terrain.radii.length-1,ring+1);
+    const search=[];for(let j=first;j<=last;j++)search.push(j);
+    // Strong relief on the compact globe can shift a projected ring by more
+    // than one row. Retain the fast estimate, then check the remaining faces.
+    for(let j=1;j<terrain.radii.length;j++)if(j<first||j>last)search.push(j);
+    for(const j of search){
       const a=1+(j-1)*sectors+i,b=1+(j-1)*sectors+(i+1)%sectors;
       const delta=j===1?onFace(0,b,a):onFace(a-sectors,b,a)??onFace(b-sectors,b,a-sectors);
       if(delta!==null)return delta;
@@ -828,22 +833,48 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   function walk(lat,lon,east,north){
     let dest=details?details.walk(lat,lon,east,north):move(lat,lon,east,north);
+    const scenerySafe=dest;
     const cos=Math.max(.000001,Math.cos(lat));
     visitTiles(dest.lat,dest.lon,1,items=>{
       for(const it of items){
         const dx=unwrap(dest.lon-it.lon)*radius*cos,dn=(dest.lat-it.lat)*radius;
-        const distance=Math.hypot(dx,dn),limit=(it.tree?it.size*.16:it.reach)+.26;
+        const distance=Math.hypot(dx,dn),limit=(it.tree?it.size*.16:it.reach)+.43;
         if(distance<limit){
           const push=limit-distance;
           dest=move(dest.lat,dest.lon,distance?dx*push/distance:push,distance?dn*push/distance:0);
         }
       }
     });
-    return dest;
+    return dest!==scenerySafe&&details&&!details.canStand(dest.lat,dest.lon)?scenerySafe:dest;
   }
   function resolveArrival(lat,lon){
     ensureScenery().prepareWalk(lat,lon);
     return walk(lat,lon,0,0);
+  }
+  const cameraProbe=new T.Vector3(),cameraVector=new T.Vector3();
+  function clipCamera(aim,eye){
+    ensureScenery().clipCamera(aim,eye);
+    cameraVector.copy(eye).sub(aim);const length=cameraVector.length();if(length<.35)return;
+    const steps=Math.ceil(length/.28);
+    for(let i=1;i<=steps;i++){
+      cameraProbe.copy(aim).addScaledVector(cameraVector,i/steps);
+      const lat=Math.atan2(cameraProbe.y,Math.hypot(cameraProbe.x,cameraProbe.z)),lon=Math.atan2(-cameraProbe.z,cameraProbe.x);
+      if(cameraProbe.length()<radius+height(lat,lon)+.16){eye.copy(aim).addScaledVector(cameraVector,Math.max(0,(i-1)/steps));return;}
+    }
+  }
+  function canStand(lat,lon,bodyRadius=.43,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<=0)return false;
+    const {x,z}=chart(lat,lon),land=sample(lat,lon,x,z,{});if(land.water>.49)return false;
+    const base=point(lat,lon),up=frame(lat,lon).up;let clear=true;
+    visitTiles(lat,lon,1,items=>{
+      for(const it of items){
+        if(it.at.distanceTo(base)>it.reach+bodyRadius+bodyHeight+3)continue;
+        const distance=it.at.clone().sub(base).projectOnPlane(up).length();
+        if(distance<(it.tree?it.size*.16:it.reach)+bodyRadius)clear=false;
+        if(it.tree&&distance<it.reach+bodyRadius&&bodyHeight>it.h*.35)clear=false;
+      }
+    });
+    return clear&&ensureScenery().canStand(lat,lon,bodyRadius,bodyHeight);
   }
   function dispose() {
     const geometry=new Set(),materials=new Set(),textures=new Set();
@@ -860,7 +891,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     flightPrepared=true;
   }
   setMode('hidden');
-  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,prepareFlight,
+  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,prepareFlight,clipCamera,canStand,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
     nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null,
     nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,

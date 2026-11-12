@@ -10,6 +10,37 @@ function kloseClearsCover(cover,x,z,r,height){
   }
   return true;
 }
+// A scene's authored x/z is a geodesic chart about that scene, not an offset
+// in the meadow's longitude chart. Share this placement with its actors and
+// collision records so a smaller globe cannot pull models away from hitboxes.
+function createKloseSitePlacement(T,surface,site){
+  const {radius,move,frame,height,chart}=surface,baseHeight=height(site.lat,site.lon);
+  const inverse=frame(site.lat,site.lon).quaternion.clone().invert();
+  const at=(x,z)=>move(site.lat,site.lon,x,-z);
+  function yAt(x,z){const p=at(x,z);return height(p.lat,p.lon)-baseHeight-(x*x+z*z)/(2*radius);}
+  function fromChart(p){
+    const home=surface.sites[0];
+    return {lat:home.lat-p.z/radius,lon:home.lon+p.x/(radius*Math.cos(home.lat))};
+  }
+  function local(p){
+    const ll=fromChart(p),d=ll.lon-site.lon,c=Math.cos(ll.lat),s=Math.sin(ll.lat);
+    const east=c*Math.sin(d),north=Math.cos(site.lat)*s-Math.sin(site.lat)*c*Math.cos(d);
+    const dot=Math.sin(site.lat)*s+Math.cos(site.lat)*c*Math.cos(d),length=Math.hypot(east,north);
+    const factor=length>1e-12?radius*Math.atan2(length,dot)/length:radius;
+    return {x:east*factor,z:-north*factor};
+  }
+  const projection=createSurveyProjection(T,radius+baseHeight,yAt,
+    (x,z)=>{const p=at(x,z);return height(p.lat,p.lon)-baseHeight;},
+    (x,z,out)=>{const p=at(x,z);return out.copy(frame(p.lat,p.lon).up).applyQuaternion(inverse);});
+  function global(x,z){const p=at(x,z);return chart(p.lat,p.lon);}
+  function project(object){
+    object.updateMatrix();projection.matrix(object.matrix).decompose(object.position,object.quaternion,object.scale);
+  }
+  function pose(object,x,y,z,yaw=0,pitch=0,roll=0){
+    object.position.set(x,y,z);object.rotation.set(pitch,yaw,roll);project(object);
+  }
+  return {at,global,local,fromChart,yAt,baseHeight,projection,project,pose};
+}
 // All scenery is authored geometry. Sites share one tangent chart and leave
 // the original map connections open. The historic hunting rooms share a biome.
 // Scalloped, overlapping tufts give the blue moss and ochre crowns the soft
@@ -303,9 +334,14 @@ function createKloseScenery(T, parent, surface) {
   const distantShapes={round:new T.SphereGeometry(1,8,5),rock:new T.IcosahedronGeometry(1,0),canopy:kloseCanopyGeometry(T,false),
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);
-  const batches=[],pipi=[];
-  const wildlife=createKloseWildlife(T,surface,pipi);
-  const safari=createKloseSafari(T,surface);
+  const batches=[],pipi=[],placements=new Map();
+  function placement(site){
+    if(!placements.has(site.id))placements.set(site.id,createKloseSitePlacement(T,surface,site));
+    return placements.get(site.id);
+  }
+  const faunaSurface={...surface,placement};
+  const wildlife=createKloseWildlife(T,faunaSurface,pipi);
+  const safari=createKloseSafari(T,faunaSurface);
   // The classic grassland has blue turf and one yellow-green upper terrace.
   // The hunting grounds use bluer violet banks; only the sanctuary shares
   // the azure grass. Values were sampled from the corresponding map frames.
@@ -332,13 +368,10 @@ function createKloseScenery(T, parent, surface) {
     group.name=site.name;group.add(near,far);parent.add(group);
     group.position.copy(point(site.lat,site.lon));group.quaternion.copy(frame(site.lat,site.lon).quaternion);
     const seed=randFrom(167518+order*71837),choose=list=>list[Math.floor(seed()*list.length)];
-    const records=new Map(),baseHeight=height(site.lat,site.lon),obstacles=[],overhead=new Map();
+    const records=new Map(),space=placement(site),baseHeight=space.baseHeight,obstacles=[],overhead=new Map(),cameraSolids=[];
     const bossGlade=site.id==='forest'?KLOSE_TERRITORIES.forest.find(([id])=>id===47):null;
-    function obstacle(x,z,r) {obstacles.push({x:site.x+x,z:site.z+z,r});}
-    function yAt(x,z) {
-      const at=move(site.lat,site.lon,x,-z);
-      return height(at.lat,at.lon)-baseHeight-(x*x+z*z)/(2*radius);
-    }
+    function obstacle(x,z,r) {obstacles.push({...space.global(x,z),r});}
+    const yAt=space.yAt;
     function stamp(key,x,y,z,sx,sy,sz,hex,rx=0,ry=0,rz=0) {
       temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(sx,sy,sz);temp.updateMatrix();
       remember(key,hex);
@@ -366,9 +399,10 @@ function createKloseScenery(T, parent, surface) {
       }
     }
     function blocked(x,z,pad=0) {
+      const global=space.global(x,z);
       const pod=site.id==='swamp'&&Math.hypot((x+3.6)/(5.4+pad),(z+13)/(3.4+pad))<1;
-      return pod || Math.hypot(x,z)<8+pad || padClear(site.x+x,site.z+z,pad) || trail(site.x+x,site.z+z)<3+pad ||
-        pools.some(p=>Math.hypot((site.x+x-p.x)/(p.rx+pad),(site.z+z-p.z)/(p.rz+pad))<1.09);
+      return pod || Math.hypot(x,z)<8+pad || padClear(global.x,global.z,pad) || trail(global.x,global.z)<3+pad ||
+        pools.some(p=>Math.hypot((global.x-p.x)/(p.rx+pad),(global.z-p.z)/(p.rz+pad))<1.09);
     }
     function leafFan(x,y,z,s,colors,n=9) {
       const phase=seed()*tau;
@@ -526,7 +560,7 @@ function createKloseScenery(T, parent, surface) {
         stamp('sod',x,g+.08,z,sx,1.35,sz,leaves[1],0,seed()*.66);
         for(let j=0;j<32;j++) {
           const a=seed()*tau,t=Math.sqrt(seed()),px=x+sx*t*Math.cos(a),pz=z+sz*t*Math.sin(a);
-          if(trail(site.x+px,site.z+pz)<1.35)continue;
+          const global=space.global(px,pz);if(trail(global.x,global.z)<1.35)continue;
           const py=yAt(px,pz)+.1+.17*(1-t);
           const s=.15+.61*seed();
           leafFan(px,py,pz,s,leaves,4+Math.floor(seed()*3));
@@ -718,8 +752,8 @@ function createKloseScenery(T, parent, surface) {
         const x=10+j*.38,z=-16+Math.sin(j*.76)*1.1;
         stamp('coreCrystal',x,yAt(x,z)-.035,z,.19,.21+.14*Math.sin(j)**2,.22,'#42bdab',.26,j*.53);
       }
-      const light=new T.PointLight(0x47dee2,1.05,13);light.position.set(8,floor+4,-15);near.add(light);
-      const fill=new T.PointLight(0xffddb3,.92,42);fill.position.set(-1,floor+7,-2);near.add(fill);
+      const light=new T.PointLight(0x47dee2,1.05,13);light.position.set(8,floor+4,-15);space.project(light);near.add(light);
+      const fill=new T.PointLight(0xffddb3,.92,42);fill.position.set(-1,floor+7,-2);space.project(fill);near.add(fill);
     }
     if(site.id==='flame') {
       for(const [x,z,s] of [[-9,-12,4.6],[10,-13,4.2],[14,-6,3.2]])tree(x,z,s);
@@ -752,8 +786,9 @@ function createKloseScenery(T, parent, surface) {
       const detail=randFrom(3733+order*419);
       for(let i=0;i<62;i++){
         const az=detail()*tau,range=5+23*detail(),x=Math.sin(az)*range,z=Math.cos(az)*range;
-        if(padClear(site.x+x,site.z+z,.5)||trail(site.x+x,site.z+z)<2.7||
-           pools.some(p=>Math.hypot((site.x+x-p.x)/p.rx,(site.z+z-p.z)/p.rz)<1.03))continue;
+        const global=space.global(x,z);
+        if(padClear(global.x,global.z,.5)||trail(global.x,global.z)<2.7||
+           pools.some(p=>Math.hypot((global.x-p.x)/p.rx,(global.z-p.z)/p.rz)<1.03))continue;
         const size=.35+.71*detail(),y=yAt(x,z)-.015;
         for(let j=0;j<6;j++){
           const angle=az+j*tau/6,stretch=size*(.65+.42*detail());
@@ -764,17 +799,17 @@ function createKloseScenery(T, parent, surface) {
     // Record the top of solid scenery in 3 m ground cells directly from the
     // rendered geometry. A shuttle approaches a crown, arch or cave roof from
     // above; the walker's trunk-only footprint cannot describe that contact.
-    const bounds=new T.Box3(),birdCover=new Map();
+    const bounds=new T.Box3(),projectedBounds=new T.Box3(),corner=new T.Vector3(),birdCover=new Map();
     for(const [key,items] of records) {
       const {geo,material}=shapes.get(key);
       // Ground creatures need a canopy clearance appropriate to their height.
       if(!geo.boundingBox)geo.computeBoundingBox();
       for(const item of key==='fern'?[]:items){
         bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
-        if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
+        if(bounds.max.x<-104||bounds.min.x>104||bounds.max.z<-104||bounds.min.z>104)continue;
         const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
         const underside=bounds.min.y-yAt(cx,cz);
-        const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z,underside};
+        const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z,underside,key,item};
         for(let ix=Math.floor(box.left);ix<=Math.floor(box.right);ix++)
           for(let iz=Math.floor(box.back);iz<=Math.floor(box.front);iz++){
             const cell=ix*256+iz;
@@ -787,7 +822,14 @@ function createKloseScenery(T, parent, surface) {
         for(const item of items){
           bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
           if(bounds.max.y-bounds.min.y<.34)continue;
-          const top=baseHeight+bounds.max.y;
+          item.projectedMatrix??=space.projection.matrix(item.matrix.clone());
+          projectedBounds.copy(geo.boundingBox).applyMatrix4(item.projectedMatrix);
+          let top=-Infinity;
+          for(const x of [projectedBounds.min.x,projectedBounds.max.x])
+            for(const y of [projectedBounds.min.y,projectedBounds.max.y])
+              for(const z of [projectedBounds.min.z,projectedBounds.max.z]){
+                corner.set(x,y,z).applyQuaternion(group.quaternion).add(group.position);top=Math.max(top,corner.length()-radius);
+              }
           for(let ix=Math.floor(bounds.min.x/3);ix<=Math.floor(bounds.max.x/3);ix++)
             for(let iz=Math.floor(bounds.min.z/3);iz<=Math.floor(bounds.max.z/3);iz++){
               const cell=ix*512+iz;overhead.set(cell,Math.max(overhead.get(cell)??-Infinity,top));
@@ -797,10 +839,15 @@ function createKloseScenery(T, parent, surface) {
       function batch(target,geometry,entries) {
         if(!entries.length)return;
         const mesh=new T.InstancedMesh(geometry,material,entries.length);
-        entries.forEach((item,i)=>{mesh.setMatrixAt(i,item.matrix);mesh.setColorAt(i,color(item.hex));});
+        entries.forEach((item,i)=>{
+          item.projectedMatrix??=space.projection.matrix(item.matrix.clone());
+          mesh.setMatrixAt(i,item.projectedMatrix);mesh.setColorAt(i,color(item.hex));
+        });
         mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;
         mesh.receiveShadow=true;mesh.castShadow=target===near&&!['pool','energyPool','mud','lamp','sod'].includes(key);
+        mesh.userData.sceneryKey=key;
         target.add(mesh);
+        if(target===near&&!['pool','energyPool','mud','lamp','sod','leaf','fern'].includes(key))cameraSolids.push(mesh);
       }
       batch(near,geo,items);
       if(key!=='leaf')batch(far,distantShapes[key]||geo,items.filter(item=>{
@@ -811,7 +858,7 @@ function createKloseScenery(T, parent, surface) {
     if(site.id==='grassland'){
       const perches=[[2,-5],[-2,-8],[3,1],[-4,5],[-10,10]];
       for(const [index,[x,z]] of perches.entries()){
-        const pet={...createFieldSpirit(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
+        const pet={...createFieldSpirit(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,space,cover:birdCover,cooldown:0,
           random:randFrom(15831+pipi.length*931),yaw:0,hop:null,goal:null,idle:0,clock:0,at:null};
         // A scenery edit can shift a bed over a traditional perch. Search
         // outwards on open soil instead of instantiating inside its mesh.
@@ -824,15 +871,19 @@ function createKloseScenery(T, parent, surface) {
             pet.x=pet.homeX=px;pet.z=pet.homeZ=pz;found=true;break;
           }
         }
-        if(!found){pet.dispose();continue;}
+        pet.spawnPending=!found;pet.retryIn=1;
         pet.root.userData.kloseSpirit=pet.id;
         pet.yaw=pet.random()*tau;pet.idle=pet.random()*1.1;pet.clock=pet.random()*4;
-        pipi.push(pet);near.add(pet.animal);posePipi(pet);
+        pipi.push(pet);near.add(pet.animal);posePipi(pet);pet.root.visible=found;
       }
     }
     safari.instantiate(site,near,yAt,obstacles,birdCover);
     wildlife.install(site,near,yAt,obstacles,birdCover);
-    return {group,near,far,site,obstacles,overhead};
+    const fixtures=[];
+    for(const object of near.children)if(object.userData.kloseFixture)object.traverse(part=>{
+      if(part.isMesh&&!part.material.transparent){fixtures.push(part);cameraSolids.push(part);}
+    });
+    return {group,near,far,site,space,obstacles,overhead,cover:birdCover,cameraSolids,fixtures};
   }
   function birdClear(pet,x,z,walker,shuttle){
     // The meadow centre is the published walking-map arrival point.
@@ -844,10 +895,10 @@ function createKloseScenery(T, parent, surface) {
       // allow the bird to move outwards while still inside that margin.
       return distance>=limit || (pet.at&&distance>Math.hypot(pet.x-cx,pet.z-cz)+1e-7);
     }
-    if(walker&&!clears(walker.x,walker.z,.36+pet.radius))return false;
+    if(walker&&!clears(walker.x,walker.z,.43+pet.radius))return false;
     if(shuttle&&!clears(shuttle.x,shuttle.z,9+pet.radius))return false;
-    return pipi.every(other=>other===pet||other.cooldown||clears(other.x,other.z,other.radius+pet.radius+.03)) &&
-      wildlife.inhabitants.every(other=>other.site.id!=='grassland'||!other.root.visible||clears(other.x,other.z,other.radius+pet.radius));
+    return pipi.every(other=>other===pet||other.cooldown||other.spawnPending||clears(other.x,other.z,other.radius+pet.radius+.03)) &&
+      wildlife.inhabitants.every(other=>other.site.id!=='grassland'||other.spawnPending||!other.root.visible||clears(other.x,other.z,other.radius+pet.radius));
   }
   function clearPath(pet,x,z,walker,shuttle){
     const dx=x-pet.x,dz=z-pet.z,steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.14));
@@ -874,10 +925,9 @@ function createKloseScenery(T, parent, surface) {
     pet.at=move(pet.site.lat,pet.site.lon,pet.x,-pet.z);
     // Follow the drawn triangles under the feet, including after a change
     // of terrain LOD. Local +Z is the actual eye and bill direction.
-    pet.animal.position.set(pet.x,ground+groundCorrection(pet.at.lat,pet.at.lon)+.004+(h?h.lift*arc:0),pet.z);
-    pet.animal.rotation.y=pet.yaw;
-    pet.animal.rotation.x=-Math.atan((pet.yAt(pet.x+.12*dx,pet.z+.12*dz)-ground)/.12);
-    pet.animal.rotation.z=Math.atan((pet.yAt(pet.x+.12*dz,pet.z-.12*dx)-ground)/.12);
+    const pitch=-Math.atan((pet.yAt(pet.x+.12*dx,pet.z+.12*dz)-ground)/.12);
+    const roll=Math.atan((pet.yAt(pet.x+.12*dz,pet.z-.12*dx)-ground)/.12);
+    pet.space.pose(pet.animal,pet.x,ground+groundCorrection(pet.at.lat,pet.at.lon)+.004+(h?h.lift*arc:0),pet.z,pet.yaw,pitch,roll);
     const breath=.012*Math.sin(pet.clock*3);
     pet.blink(pet.clock);
     pet.body.scale.set(1-.02*arc,1+breath+.05*arc,1-.02*arc);
@@ -941,16 +991,26 @@ function createKloseScenery(T, parent, surface) {
     wildlife.update(total,walker,shuttle);
     safari.update(total,walker,shuttle);
     if(!batches[0]?.near.visible)return;
+    const visitor=walker&&placement(sites[0]).local(walker),boat=shuttle&&placement(sites[0]).local(shuttle);
     for(const pet of pipi){
-      pet.cooldown=Math.max(0,pet.cooldown-total);pet.root.visible=!pet.cooldown;
+      pet.cooldown=Math.max(0,pet.cooldown-total);
+      if(pet.spawnPending&&(pet.retryIn-=total)<=0){
+        pet.retryIn=1;
+        for(let ring=0;ring<=18&&pet.spawnPending;ring++)for(let k=0,n=Math.max(1,ring*8);k<n;k++){
+          const a=tau*k/n,x=pet.homeX+ring*.45*Math.cos(a),z=pet.homeZ+ring*.45*Math.sin(a);
+          if(!birdClear(pet,x,z,visitor,boat))continue;
+          pet.x=x;pet.z=z;pet.spawnPending=false;break;
+        }
+      }
+      pet.root.visible=!pet.cooldown&&!pet.spawnPending;
     }
-    for(let i=0;i<steps;i++)for(const pet of pipi)if(!pet.cooldown)advancePipi(pet,total/steps,walker,shuttle);
-    for(const pet of pipi)if(!pet.cooldown)posePipi(pet);
+    for(let i=0;i<steps;i++)for(const pet of pipi)if(pet.root.visible)advancePipi(pet,total/steps,visitor,boat);
+    for(const pet of pipi)if(pet.root.visible)posePipi(pet);
   }
   function obstacleTop(x,z,footprint){
     let top=-Infinity;
     for(let i=0;i<sites.length;i++){
-      const site=sites[i],dx=x-site.x,dz=z-site.z;
+      const site=sites[i],p=placement(site).local({x,z}),dx=p.x,dz=p.z;
       if(Math.abs(dx)>94+footprint||Math.abs(dz)>94+footprint)continue;
       const batch=batches[i]||(batches[i]=makeSite(site,i));
       for(let ix=Math.floor((dx-footprint)/3);ix<=Math.floor((dx+footprint)/3);ix++)
@@ -959,11 +1019,13 @@ function createKloseScenery(T, parent, surface) {
         }
     }
     for(const pet of pipi){
-      if(!pet.cooldown&&Math.hypot(x-pet.x,z-pet.z)<footprint+pet.radius)
+      const p=pet.space.global(pet.x,pet.z);
+      if(!pet.cooldown&&!pet.spawnPending&&Math.hypot(x-p.x,z-p.z)<footprint+pet.radius)
         top=Math.max(top,height(pet.at.lat,pet.at.lon)+pet.size+(pet.hop?.lift||0));
     }
     for(const pet of wildlife.inhabitants){
-      if(pet.root.visible&&Math.hypot(x-pet.site.x-pet.x,z-pet.site.z-pet.z)<footprint+pet.radius)
+      const p=placement(pet.site).global(pet.x,pet.z);
+      if(pet.root.visible&&Math.hypot(x-p.x,z-p.z)<footprint+pet.radius)
         top=Math.max(top,height(pet.at.lat,pet.at.lon)+(pet.shield?.visible?pet.shieldHeight:pet.size));
     }
     return Math.max(top,wildlife.obstacleTop(x,z,footprint),safari.obstacleTop(x,z,footprint));
@@ -971,8 +1033,8 @@ function createKloseScenery(T, parent, surface) {
   function nearestPipi(lat,lon,id) {
     const observer=chart(lat,lon);let closest=null,distance=Infinity;
     for(const pet of pipi) {
-      if(pet.cooldown||!pet.near.visible||(id&&pet.id!==id))continue;
-      const d=Math.hypot(observer.x-pet.x,observer.z-pet.z);
+      if(pet.cooldown||pet.spawnPending||!pet.near.visible||(id&&pet.id!==id))continue;
+      const p=pet.space.global(pet.x,pet.z),d=Math.hypot(observer.x-p.x,observer.z-p.z);
       if(d<distance){closest=pet;distance=d;}
     }
     return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:closest.size,visible:true,distance,lat:closest.at.lat,lon:closest.at.lon,
@@ -992,7 +1054,8 @@ function createKloseScenery(T, parent, surface) {
     if(hunting)return hunting;
     const viewer=chart(lat,lon),roots=[];
     for(const p of [...pipi,...wildlife.inhabitants]){
-      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)<=22)roots.push(p.root);
+      const at=placement(p.site).global(p.x,p.z);
+      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-at.x,viewer.z-at.z)<=22)roots.push(p.root);
     }
     const hit=raycaster.intersectObjects(roots,true)[0];
     if(!hit)return null;
@@ -1001,11 +1064,19 @@ function createKloseScenery(T, parent, surface) {
   }
   function walk(lat,lon,east,north) {
     const start=chart(lat,lon),end=move(lat,lon,east,north),dest=chart(end.lat,end.lon);
+    function clearAdvance(candidate){
+      if(canStand(candidate.lat,candidate.lon))return candidate;
+      const c=chart(candidate.lat,candidate.lon),space=placement(sites[0]);
+      for(const alternative of [{x:c.x,z:start.z},{x:start.x,z:c.z}]){
+        const p=space.fromChart(alternative);if(canStand(p.lat,p.lon))return p;
+      }
+      return {lat,lon};
+    }
     const candidates=batches.filter(part=>Math.hypot(start.x-part.site.x,start.z-part.site.z)<111)
-      .flatMap(part=>part.obstacles).concat(pipi.filter(p=>!p.cooldown).map(p=>({x:p.x,z:p.z,r:p.radius})),
-        wildlife.inhabitants.filter(p=>p.root.visible).map(p=>({x:p.site.x+p.x,z:p.site.z+p.z,r:p.radius})),safari.obstacles())
-      .filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(east,north)+o.r+.55);
-    if(!candidates.length)return end;
+      .flatMap(part=>part.obstacles).concat(pipi.filter(p=>!p.cooldown&&!p.spawnPending).map(p=>({...p.space.global(p.x,p.z),r:p.radius})),
+        wildlife.inhabitants.filter(p=>p.root.visible).map(p=>({...placement(p.site).global(p.x,p.z),r:p.radius})),safari.obstacles())
+      .filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(dest.x-start.x,dest.z-start.z)+o.r+.60);
+    if(!candidates.length)return clearAdvance(end);
     // Short steps plus radial projection let the player slide around a trunk
     // without crossing thin buttresses during a sprint.
     const count=Math.max(1,Math.ceil(Math.hypot(east,north)/.26));
@@ -1013,15 +1084,92 @@ function createKloseScenery(T, parent, surface) {
     let x=start.x,z=start.z;
     for(let i=0;i<count;i++) {
       x+=dx;z+=dz;
-      for(const o of candidates) {
-        const xx=x-o.x,zz=z-o.z,dist=Math.hypot(xx,zz),minimum=o.r+.26;
+      for(let pass=0;pass<3;pass++)for(const o of candidates) {
+        const xx=x-o.x,zz=z-o.z,dist=Math.hypot(xx,zz),minimum=o.r+.43;
         if(dist<minimum) {
           if(dist<1e-6){x=o.x+minimum;z=o.z;}
           else{x=o.x+xx*minimum/dist;z=o.z+zz*minimum/dist;}
         }
       }
     }
-    return move(lat,lon,x-start.x,start.z-z);
+    return clearAdvance(placement(sites[0]).fromChart({x,z}));
+  }
+  const cameraRay=new T.Raycaster(),cameraDirection=new T.Vector3(),cameraHit=[];
+  function clipCamera(aim,eye){
+    cameraDirection.copy(eye).sub(aim);const length=cameraDirection.length();if(length<.35)return;
+    cameraDirection.divideScalar(length);cameraRay.set(aim,cameraDirection);cameraRay.near=.12;cameraRay.far=length+.20;
+    cameraHit.length=0;
+    for(const part of batches){
+      if(!part?.group.visible||!part.near.visible)continue;
+      part.group.updateWorldMatrix(true,true);
+      cameraRay.intersectObjects(part.cameraSolids,false,cameraHit);
+    }
+    let distance=length;for(const hit of cameraHit)distance=Math.min(distance,Math.max(.35,hit.distance-.23));
+    if(distance<length)eye.copy(aim).addScaledVector(cameraDirection,distance);
+  }
+  const standRay=new T.Raycaster(),standBase=new T.Vector3(),standOrigin=new T.Vector3(),standDirection=new T.Vector3(),standHits=[];
+  const standMesh=new T.Mesh(shapes.get('rock').geo,shapes.get('rock').material),standBounds=new T.Box3();standMesh.matrixAutoUpdate=false;
+  function canStand(lat,lon,bodyRadius=.43,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<=0)return false;
+    prepareWalk(lat,lon);
+    const visitor=chart(lat,lon),f=frame(lat,lon);
+    standBase.copy(point(lat,lon,groundCorrection(lat,lon)+.012));
+    const actors=[...pipi.filter(p=>p.root.visible&&!p.spawnPending),...wildlife.inhabitants.filter(p=>p.root.visible&&!p.spawnPending)];
+    const circles=batches.flatMap(part=>part?.obstacles||[]).concat(
+      actors.map(p=>({...placement(p.site).global(p.x,p.z),r:p.radius})),safari.obstacles());
+    for(const circle of circles){
+      if(Math.hypot(visitor.x-circle.x,visitor.z-circle.z)>circle.r+bodyRadius+bodyHeight+8)continue;
+      const ll=placement(sites[0]).fromChart(circle),center=point(ll.lat,ll.lon);
+      if(center.distanceTo(standBase)>circle.r+bodyRadius+bodyHeight+2)continue;
+      const gap=center.sub(standBase).projectOnPlane(f.up).length();
+      if(gap<circle.r+bodyRadius)return false;
+    }
+    const solids=[];
+    for(const part of batches){
+      if(!part)continue;
+      const p=part.space.local(visitor);if(Math.abs(p.x)>104+bodyRadius||Math.abs(p.z)>104+bodyRadius)continue;
+      part.group.updateWorldMatrix(true,true);
+      for(const mesh of part.fixtures){
+        if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
+        standBounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+        if(standBounds.distanceToPoint(standBase)>bodyRadius+bodyHeight)continue;
+        solids.push({shape:{geo:mesh.geometry,material:mesh.material},matrix:mesh.matrixWorld.clone()});
+      }
+      const entries=new Set();
+      for(let ix=Math.floor(p.x-bodyRadius);ix<=Math.floor(p.x+bodyRadius);ix++)
+        for(let iz=Math.floor(p.z-bodyRadius);iz<=Math.floor(p.z+bodyRadius);iz++)
+          for(const box of part.cover.get(ix*256+iz)||[]){
+            if(box.underside<=bodyHeight+.12&&!['pool','energyPool','mud','lamp','sod','leaf','fern'].includes(box.key))entries.add(box);
+          }
+      if(!entries.size)continue;
+      const seen=new Set();
+      for(const entry of entries){
+        if(seen.has(entry.item))continue;seen.add(entry.item);
+        solids.push({shape:shapes.get(entry.key),matrix:new T.Matrix4().multiplyMatrices(part.near.matrixWorld,entry.item.projectedMatrix)});
+      }
+    }
+    if(!solids.length)return true;
+    function blocked(origin,direction,length){
+      standRay.set(origin,direction);standRay.near=.035;standRay.far=length;standHits.length=0;
+      for(const solid of solids){
+        standMesh.geometry=solid.shape.geo;standMesh.material=solid.shape.material;standMesh.matrixWorld.copy(solid.matrix);
+        standMesh.raycast(standRay,standHits);if(standHits.length)return true;
+      }
+      return false;
+    }
+    // Actual triangles preserve openings under roots and arches. A flight
+    // height envelope, or an arch's whole bounding box, would seal that gap.
+    if(blocked(standBase,f.up,bodyHeight))return false;
+    for(let i=0;i<8;i++){
+      const a=i*tau/8;standDirection.copy(f.east).multiplyScalar(Math.cos(a)).addScaledVector(f.south,Math.sin(a));
+      standOrigin.copy(standBase).addScaledVector(standDirection,bodyRadius);
+      if(blocked(standOrigin,f.up,bodyHeight))return false;
+      for(const level of [.12,bodyHeight*.40,bodyHeight*.75,Math.max(.12,bodyHeight-.06)]){
+        standOrigin.copy(standBase).addScaledVector(f.up,level);
+        if(blocked(standOrigin,standDirection,bodyRadius+.025))return false;
+      }
+    }
+    return true;
   }
   function prepareWalk(lat,lon){
     const {x,z}=chart(lat,lon);
@@ -1041,5 +1189,5 @@ function createKloseScenery(T, parent, surface) {
   }
   return {update,nearestPipi,spiritObservation,forestBossPosition,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
     spiritSiteHint:wildlife.hint,setSafariState:safari.setState,safariAction:safari.action,safariWalk:safari.walked,safariHint:safari.hint,
-    walk,prepareWalk,prepareFlight,obstacleTop};
+    walk,prepareWalk,prepareFlight,obstacleTop,clipCamera,canStand};
 }

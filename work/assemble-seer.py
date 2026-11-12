@@ -2,6 +2,8 @@
 from html import escape
 from base64 import b64encode
 import json
+import subprocess
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -63,8 +65,21 @@ def script_source(path):
     if path == spirits/'catalog.json':
         return '/* spirit-catalog:start */\nconst SEER_SPIRIT_DATA = '+raw.strip().replace('<',r'\u003c')+';\n/* spirit-catalog:end */'
     return raw
-source = '\n'.join(script_source(path) for path in scripts)
+try:
+    revision = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=root,
+                              capture_output=True, text=True, check=True).stdout.strip()
+    dirty = subprocess.run(['git', 'diff', '--quiet', '--', 'src', 'work/assemble-seer.py', 'work/seer-layout.html'],
+                           cwd=root, stderr=subprocess.DEVNULL).returncode != 0
+except (OSError, subprocess.CalledProcessError):
+    revision, dirty = '本机源码', False
+built_at = datetime.now(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+build = {'revision': revision, 'modified': dirty, 'builtAt': built_at,
+         'label': revision + (' + 本机修改' if dirty else '') + ' · ' + built_at}
+source = ('const SEER_BUILD_INFO=' + json.dumps(build, ensure_ascii=False) + ';\n'
+          'document.title="SEER · "+SEER_BUILD_INFO.label;\n' +
+          '\n'.join(script_source(path) for path in scripts))
 layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + (spirits/'terminal.css').read_text('utf-8') + '</style>'
+layout = layout.replace('<strong data-tag>', '<small data-build title="本页实际加载的构建">' + escape(build['label']) + '</small><strong data-tag>', 1)
 library = (work/'three-r128.min.js').read_text('utf-8').replace('</script','<\\/script')
 fragment = layout + '\n<script>\n' + library + '\n</script>\n<script>\n' + source + '\n</script>\n'
 publish_text(viz,fragment)

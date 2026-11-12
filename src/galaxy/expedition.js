@@ -585,7 +585,8 @@
       }
     }
     function surfaceCamera(dt){
-      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015);
+      const correction=body.groundCorrection?.(position.lat,position.lon)||0;
+      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015+correction);
 
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
       if(localVehicle()&&flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();

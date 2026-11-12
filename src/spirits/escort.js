@@ -11,6 +11,8 @@ function createSpiritEscort(T,world,metre=1){
   shadow.position.y=.006;anchor.add(shadow);
   let model=null,selected=null,foot=null,lastOwner=null,goal=null,sample=0,stalled=0;
   let heading=0,stride=0,radius=.26,stepHeight=.03;
+  const footprint=Array.from({length:8},(_,i)=>[Math.cos(i*Math.PI/4),Math.sin(i*Math.PI/4)]);
+  const clearanceHeight=()=>model?model.size+stepHeight+radius*.047+.08:0;
   const trail=[];
   function hide(){
     anchor.visible=false;foot=lastOwner=goal=null;sample=stalled=stride=0;trail.length=0;
@@ -42,7 +44,7 @@ function createSpiritEscort(T,world,metre=1){
       goal=null;sample=.15;
       // NoNo normally flies at the player's right. Prefer the opposite side,
       // then try a single-file position in a narrow passage.
-      for(const [lateral,front] of [[-side,fore],[0,-1.1-radius],[-.6*side,-1.4],[side,fore]]){
+      for(const [lateral,front] of [[-side,fore],[0,-1.1-radius],[-.6*side,-1.1-radius],[side,fore]]){
         const dx=c*lateral-s*front,dz=-s*lateral-c*front;
         const candidate=move(owner,dx,dz),offset=direction(owner,candidate);
         if(Math.hypot(offset.x-dx,offset.z-dz)>.19||!clear(candidate,radius))continue;
@@ -54,7 +56,7 @@ function createSpiritEscort(T,world,metre=1){
       goal=trail.find(point=>direction(foot,point).distance>.32&&clear(point,radius))||foot;
     }
     if(!foot){foot={...goal};heading=face+Math.PI;stalled=0;}
-    if(!clear(foot,radius)){anchor.visible=false;foot=null;return false;}
+    if(!clear(foot,radius)){anchor.visible=false;foot=goal=null;sample=0;return false;}
     let target=goal;
     if(stalled>.28&&trail.length>1){
       // Follow the owner's footsteps around a door jamb or a blind corner.
@@ -81,20 +83,62 @@ function createSpiritEscort(T,world,metre=1){
     else if(target===goal)stalled=0;
     const effort=dt?Math.min(1,delta.distance/(dt*3.6)):0;
     stride+=delta.distance*8;
-    gait.position.y=stepHeight*Math.abs(Math.sin(stride))*effort;
     gait.rotation.z=.047*Math.sin(stride)*effort;
+    // A roll about the feet otherwise tips one edge of a larger model below
+    // its ground plane. Lift by the same real footprint used for collision.
+    gait.position.y=stepHeight*Math.abs(Math.sin(stride))*effort+radius*Math.abs(Math.sin(gait.rotation.z));
     model.update(dt,effort);anchor.visible=true;
     return true;
   }
   function deck(owner,yaw,dt,firstPerson,population,flight){
     const delta=(a,b)=>({x:b.x-a.x,z:b.z-a.z,distance:Math.hypot(b.x-a.x,b.z-a.z)});
-    const move=(p,x,z)=>habitat.move(p,x,z,radius,(from,to)=>population.clearsCrew(from,to,radius)&&flight.clearsParked(from,to));
-    const clear=(p,r)=>habitat.canStand(p,r)&&!population.nearest(p,r+.35);
+    function clear(p,r){
+      if(!habitat.canStand(p,r)||population.nearest(p,r+.35))return false;
+      const h=clearanceHeight(),where=habitat.location(p),room=habitat.byId.get(where.roomId);
+      if(room&&!room.spec.openRoof&&h>room.spec.height-1.15)return false;
+      const level=habitat.plan.levels.find(d=>d.id===p.level);
+      for(const lane of level?.corridors||[]){
+        const dx=lane.to.x-lane.from.x,dz=lane.to.z-lane.from.z,length=dx*dx+dz*dz;
+        const t=length?T.MathUtils.clamp(((p.x-lane.from.x)*dx+(p.z-lane.from.z)*dz)/length,0,1):0;
+        if(Math.hypot(p.x-lane.from.x-t*dx,p.z-lane.from.z-t*dz)<lane.width/2+r&&h>lane.height-.16)return false;
+      }
+      for(const cabin of habitat.rooms){
+        if(cabin.level!==p.level)continue;
+        const width=cabin.group.userData.doorWidth??3.4;
+        if(Math.abs(p.x-cabin.door[0])<width/2+r&&Math.abs(p.z-cabin.door[2])<r+.7&&
+          h>(cabin.group.userData.doorHeight??3.10)-.10)return false;
+      }
+      const lift=habitat.liftPlant?.station(p);
+      if(lift&&h>habitat.liftPlant.cabinBounds.height-.16)return false;
+      return true;
+    }
+    const move=(p,x,z)=>habitat.move(p,x,z,radius,(from,to)=>population.clearsCrew(from,to,radius)&&flight.clearsParked(from,to)&&clear(to,radius));
     if(!follow(owner,yaw,dt,firstPerson,delta,move,clear))return;
     anchor.position.copy(habitat.worldPosition(foot.x,foot.y+contactFloor(foot),foot.z));
   }
   function surface(body,owner,yaw,dt,firstPerson,mayStand){
     const delta=(a,b)=>{const d=navigationDisplacement(a,b,body);return {x:d.east,z:-d.north,distance:d.distance};};
+    function clear(p,r){
+      const h=clearanceHeight();
+      if(mayStand&&!mayStand(p,r,h))return false;
+      const supplied=Boolean(mayStand)||typeof body.canStand==='function'||typeof body.canSwim==='function';
+      if(body.canStand&&!body.canStand(p.lat,p.lon,r,h))return false;
+      if(!body.canStand&&body.canSwim&&!body.canSwim(p.lat,p.lon,r))return false;
+      // Shelter at foot level but not at head level means the head crosses
+      // the roof. The existing shelter API uses height above the local floor.
+      if(body.isSheltered?.(p.lat,p.lon,.06)&&!body.isSheltered(p.lat,p.lon,h))return false;
+      if(!supplied&&body.flightHeight){
+        const floor=body.height(p.lat,p.lon),top=body.flightHeight(p.lat,p.lon,r);
+        if(top>floor+.30)return false;
+      }
+      // A stationary spawn needs a full footprint too; a centre-only zero
+      // stride can otherwise leave a large companion inside a tree or wall.
+      if(!supplied)for(const [x,z] of footprint){
+        const edge=body.move(p.lat,p.lon,x*r,-z*r),resolved=body.walk(edge.lat,edge.lon,0,0);
+        if(delta(edge,resolved).distance>.05)return false;
+      }
+      return true;
+    }
     function move(p,dx,dz){
       const dest=body.walk(p.lat,p.lon,dx,-dz),length=Math.hypot(dx,dz);
       const side=radius-.26;
@@ -107,9 +151,11 @@ function createSpiritEscort(T,world,metre=1){
           if(Math.hypot(actual.x-dx,actual.z-dz)>.08)return p;
         }
       }
+      const steps=Math.max(1,Math.ceil(length/.55));
+      for(let i=1;i<=steps;i++)if(!clear(body.move(p.lat,p.lon,dx*i/steps,-dz*i/steps),radius))return p;
       return dest;
     }
-    if(!follow(owner,yaw,dt,firstPerson,delta,move,mayStand||(()=>true)))return;
+    if(!follow(owner,yaw,dt,firstPerson,delta,move,clear))return;
     anchor.position.copy(body.point(foot.lat,foot.lon,body.groundCorrection(foot.lat,foot.lon)+.01));
     anchor.quaternion.copy(body.frame(foot.lat,foot.lon).quaternion);
   }

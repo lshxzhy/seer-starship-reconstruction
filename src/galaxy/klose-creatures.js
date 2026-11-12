@@ -496,25 +496,30 @@ function createKloseWildlife(T,surface,meadowBirds){
   }
   function clear(p,x,z,walker,boat){
     if(Math.hypot(x,z)<1.05+p.radius || Math.hypot(x-p.homeX,z-p.homeZ)>7.6)return false;
-    const radius=p.radius,dx=p.site.x+x,dz=p.site.z+z;
+    const radius=p.radius,location=p.space.global(x,z),dx=location.x,dz=location.z;
     const height=p.shieldRadius&&p.radius===p.shieldRadius?p.shieldHeight:p.size;
     if(!kloseClearsCover(p.cover,x,z,radius,height+.12))return false;
     if(p.hazards.some(b=>Math.hypot(dx-b.x,dz-b.z)<b.r+radius))return false;
     if(pools.some(w=>Math.hypot((dx-w.x)/(w.rx+radius),(dz-w.z)/(w.rz+radius))<1.04))return false;
     const away=(cx,cz,r)=>{
       const d=Math.hypot(dx-cx,dz-cz);
-      return d>=r || (p.at&&d>Math.hypot(p.site.x+p.x-cx,p.site.z+p.z-cz)+1e-6);
+      const previous=p.space.global(p.x,p.z);
+      return d>=r || (p.at&&d>Math.hypot(previous.x-cx,previous.z-cz)+1e-6);
     };
     if(walker&&!away(walker.x,walker.z,radius+.35))return false;
     if(boat&&!away(boat.x,boat.z,radius+9))return false;
-    if(p.site.id==='grassland'&&meadowBirds.some(b=>!b.cooldown&&!away(b.x,b.z,radius+b.radius)))return false;
-    return inhabitants.every(other=>other===p||other.site!==p.site||p.at&&!other.root.visible||
-      away(other.site.x+other.x,other.site.z+other.z,other.radius+radius));
+    if(p.site.id==='grassland'&&meadowBirds.some(b=>{
+      if(b.cooldown||b.spawnPending)return false;
+      const q=b.space.global(b.x,b.z);return !away(q.x,q.z,radius+b.radius);
+    }))return false;
+    return inhabitants.every(other=>{
+      if(other===p||other.site!==p.site||other.spawnPending||other.cooldown)return true;
+      const q=other.space.global(other.x,other.z);return away(q.x,q.z,other.radius+radius);
+    });
   }
   function pose(p,bounce=0){
     p.at=move(p.site.lat,p.site.lon,p.x,-p.z);
-    p.root.position.set(p.x,p.yAt(p.x,p.z)+groundCorrection(p.at.lat,p.at.lon)+.006+bounce,p.z);
-    p.root.rotation.y=p.yaw;
+    p.space.pose(p.root,p.x,p.yAt(p.x,p.z)+groundCorrection(p.at.lat,p.at.lon)+.006+bounce,p.z,p.yaw);
   }
   function install(site,near,yAt,hazards,cover){
     if(site.id==='core')installCore(site,near,yAt,hazards);
@@ -522,7 +527,7 @@ function createKloseWildlife(T,surface,meadowBirds){
       const [speciesId,homeX,homeZ,level,kind]=row,model=createFieldSpirit(T,speciesId);
       const seed=(speciesId*37+index*19)%97;
       const p={...model,key:site.id+'-'+speciesId+'-'+(index+1),speciesId,level,kind,
-        site,near,yAt,hazards,cover,homeX,homeZ,x:homeX,z:homeZ,bodyRadius:model.radius,
+        site,near,yAt,space:surface.placement(site),hazards,cover,homeX,homeZ,x:homeX,z:homeZ,bodyRadius:model.radius,
         clock:0,yaw:-.3+seed*.031,distance:0,wait:.3+seed*.02,cooldown:0,path:null,walker:null,hits:0};
       if(speciesId===47){
         p.shieldRadius=Math.max(1.1*FIELD_SPIRIT_SCALE,model.radius*1.30);
@@ -536,7 +541,7 @@ function createKloseWildlife(T,surface,meadowBirds){
           if(clear(p,x,z,null,null)){p.x=p.homeX=x;p.z=p.homeZ=z;placed=true;break;}
         }
       }
-      if(!placed){p.dispose();continue;}
+      p.spawnPending=!placed;p.retryIn=1;
       p.root.userData.kloseSpirit=p.key;
       near.add(p.root);inhabitants.push(p);byKey.set(p.key,p);pose(p);p.root.visible=false;
       if(speciesId===47){
@@ -569,16 +574,18 @@ function createKloseWildlife(T,surface,meadowBirds){
         // a stretch of unbroken soil. The marker stays when the animal is shy.
         const mouth=new T.Mesh(new T.CylinderGeometry(.23,.19,.026,24),
           new T.MeshStandardMaterial({color:0x352c24,roughness:1}));
-        mouth.scale.set(FIELD_SPIRIT_SCALE,1,.72*FIELD_SPIRIT_SCALE);mouth.position.set(p.x,yAt(p.x,p.z)+.023,p.z);near.add(mouth);
+        mouth.userData.kloseFixture=true;
+        mouth.scale.set(FIELD_SPIRIT_SCALE,1,.72*FIELD_SPIRIT_SCALE);mouth.position.set(p.x,yAt(p.x,p.z)+.023,p.z);p.space.project(mouth);near.add(mouth);
       }
     }
   }
   function installCore(site,near,yAt,hazards){
+      const space=surface.placement(site);
       // The vine, upper mineral, violet bud and resonant seam are also
       // recognisable at a distance. Only the last seam comes alive.
       const spots=[[-6,-2,'卷叶鳄兰'],[4,-8,'高处矿石'],[-5,3,'紫花苞'],[3,-5,'共鸣矿石']];
       for(const [index,[x,z,name]] of spots.entries()){
-        const device=new T.Group();device.position.set(x,yAt(x,z),z);device.scale.setScalar(KLOSE_ITEM_SCALE);near.add(device);
+        const device=new T.Group();device.userData.kloseFixture=true;device.position.set(x,yAt(x,z),z);device.scale.setScalar(KLOSE_ITEM_SCALE);near.add(device);
         const jewel=index===1||index===3,mat=new T.MeshStandardMaterial({color:[0x788847,0x57bda9,0xa24d90,0x667d73][index],
           roughness:jewel?.32:.66,emissive:0x132a22,emissiveIntensity:jewel?.42:.1});
         const base=new T.Mesh(new T.DodecahedronGeometry(1),new T.MeshStandardMaterial({color:0x665c48,roughness:.95}));
@@ -613,8 +620,9 @@ function createKloseWildlife(T,surface,meadowBirds){
           }
           top=.91;
         }
-        switches.push({site,near,x,z,index,name,root:device,mat,top:top*KLOSE_ITEM_SCALE});
-        hazards.push({x:site.x+x,z:site.z+z,r:.74*KLOSE_ITEM_SCALE});
+        space.project(device);
+        switches.push({site,near,space,x,z,index,name,root:device,mat,top:top*KLOSE_ITEM_SCALE});
+        hazards.push({...space.global(x,z),r:.74*KLOSE_ITEM_SCALE});
       }
   }
   function exposed(p,visitor){
@@ -644,7 +652,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     const fixed=p.kind==='boss'||p.kind==='event'||p.speciesId===83||p.speciesId===442;
     let aim=p.yaw,travel=0;
     if(fixed){
-      if(walker)aim=Math.atan2(walker.x-p.site.x-p.x,walker.z-p.site.z-p.z);
+      if(walker){const local=p.space.local(walker);aim=Math.atan2(local.x-p.x,local.z-p.z);}
     }else{
       p.wait=Math.max(0,p.wait-dt);
       if(!p.path&&!p.wait){
@@ -676,6 +684,17 @@ function createKloseWildlife(T,surface,meadowBirds){
   function update(dt,walker,boat){
     for(const p of inhabitants){
       if(!p.near.visible){p.walker=null;continue;}
+      if(p.spawnPending){
+        p.retryIn-=dt;p.root.visible=false;
+        if(p.retryIn>0)continue;
+        p.retryIn=1;
+        for(let ring=0;ring<=18&&p.spawnPending;ring++)for(let k=0,n=1+ring*7;k<n;k++){
+          const a=k*Math.PI*2/n,x=p.homeX+Math.cos(a)*ring*.41,z=p.homeZ+Math.sin(a)*ring*.41;
+          if(!clear(p,x,z,walker,boat))continue;
+          p.x=x;p.z=z;p.spawnPending=false;break;
+        }
+        if(p.spawnPending)continue;
+      }
       p.cooldown=Math.max(0,p.cooldown-dt);
       const nearby=walker&&Math.hypot(walker.x-p.site.x,walker.z-p.site.z)<43;
       if(nearby){
@@ -691,7 +710,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     }
   }
   function record(p,viewer){
-    const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z);
+    const at=p.space.global(p.x,p.z),distance=Math.hypot(viewer.x-at.x,viewer.z-at.z);
     const lock=p.shield?.visible?'装备火焰喷射器，连续照射护膜（'+p.hits+'/3）':
       p.speciesId===83&&p.hits<3?'向探头的依依照射三次（'+p.hits+'/3）':
       p.speciesId===442&&!p.hits?'对探头的闪光依依照射一次':'';
@@ -703,8 +722,8 @@ function createKloseWildlife(T,surface,meadowBirds){
     const viewer=chart(lat,lon);let best=null;
     const options=key?[byKey.get(key)]:inhabitants;
     for(const p of options){
-      if(!p||!p.root.visible||!p.near.visible)continue;
-      const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z);
+      if(!p||p.spawnPending||!p.root.visible||!p.near.visible)continue;
+      const at=p.space.global(p.x,p.z),distance=Math.hypot(viewer.x-at.x,viewer.z-at.z);
       if((!best||distance<best.distance)&&distance<=40)best=record(p,viewer);
     }
     return best;
@@ -733,7 +752,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     if(coreStep<4)for(const sw of switches)if(sw.near.visible)candidates.push(sw);
     let best=null,range=Infinity;
     for(const c of candidates){
-      const distance=Math.hypot(visitor.x-c.site.x-c.x,visitor.z-c.site.z-c.z);
+      const at=surface.placement(c.site).global(c.x,c.z),distance=Math.hypot(visitor.x-at.x,visitor.z-at.z);
       if(distance>(caster?22:4))continue;
       const d=caster?caster.intersectObject(c.root,true)[0]?.distance:distance;
       if(d!==undefined&&d<range){range=d;best=c;}
@@ -760,7 +779,8 @@ function createKloseWildlife(T,surface,meadowBirds){
   }
   function obstacleTop(x,z,footprint){
     let top=-Infinity;
-    for(const sw of switches)if(Math.hypot(x-sw.site.x-sw.x,z-sw.site.z-sw.z)<footprint+.74*KLOSE_ITEM_SCALE){
+    for(const sw of switches){
+      const q=sw.space.global(sw.x,sw.z);if(Math.hypot(x-q.x,z-q.z)>=footprint+.74*KLOSE_ITEM_SCALE)continue;
       const at=move(sw.site.lat,sw.site.lon,sw.x,-sw.z);
       top=Math.max(top,surface.height(at.lat,at.lon)+sw.top);
     }

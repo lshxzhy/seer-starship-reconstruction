@@ -119,7 +119,7 @@ function createOceanSurface(T,world){
     const ll=fromXZ(x,z),c=Math.cos(ll.lat);
     return out.set(c*Math.cos(ll.lon),Math.sin(ll.lat),-c*Math.sin(ll.lon)).applyQuaternion(districtInverse);
   });
-  const blockers=[],shapes=new Map(),entries=new Map();
+  const blockers=[],overheads=[],shapes=new Map(),entries=new Map();
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
   const organic=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide});
@@ -285,6 +285,16 @@ function createOceanSurface(T,world){
   function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
   }
+  function recordCover(id,rows=0,sides=0){
+    const source=shapes.get(id).g.attributes.position,point=v();
+    const step=rows?4:source.count;
+    for(let start=0;start<(rows?rows-1:1);start+=rows?step:1){
+      const box=new T.Box3(),first=rows?start*sides:0,last=rows?Math.min(rows,start+step+1)*sides:source.count;
+      for(let i=first;i<last;i++)box.expandByPoint(point.fromBufferAttribute(source,i).applyMatrix4(temp.matrix));
+      overheads.push({x:(box.min.x+box.max.x)/2,z:(box.min.z+box.max.z)/2,
+        halfX:(box.max.x-box.min.x)/2,halfZ:(box.max.z-box.min.z)/2,bottom:box.min.y,top:box.max.y});
+    }
+  }
   const rodAxis=v(0,1,0);
   function rod(x,y,z,xx,yy,zz,r,tint,shapeId='rod'){
     const dir=v(xx-x,yy-y,zz-z),len=dir.length();
@@ -409,6 +419,7 @@ function createOceanSurface(T,world){
       const a=Math.PI*(i/8),xx=x+6.2*scale*Math.cos(a),yy=base+7.5*scale*Math.sin(a);
       stamp('rock',xx,yy,z,2.45*scale,2.75*scale,2.4*scale,i%2?dark:0x51657a,-.17,.17,a-.8);
       if(i<2||i>6)blockers.push({x:xx,z,r:1.65*scale,top:yy+2.5*scale});
+      else recordCover('rock');
     }
     stamp('lobe',x,base+2.1*scale,z-2.9*scale,5.6*scale,4.4*scale,1.5*scale,0x1b3244);
     for(let j=-2;j<=2;j++)blockers.push({x:x+j*1.95*scale,z:z-3*scale,r:1.5*scale,top:base+4.5*scale});
@@ -507,6 +518,9 @@ function createOceanSurface(T,world){
     for(const side of [-1,1]){
       const s=side===1?1.08:.93,az=side===1?-.045:Math.PI-.14;
       stamp('sanctumSpan',x,y,z,s,s,s,side===1?0x40799b:0x3b7396,0,az);
+      // Bound short successive pieces of the actual arch mesh. A single
+      // bounding box would incorrectly fill the two passable rock windows.
+      recordCover('sanctumSpan',65,8);
       const xx=x+s*(16.85*Math.cos(az)-.84*Math.sin(az)),zz=z+s*(-16.85*Math.sin(az)-.84*Math.cos(az));
       const base=groundY(xx,zz);
       stamp('sanctumSpur',xx,base-.26,zz,2.65,6.4,2.82,0x315674,0,az);
@@ -586,7 +600,8 @@ function createOceanSurface(T,world){
     district.add(batch);
   }
   entries.clear();
-  for(const b of blockers)b.top+=seaFloor(b.x,b.z)-groundY(b.x,b.z);
+  for(const b of blockers){b.top+=seaFloor(b.x,b.z)-groundY(b.x,b.z);b.bottom=seaFloor(b.x,b.z);}
+  for(const b of overheads){const shift=seaFloor(b.x,b.z)-groundY(b.x,b.z);b.bottom+=shift;b.top+=shift;}
   const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),springFlags=new Float32Array(bubbleCount),rise=[];
   for(let i=0;i<bubbleCount;i++){
     const s=sites[i%4],spring=i%4===0&&i%3===0;
@@ -718,19 +733,41 @@ function createOceanSurface(T,world){
     const {x,z}=chart(lat,lon);
     return blockers.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+margin);
   }
+  function canStand(lat,lon,bodyRadius=.28,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<0)return false;
+    const {x,z}=chart(lat,lon),floor=support(x,z),head=floor+bodyHeight;
+    if(blockers.some(b=>floor<b.top-.03&&head>b.bottom+.03&&Math.hypot(x-b.x,z-b.z)<b.r+bodyRadius))return false;
+    return !overheads.some(b=>floor<b.top-.03&&head>b.bottom+.03&&
+      Math.abs(x-b.x)<b.halfX+bodyRadius&&Math.abs(z-b.z)<b.halfZ+bodyRadius);
+  }
   function walk(lat,lon,east,north){
-    const at=move(lat,lon,east,north),p=chart(at.lat,at.lon);
-    const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
-    if(dist>0&&Math.abs(dist-railRadius)<=.38+Math.hypot(east,north)&&
-        (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
-      const old=chart(lat,lon),side=Math.hypot(old.x-pad.x,old.z-pad.z)<railRadius?-1:1;
-      if(side*(dist-railRadius)<.38){const edge=railRadius+side*.38;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
+    const at=move(lat,lon,east,north),end=chart(at.lat,at.lon),p=chart(lat,lon);
+    const steps=Math.max(1,Math.ceil(Math.hypot(east,north)/.20)),sx=(end.x-p.x)/steps,sz=(end.z-p.z)/steps;
+    for(let i=0;i<steps;i++){
+      const oldX=p.x,oldZ=p.z;p.x+=sx;p.z+=sz;
+      const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
+      if(dist>0&&Math.abs(dist-railRadius)<=.38+Math.hypot(sx,sz)&&
+          (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
+        const side=Math.hypot(oldX-pad.x,oldZ-pad.z)<railRadius?-1:1;
+        if(side*(dist-railRadius)<.38){const edge=railRadius+side*.38;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
+      }
+      const floor=support(p.x,p.z);
+      for(const b of blockers){
+        if(floor>=b.top-.03||floor+1.70<=b.bottom+.03)continue;
+        const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28;
+        if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
+      }
+      const coverFloor=support(p.x,p.z);
+      for(const b of overheads){
+        if(coverFloor>=b.top-.03||coverFloor+1.70<=b.bottom+.03)continue;
+        const dx=p.x-b.x,dz=p.z-b.z,rx=b.halfX+.28,rz=b.halfZ+.28;
+        if(Math.abs(dx)<rx&&Math.abs(dz)<rz){
+          if(rx-Math.abs(dx)<rz-Math.abs(dz))p.x=b.x+(dx<0?-rx:rx);
+          else p.z=b.z+(dz<0?-rz:rz);
+        }
+      }
+      ecology.clearWalker(p,.28);
     }
-    for(const b of blockers){
-      const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28;
-      if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
-    }
-    ecology.clearWalker(p,.28);
     return fromXZ(p.x,p.z);
   }
   function landingInfo(lat,lon,footprint=12){
@@ -757,7 +794,7 @@ function createOceanSurface(T,world){
     if(limit<1)eye.copy(aim).addScaledVector(sight,limit);
   }
   let mode='hidden',elapsed=0,last=null;
-  const body={root,sites,radius,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
+  const body={root,sites,radius,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canStand,canSwim,clipCamera,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),groundCorrection:()=>0,waterDepth:(lat,lon)=>Math.max(0,-height(lat,lon)),
     landingInfo,flightHeight:(lat,lon,footprint=0)=>{
       const {x,z}=chart(lat,lon);

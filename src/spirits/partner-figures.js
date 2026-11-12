@@ -55,17 +55,22 @@ function finishSpiritPart(mesh,kind,palette){
 function createCompanionFigure(T,id){
   return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
-// World presentation uses catalogue height once, regardless of the sculpt's native units.
-// Keep the attachment at unit scale: encounter focus points and shadows are in metres.
-const FIELD_SPIRIT_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
-function createFieldSpirit(T,id){
+// Ordinary field creatures share a readable display height. Bosses retain
+// their previous 3x/1.65x presentation instead of growing with ordinary pets.
+// Scaled districts receive local dimensions; their parent supplies sceneScale.
+const FIELD_SPIRIT_SCALE=4.0,FIELD_SPIRIT_MIN_HEIGHT=1.50,FIELD_BOSS_SCALE=1.65,KLOSE_ITEM_SCALE=1.40;
+function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
   const centimetres=SEER_SPIRIT_DATA.index.find(row=>row[0]===id)?.[3];
-  const size=FIELD_SPIRIT_SCALE*(centimetres>0?centimetres/100:extent.y);
+  const naturalHeight=centimetres>0?centimetres/100:extent.y;
+  const displayHeight=boss?Math.max(1.10,3.0*naturalHeight)*FIELD_BOSS_SCALE:
+    Math.max(FIELD_SPIRIT_MIN_HEIGHT,FIELD_SPIRIT_SCALE*naturalHeight);
+  const units=Number.isFinite(sceneScale)&&sceneScale>0?sceneScale:1;
+  const size=displayHeight/units;
   const factor=size/Math.max(.01,extent.y),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
-  model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
+  model.root.scale.multiplyScalar(factor);model.root.position.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
   root.add(model.root);
   const radius=factor*Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z));
   return {...model,root,animal:root,size,radius};

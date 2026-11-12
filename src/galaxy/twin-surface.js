@@ -90,7 +90,7 @@ function createTwinSurface(T,world,definition){
       batches.get(key).poses.push(geo.userData.surveyProjected?pose.matrix.clone():projection.matrix(pose.matrix.clone()));
     }
     definition.buildLandmarks({T,root:district,ground,material,stamp,projection,
-      block:(x,z,r,h)=>blocks.push({x,z,r,top:heightAt(x,z)+h}),
+      block:(x,z,r,h)=>blocks.push({x,z,r,bottom:heightAt(x,z),top:heightAt(x,z)+h}),
       cover:(x,z,halfX,halfZ,bottom,top)=>overheads.push({x,z,halfX,halfZ,bottom:heightAt(x,z)+bottom,top:heightAt(x,z)+top}),
       animate:fn=>animations.push(fn),portal:(x,z,planet,site,r=3.5)=>portals.push({x,z,planet,site,r})});
     for(const {geo,mat,poses} of batches.values()){
@@ -114,6 +114,14 @@ function createTwinSurface(T,world,definition){
     for(const site of sites){const d=Math.hypot(p.x-site.x,p.z-site.z);if(d<distance){closest=site;distance=d;}}
     return closest;
   }
+  function canStand(lat,lon,bodyRadius=.30,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<0)return false;
+    const p=chart(lat,lon),floor=heightAt(p.x,p.z),head=floor+bodyHeight;
+    if(Math.hypot(p.x,p.z)<1100+bodyRadius)build();
+    if(blocks.some(b=>floor<b.top-.03&&head>b.bottom+.03&&Math.hypot(p.x-b.x,p.z-b.z)<b.r+bodyRadius))return false;
+    return !overheads.some(b=>floor<b.top-.03&&head>b.bottom+.03&&
+      Math.abs(p.x-b.x)<b.halfX+bodyRadius&&Math.abs(p.z-b.z)<b.halfZ+bodyRadius);
+  }
   function walk(lat,lon,east,north){
     const start=chart(lat,lon);
     if(Math.hypot(start.x,start.z)>1100)return move(lat,lon,east,north);
@@ -124,9 +132,22 @@ function createTwinSurface(T,world,definition){
     let x=start.x,z=start.z;
     for(let i=0;i<steps;i++){
       x+=dx;z+=dz;
+      const floor=heightAt(x,z);
       for(const b of blocks){
+        if(floor>=b.top-.03||floor+1.70<=b.bottom+.03)continue;
         const bx=x-b.x,bz=z-b.z,d=Math.hypot(bx,bz),min=b.r+.30;
         if(d<min){x=b.x+(d?bx/d:1)*min;z=b.z+(d?bz/d:0)*min;}
+      }
+      // The old centre-only block pass omitted the solid slab of a low
+      // overhead. Test its real bottom/top while retaining walkable arches.
+      const coverFloor=heightAt(x,z);
+      for(const b of overheads){
+        if(coverFloor>=b.top-.03||coverFloor+1.70<=b.bottom+.03)continue;
+        const bx=x-b.x,bz=z-b.z,rx=b.halfX+.30,rz=b.halfZ+.30;
+        if(Math.abs(bx)<rx&&Math.abs(bz)<rz){
+          if(rx-Math.abs(bx)<rz-Math.abs(bz))x=b.x+(bx<0?-rx:rx);
+          else z=b.z+(bz<0?-rz:rz);
+        }
       }
     }
     return fromXZ(x,z);
@@ -237,7 +258,7 @@ function createTwinSurface(T,world,definition){
     }
   }
   const nothing=()=>null;
-  return {root,globe,radius,sites,landingSites,siteAt,frame,point,move,chart,height,walk,portalAt,isSheltered,
+  return {root,globe,radius,sites,landingSites,siteAt,frame,point,move,chart,height,walk,canStand,portalAt,isSheltered,
     landingSite:id=>landingSites.find(s=>s.id===id),groundCorrection:()=>0,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),clipCamera,
     flightHeight:(lat,lon,r=0)=>footprint(lat,lon,r).top,landingInfo:footprint,
