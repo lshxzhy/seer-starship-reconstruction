@@ -1,5 +1,5 @@
   // Classic browser-game base chassis. Metres, origin at sole level, front at -Z.
-  // Sources and the unsighted rear surface are documented in references/robot-audit.
+  // Registration/production and dialogue sources are in docs/面盘表情图证.md.
   const seerRobots = (() => {
     const PI = Math.PI, TAU = PI * 2;
     const restCoreY = .955, ankleY = .177, hipX = .249, hipY = .539;
@@ -203,6 +203,12 @@
       if (templates.has(variant)) return templates.get(variant);
       const parts = new Map(), primitives = [];
       const segments = simple ? 24 : 48;
+      // The ordinary chassis has a round upper dome, with the belt and leg
+      // mounts fixed. Officer helmets/face rims are authored outside this file
+      // against the older envelope, so their equipment keeps that envelope.
+      const ordinary=!officer,domeLift=ordinary?.105:0,opticLift=ordinary?.035:0;
+      const opticShift=ordinary?-.055:0,rearShift=ordinary?.044:0;
+      const cheekY=ordinary?.025:-.005,cheekZ=ordinary?.036:.031,cheekScale=ordinary?1.12:1;
       function profile(points, radialSegments=segments) {
         const geometry = new T.LatheGeometry(points.map(([radius,y]) => new T.Vector2(radius,y)),radialSegments);
         primitives.push(geometry);
@@ -254,11 +260,13 @@
         cast('core',shape,x,y,z,1,1,1,color,null,rx,ry,rz);
       }
 
-      // One equipment shell carries the optics, side covers and leg mounts.
-      const shell = smoothProfile([[0,-.408],[.35,-.405],[.447,-.358],[.508,-.27],[.539,-.15],
+      // The old shell was only .908 high for a 1.096 width. Give the upper
+      // hemisphere room above the round face, without pulling the belt or hips.
+      const shellPoints=[[0,-.408],[.35,-.405],[.447,-.358],[.508,-.27],[.539,-.15],
         [.548,-.052],[.544,.046],[.522,.158],[.474,.265],[.395,.357],[.302,.425],
-        [.206,.47],[.105,.491],[0,.5]]);
-      cast('core',shell,0,0,.005,1,1,.98,paint);
+        [.206,.47],[.105,.491],[0,.5]];
+      const shell=smoothProfile(shellPoints.map(([r,y])=>[r,ordinary&&y>-.252?-.252+(y+.252)*1.14:y]));
+      cast('core',shell,0,0,.005,1,1,ordinary?1.06:.98,paint);
       const lowerBand = profile([[0,-.100],[.502,-.100],[.55,-.081],[.568,-.058],
         [.568,.061],[.555,.084],[.526,.096],[0,.096]]);
       coreShape(lowerBand,0,-.319,0,gold);
@@ -288,7 +296,7 @@
         [.231,.122],[.206,.134],[.104,.139],[0,.139]]);
       const rake=.13;
       function crown(g,y,col,sy=1){
-        cast('core',g,0,.483+(y-.483)*Math.cos(rake),(y-.483)*Math.sin(rake),1,sy,1,col,null,rake);
+        cast('core',g,0,.483+domeLift+(y-.483)*Math.cos(rake),(y-.483)*Math.sin(rake),1,sy,1,col,null,rake);
       }
       if(!officer){
         crown(stem,.483,graphite);
@@ -296,13 +304,13 @@
       }
       if (!simple&&!officer) {
         const socketLip=profile([[.078,0],[.104,0],[.112,.005],[.111,.012],[.100,.017],[.078,.017]]);
-        coreShape(socketLip,0,.487,0,0x696d70);
+        coreShape(socketLip,0,.487+domeLift,0,0x696d70);
         const capInset=profile([[.143,0],[.154,0],[.155,.002],[.153,.004],[.145,.004],[.143,.002]]);
         crown(capInset,.736,graphite);
       }
 
-      // The side-on assembly frame shows a round gold service cover. The rear
-      // follows the existing shell contour because a rear reference is missing.
+      // The production side view has a broad round gold service cover. Its
+      // complete stack shares a centre and radius, including the stamped slots.
       const sideCover = profile([[0,-.064],[.244,-.064],[.284,-.027],[.292,-.001],
         [.284,.016],[.257,.033],[0,.033]]);
       const brassRim=profile([[.225,0],[.257,0],[.274,.007],[.274,.014],
@@ -328,28 +336,28 @@
       }
       const cheek=simple?null:stampedCheek();
       for (const sign of [-1,1]) {
-        coreShape(sideCover,sign*.499,-.005,.031,graphite,0,0,-sign*PI/2);
-        coreShape(brassRim,sign*.533,-.005,.031,gold,0,0,-sign*PI/2);
-        cast('core',drum,sign*.546,-.005,.031,.228,.010,.228,simple?gold:graphite,null,0,0,PI/2);
-        if(cheek)cast('core',cheek,sign*.551,-.005,.031,1,1,1,0xe7b45b,'alloy',0,sign*PI/2);
+        cast('core',sideCover,sign*.499,cheekY,cheekZ,cheekScale,1,cheekScale,graphite,null,0,0,-sign*PI/2);
+        cast('core',brassRim,sign*.533,cheekY,cheekZ,cheekScale,1,cheekScale,gold,null,0,0,-sign*PI/2);
+        cast('core',drum,sign*.546,cheekY,cheekZ,.228*cheekScale,.010,.228*cheekScale,simple?gold:graphite,null,0,0,PI/2);
+        if(cheek)cast('core',cheek,sign*.551,cheekY,cheekZ,cheekScale,cheekScale,1,0xe7b45b,'alloy',0,sign*PI/2);
         else for(const [u,v,h,w,tilt] of slots)
-          cast('core',cube,sign*.553,-.005+v,.031-sign*u,.006,h,w,graphite,null,sign*tilt);
+          cast('core',cube,sign*.553,cheekY+v*cheekScale,cheekZ-sign*u*cheekScale,.006,h*cheekScale,w*cheekScale,graphite,null,sign*tilt);
       }
 
       // Removable rear access plate follows the painted shell rather than
       // adding a backpack to the round silhouette of the registration sprite.
       const rearLip=profile([[.205,0],[.228,.001],[.232,.007],[.228,.012],[.206,.013],[.205,0]]);
-      cast('core',rearLip,0,-.02,.510,1,.70,.84,bronze,null,PI/2);
+      cast('core',rearLip,0,-.02,.510+rearShift,1,.70,.84,bronze,null,PI/2);
       const rearCover=new T.SphereGeometry(1,simple?18:36,simple?10:18);
       primitives.push(rearCover);
-      cast('core',rearCover,0,-.02,.473,.209,.177,.086,paint);
+      cast('core',rearCover,0,-.02,.473+rearShift,.209,.177,.086,paint);
       for(const sign of [-1,1])
-        cast('core',cube,sign*.148,-.02,.537,.034,.008,.010,graphite,null,0,sign*.33);
+        cast('core',cube,sign*.148,-.02,.537+rearShift,.034,.008,.010,graphite,null,0,sign*.33);
       if(!simple){
         // Recessed ventilation slots follow the dome of the service door.
         // The two short return flanges stay seated on its curved enamel.
         for(let row=0;row<4;row++){
-          const y=-.083+row*.040,z=.473+.086*Math.sqrt(1-(y/.177)**2);
+          const y=-.083+row*.040,z=.473+rearShift+.086*Math.sqrt(1-(y/.177)**2);
           const width=.108-.015*Math.abs(row-1.5);
           cast('core',cube,0,y-.02,z,width,.011,.006,graphite);
           for(const flank of [-1,1])
@@ -357,25 +365,27 @@
         }
         for(const side of [-1,1]){
           const lug=profile([[.018,0],[.028,.003],[.030,.009],[.025,.014],[.018,.012]],20);
-          cast('core',lug,side*.120,.075,.528,1,1,1,steel,'machined',PI/2,0,-side*.23);
+          cast('core',lug,side*.120,.075,.528+rearShift,1,1,1,steel,'machined',PI/2,0,-side*.23);
         }
       }
 
-      const faceY = faceAxisY;
-      const panelZ=display?-.574:glassZ,panelDepth=display?.069:glassDepth;
+      // Move the whole optical stack together; the face stays circular and
+      // its stronger convexity is shared by the eye image and protective glass.
+      const faceY=faceAxisY+opticLift;
+      const panelZ=(display?-.574:glassZ)+opticShift,panelDepth=ordinary?(display?.092:.105):(display?.069:glassDepth);
       const collar=profile([[.350,-.195],[.378,-.16],[.407,-.081],
         [.410,-.068],[.396,-.064],[.356,-.089]],simple?24:64);
-      coreShape(collar,0,faceY,-.498,0x494950,-PI/2);
+      coreShape(collar,0,faceY,-.498+opticShift,0x494950,-PI/2);
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
         [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]],simple?segments:88);
-      coreShape(bezel,0,faceY,-.498,graphite,-PI/2);
+      coreShape(bezel,0,faceY,-.498+opticShift,graphite,-PI/2);
       if (!simple) {
         const lip=profile([[.338,.067],[.350,.067],[.353,.070],[.352,.075],
           [.348,.077],[.343,.077],[.339,.074],[.338,.067]],88);
-        coreShape(lip,0,faceY,-.498,0x4e5359,-PI/2);
+        coreShape(lip,0,faceY,-.498+opticShift,0x4e5359,-PI/2);
         const glassSeal=profile([[.334,.067],[.342,.066],[.345,.069],[.344,.073],
           [.339,.074],[.335,.072],[.334,.067]],88);
-        coreShape(glassSeal,0,faceY,-.498,rubber,-PI/2);
+        coreShape(glassSeal,0,faceY,-.498+opticShift,rubber,-PI/2);
         // A countersink seats the hexagonal drive below the front of each screw head.
         const fastener=profile([[0,-.002],[.017,-.002],[.017,.001],[.014,.003],
           [.008,.003],[.006,.001],[0,.001]],24);
@@ -383,8 +393,8 @@
         for (let i=0;i<8;i++) {
           const a=TAU*(i+.5)/8;
           const x=.384*Math.cos(a), y=faceY+.384*Math.sin(a);
-          cast('core',fastener,x,y,-.573,1.22,1,1.22,0x393d42,'machined',-PI/2);
-          cast('core',hexSocket,x,y,-.5743,1,1,1,dark,'gasket',-PI/2);
+          cast('core',fastener,x,y,-.573+opticShift,1.22,1,1.22,0x393d42,'machined',-PI/2);
+          cast('core',hexSocket,x,y,-.5743+opticShift,1,1,1,dark,'gasket',-PI/2);
         }
         // Only the front hemisphere is drawn. The eye graphics stay below the glass.
         const cover=new T.SphereGeometry(1,64,40,PI,PI);
@@ -604,5 +614,5 @@
       }
       return {root,write,finish,capacity};
     }
-    return {create,animate,createBatch,phaseStep,setExpression,expressions,height:1.70,eyeHeight:restCoreY+faceAxisY};
+    return {create,animate,createBatch,phaseStep,setExpression,expressions,height:1.81,eyeHeight:restCoreY+faceAxisY+.035};
   })();

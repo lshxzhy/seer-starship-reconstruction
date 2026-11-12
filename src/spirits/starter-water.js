@@ -173,25 +173,21 @@ function createStarterWaterFigure(T,id){
     skin(torso);
     // The chest's two lower lobes follow the body, with blue rising between them.
     facePatch(torso,a=>.30+.10*Math.exp(-((a/.22)**2)),.951,.70,white);
-    // In the original three-quarter art the forehead rises backwards into a
-    // rounded, swept crown. A stack of nearly concentric shrinking rings made
-    // the previous sculpt a vertical cone and left its eyes on the bottom rim.
-    // The lower face is now a broad cranium: a flat muzzle, full temples and
-    // cheeks extending behind the eyes, followed by the receding crown.
+    // The narrow end is the forward (+Z) muzzle; the blue cranium expands
+    // behind the eyes. Do not turn the front into a broad plate and taper the
+    // back into a swept spike. Upper sections retain width and depth until a
+    // short rounded cap, while horizontal sections narrow toward the face.
     const headRows=[
-      [.815,.008,.012,.155],[.842,.190,.157,.154],[.908,.350,.270,.124],
-      [1.030,.474,.365,.048],[1.160,.478,.365,-.046],[1.310,.408,.320,-.163],
-      [1.490,.304,.269,-.318],[1.660,.184,.213,-.442],[1.746,.127,.165,-.469],
-      [1.797,.066,.105,-.461],[1.819,.025,.055,-.442],[1.825,.002,.005,-.424]
+      [.815,.006,.008,.160],[.855,.170,.210,.120],[.940,.310,.430,.120],
+      [1.065,.445,.520,.000],[1.230,.500,.450,-.080],[1.410,.470,.365,-.155],
+      [1.570,.400,.300,-.200],[1.710,.285,.240,-.205],[1.785,.160,.145,-.200],
+      [1.815,.075,.075,-.190],[1.825,.002,.003,-.190]
     ];
     headPivot=new T.Group();headPivot.position.set(0,.92,.02);body.add(headPivot);
     const head=new T.Group();head.position.set(0,-.92,-.02);headPivot.add(head);
     function headPoint(a,y,lift=0){
       const [rx,rz,cz]=profile(headRows,y),sin=Math.sin(a),cos=Math.cos(a);
-      const cheek=Math.exp(-(((y-1.083)/.155)**2))*sin**4;
-      const muzzle=Math.exp(-(((y-.972)/.170)**2));
-      return v((rx+lift+.040*cheek)*sin,y,
-        cz+(rz+lift)*Math.sign(cos)*Math.abs(cos)**(1-.22*muzzle)-.048*cheek);
+      return v((rx+lift)*sin*(1-.27*cos),y,cz+(rz+lift)*cos);
     }
     {
       const positions=[],indices=[],rows=100,sides=80;
