@@ -438,6 +438,25 @@
       return y>=actor.y-.15 && y<=actor.y+1.90 &&
         (actor.x-eye.x-dx*u)**2+(actor.z-eye.z-dz*u)**2<.64**2;
     }
+    let roomsPrepared=false;
+    function prepareRooms(){
+      if(roomsPrepared)return;
+      habitat.prepareRooms();
+      // Room routes include a flood fill and equipment clearance scans.
+      // Resolve them, their floor receivers and the named figures during
+      // boarding, instead of when a corridor first enters their 42 m range.
+      for(const task of tasks){
+        if(!task.room)continue;
+        const a=locate(task.index,now());
+        contactFloor(a);
+        if(task.officer&&!officerRigs.has(task.index)){
+          const rig=createOfficerFigure(task.officer);
+          rig.root.rotation.y=rig.lastYaw=a.yaw;rig.root.visible=false;
+          officerRigs.set(task.index,rig);batch.root.add(rig.root);
+        }
+      }
+      roomsPrepared=true;
+    }
     function update(p,dt,eye=null){
       if(!active||!p)return;
       if(Number.isFinite(dt))elapsed+=Math.min(.25,Math.max(0,dt));
@@ -534,7 +553,7 @@
       }
       return p;
     }
-    return {update,setActive,getById,nearest,nearestNamed:(p,max=4)=>nearest(p,max,true),namedContact,clearsCrew,constrainStep,
+    return {update,setActive,prepareRooms,getById,nearest,nearestNamed:(p,max=4)=>nearest(p,max,true),namedContact,clearsCrew,constrainStep,
       dispose(){
         for(const rig of officerRigs.values()){batch.root.remove(rig.root);rig.disposeKit();}
         officerRigs.clear();batch.root.remove(contacts.mesh);contacts.dispose();

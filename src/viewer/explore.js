@@ -180,6 +180,8 @@
     }
     expedition.hide();
     const aboard=state.mode==='board', cut=state.mode==='section', single=state.mode==='deck';
+    if(!aboard&&liveBoard){boarding.leave();liveBoard=false;}
+    const windowView=aboard&&carrierGlazing.hasView(boarding.roomId);
     const detailed=boardable();
     const located=cut && habitat.byId.get(state.located);
     reflections.select(aboard || Boolean(detailed));
@@ -190,9 +192,9 @@
       locator.position.copy(habitat.worldPosition(x,y+height*.5,z));
       locator.scale.set(width*unitMetre,height*unitMetre,depth*unitMetre);
     }
-    for(const g of exterior)g.visible=!single && !aboard;
+    for(const g of exterior)g.visible=!single && (!aboard||windowView);
     for(const {part,source} of outerMeshes){
-      part.visible=!single && !aboard && !(cut && source.isShaderMaterial);
+      part.visible=!single && (!aboard||windowView) && !(cut && source.isShaderMaterial);
       part.material=cut?(sectionMats.get(source)||source):source;
     }
     interiorModel.root.visible=(cut || single) && !detailed;
@@ -228,7 +230,6 @@
       cockpit.sync(true);
       requestDraw();return;
     }
-    if(liveBoard){boarding.leave();liveBoard=false;}
     habitat.setPreview(detailed?.id || null);
     camera.near=detailed ? Math.max(.0002,unitMetre*.12) : .1;
     camera.updateProjectionMatrix();

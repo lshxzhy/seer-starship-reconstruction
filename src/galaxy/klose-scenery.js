@@ -933,7 +933,7 @@ function createKloseScenery(T, parent, surface) {
       const site=sites[i],dist=Math.hypot(x-site.x,z-site.z,altitude);
       if(!batches[i]&&dist<570)batches[i]=makeSite(site,i);
       const parts=batches[i];
-      if(parts){parts.group.visible=dist<670;parts.near.visible=dist<116;parts.far.visible=!parts.near.visible;}
+      if(parts){parts.group.visible=dist<670;parts.near.visible=dist<(walking?116:55);parts.far.visible=!parts.near.visible;}
     }
     const walker=walking?{x,z}:null;
     const shuttle=shuttleStatus&&shuttleStatus.clearance<32?chart(shuttleStatus.lat,shuttleStatus.lon):null;
@@ -1033,7 +1033,13 @@ function createKloseScenery(T, parent, surface) {
     const boss=wildlife.inhabitants.find(p=>p.speciesId===47);
     return boss?.at||null;
   }
+  function prepareFlight(){
+    for(const [i,site] of sites.entries()){
+      if(!batches[i])batches[i]=makeSite(site,i);
+      batches[i].group.visible=false;
+    }
+  }
   return {update,nearestPipi,spiritObservation,forestBossPosition,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
     spiritSiteHint:wildlife.hint,setSafariState:safari.setState,safariAction:safari.action,safariWalk:safari.walked,safariHint:safari.hint,
-    walk,prepareWalk,obstacleTop};
+    walk,prepareWalk,prepareFlight,obstacleTop};
 }

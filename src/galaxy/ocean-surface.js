@@ -1,7 +1,7 @@
 // Taomei's map table connects 20 → 21 → 22 and, in a later chapter, 22 → 737.
 // The floating L-01 berth is expedition equipment. All natural ground is submerged.
 const OCEAN_WORLD=(()=>{
-  const radius=41000,lat=.24,lon=-.43;
+  const radius=600,lat=.24,lon=-.43;
   const at=(id,name,x,z,description,mapId)=>({id,name,x,z,description,mapId,
     lat:lat-z/radius,lon:lon+x/(radius*Math.cos(lat))});
   const sites=[
@@ -114,6 +114,11 @@ function createOceanSurface(T,world){
   district.position.copy(anchor);district.quaternion.copy(fixedFrame.quaternion);
   // Local geometry is surveyed in the same east/south chart as the collision model.
   function groundY(x,z){return seaFloor(x,z)-(x*x+z*z)/(2*radius);}
+  const districtInverse=fixedFrame.quaternion.clone().invert();
+  const projection=createSurveyProjection(T,radius,groundY,seaFloor,(x,z,out)=>{
+    const ll=fromXZ(x,z),c=Math.cos(ll.lat);
+    return out.set(c*Math.cos(ll.lon),Math.sin(ll.lat),-c*Math.sin(ll.lon)).applyQuaternion(districtInverse);
+  });
   const blockers=[],shapes=new Map(),entries=new Map();
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
@@ -275,7 +280,7 @@ function createOceanSurface(T,world){
   const temp=new T.Object3D();
   function record(id,tint){
     if(!entries.has(id))entries.set(id,[]);
-    entries.get(id).push({matrix:temp.matrix.clone(),tint});
+    entries.get(id).push({matrix:projection.matrix(temp.matrix.clone()),tint});
   }
   function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
@@ -562,13 +567,14 @@ function createOceanSurface(T,world){
   const rampOrientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(
     v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
     v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
-  temp.position.set(pad.x+acrossX*rampMid,(pierLevel+seaFloor(0,0))*.5-.13,pad.z+acrossZ*rampMid);
+  const rampX=pad.x+acrossX*rampMid,rampZ=pad.z+acrossZ*rampMid;
+  temp.position.set(rampX,(pierLevel+seaFloor(0,0))*.5-.13-(rampX*rampX+rampZ*rampZ)/(2*radius),rampZ);
   temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('panel',0x7696a0);
   for(const sign of [-1,1]){
     let last=null;
     for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
       const x=pad.x+acrossX*along+acrossZ*2.04*sign,z=pad.z+acrossZ*along-acrossX*2.04*sign;
-      const y=T.MathUtils.lerp(pierLevel,seaFloor(0,0),(along-rampStart)/rampRun);
+      const y=T.MathUtils.lerp(pierLevel,seaFloor(0,0),(along-rampStart)/rampRun)-(x*x+z*z)/(2*radius);
       rod(x,y,z,x,y+1,z,.055,0x70868e,'rail');if(last)rod(...last,x,y+1,z,.062,0xffce74,'rail');
       last=[x,y+1,z];
     }
@@ -580,6 +586,7 @@ function createOceanSurface(T,world){
     district.add(batch);
   }
   entries.clear();
+  for(const b of blockers)b.top+=seaFloor(b.x,b.z)-groundY(b.x,b.z);
   const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),springFlags=new Float32Array(bubbleCount),rise=[];
   for(let i=0;i<bubbleCount;i++){
     const s=sites[i%4],spring=i%4===0&&i%3===0;
@@ -595,7 +602,7 @@ function createOceanSurface(T,world){
     fragmentShader:'varying float d;varying float vent;void main(){float z=length(gl_PointCoord-.5);if(z>.49)discard;float gleam=1.-smoothstep(.04,.13,length(gl_PointCoord-vec2(.36,.32)));float a=(.14+.62*smoothstep(.27,.46,z)+.28*gleam)*(1.-smoothstep(18.,85.,d));gl_FragColor=vec4(mix(vec3(.47,.89,.95),vec3(.64,.97,.55),vent)+.22*gleam,a);}'});
   const particulate=new T.Points(lights,bubbleShade);particulate.frustumCulled=false;district.add(particulate);
   // A camera-centred spherical patch resolves metre-scale walking and joins the orbital shell.
-  const patchReach=radius*.57;
+  const patchReach=radius*.82;
   const radii=[0,1.4,3,5,7,10,14,19,26,34,46,62,86,120,174,260,420,720,1400,3500,5800,8500,12400,17800].filter(r=>r<patchReach);
   radii.push(patchReach);
   const sectors=96,coords=[[0,0,0]],indices=[];
@@ -734,8 +741,9 @@ function createOceanSurface(T,world){
   }
   function clipCamera(aim,eye){
     // Clip the third-person boom at the near edge of any reef its line crosses.
-    const here=aim.clone().sub(anchor),sight=eye.clone().sub(aim),x=here.dot(fixedFrame.east),z=here.dot(fixedFrame.south);
-    const y=here.dot(fixedFrame.up),dx=sight.dot(fixedFrame.east),dz=sight.dot(fixedFrame.south),dy=sight.dot(fixedFrame.up);
+    const ll=p=>({lat:Math.atan2(p.y,Math.hypot(p.x,p.z)),lon:Math.atan2(-p.z,p.x)});
+    const a=ll(aim),b=ll(eye),here=chart(a.lat,a.lon),there=chart(b.lat,b.lon),sight=eye.clone().sub(aim);
+    const x=here.x,z=here.z,y=aim.length()-radius,dx=there.x-x,dz=there.z-z,dy=eye.length()-aim.length();
     const length2=dx*dx+dz*dz;if(length2<.001)return;
     let limit=1;
     for(const b of blockers){
@@ -765,17 +773,23 @@ function createOceanSurface(T,world){
     if(next!==mode)last=null;mode=next;root.visible=next!=='hidden';if(next==='hidden')return;
     globe.visible=true;terrain.visible=district.visible=fauna.visible=false;cut.value=2;
   }
+  const bubblePoint=v();
   function update(lat,lon,dt=0,altitude=0,shuttleStatus=null){
     if(mode==='hidden')return;
-    const near=mode==='surface'||(mode==='flight'&&altitude<radius*.19);
+    const near=mode==='surface'||(mode==='flight'&&altitude<Math.max(300,radius*.30));
     terrain.visible=near;fauna.visible=near&&mode==='surface';
     const c=chart(lat,lon);district.visible=near&&altitude<1250&&Math.hypot(c.x+80,c.z-60)<2700;
     if(!near){last=null;cut.value=2;return;}
-    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>Math.min(1800,4+altitude*.18)){placePatch(lat,lon);last=c;}
+    const tolerance=mode==='surface'?4:patchReach*.55;
+    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>tolerance){
+      const homeView=mode==='flight'&&Math.hypot(c.x,c.z)<patchReach*.50;
+      placePatch(homeView?origin.lat:lat,homeView?origin.lon:lon);last=homeView?{x:0,z:0}:c;
+    }
     elapsed+=dt;tideTime.value=elapsed;
     if(district.visible)for(const [i,p] of rise.entries()){
       const y=p.y+.18+p.h*((p.phase+elapsed*p.speed/p.h)%1);
-      bubblesAttr.setXYZ(i,p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y));
+      projection.point(p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y),bubblePoint);
+      bubblesAttr.setXYZ(i,bubblePoint.x,bubblePoint.y,bubblePoint.z);
     }
     bubblesAttr.needsUpdate=district.visible;
     ecology.update(lat,lon,dt,mode==='surface',shuttleStatus);

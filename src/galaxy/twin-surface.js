@@ -66,6 +66,7 @@ function createTwinSurface(T,world,definition){
     return T.MathUtils.lerp(land,far,T.MathUtils.smoothstep(range,800,2000))+rimRelief(x,z);
   }
   const ground=(x,z)=>(radius+heightAt(x,z))*Math.cos(Math.hypot(x,z)/radius)-radius;
+  const projection=createSurveyProjection(T,radius,ground,heightAt);
   function height(lat,lon){const p=chart(lat,lon);return heightAt(p.x,p.z);}
   function point(lat,lon,above=0){
     const r=radius+height(lat,lon)+above,c=Math.cos(lat);
@@ -86,9 +87,9 @@ function createTwinSurface(T,world,definition){
       const key=geo.uuid+':'+mat.uuid;
       if(!batches.has(key))batches.set(key,{geo,mat,poses:[]});
       pose.position.set(x,y,z);pose.scale.set(sx,sy,sz);pose.rotation.set(rx,ry,rz);pose.updateMatrix();
-      batches.get(key).poses.push(pose.matrix.clone());
+      batches.get(key).poses.push(geo.userData.surveyProjected?pose.matrix.clone():projection.matrix(pose.matrix.clone()));
     }
-    definition.buildLandmarks({T,root:district,ground,material,stamp,
+    definition.buildLandmarks({T,root:district,ground,material,stamp,projection,
       block:(x,z,r,h)=>blocks.push({x,z,r,top:heightAt(x,z)+h}),
       cover:(x,z,halfX,halfZ,bottom,top)=>overheads.push({x,z,halfX,halfZ,bottom:heightAt(x,z)+bottom,top:heightAt(x,z)+top}),
       animate:fn=>animations.push(fn),portal:(x,z,planet,site,r=3.5)=>portals.push({x,z,planet,site,r})});
@@ -160,7 +161,9 @@ function createTwinSurface(T,world,definition){
 
   // Closely spaced rings provide walkable relief at the player's feet. The last rings
   // bridge to the intact globe, so landing and climbing reveal the same curved ground.
-  const rings=[.65,1.4,2.3,3.5,5,7,9.5,12,15,18,22,26,31,36,42,48,55,63,72,82,93,106,121,138,158,181,209,245,275,310,345,380,415,450,480,510,540,570,605,650,735,860,1200,1600,2300,3300,4800,7000,10000];
+  const patchReach=radius*.82;
+  const rings=[.65,1.4,2.3,3.5,5,7,9.5,12,15,18,22,26,31,36,42,48,55,63,72,82,93,106,121,138,158,181,209,245,275,310,345,380,415,450,480,510,540,570,605,650,735,860,1200,1600,2300,3300,4800,7000,10000].filter(r=>r<patchReach);
+  rings.push(patchReach);
   const sectors=128,count=1+rings.length*sectors,positions=new Float32Array(count*3),tints=new Float32Array(count*3),uv=new Float32Array(count*2),faces=[];
   for(let j=0;j<rings.length;j++)for(let i=0;i<sectors;i++){
     const a=1+j*sectors+i,b=1+j*sectors+(i+1)%sectors;
@@ -219,17 +222,18 @@ function createTwinSurface(T,world,definition){
     }
     for(const key of ['position','color','uv'])terrainGeo.attributes[key].needsUpdate=true;
     terrainGeo.computeVertexNormals();terrainGeo.computeBoundingSphere();
-    uniforms.capCenter.value.copy(f.up);uniforms.cut.value=Math.cos(9100/radius);
+    uniforms.capCenter.value.copy(f.up);uniforms.cut.value=Math.cos(.95*patchReach/radius);
   }
   let mode='hidden',last=null,time=0;
   function update(lat,lon,dt,alt){
-    const near=mode==='surface'||(mode==='flight'&&alt<radius*.23);
+    const near=mode==='surface'||(mode==='flight'&&alt<Math.max(300,radius*.30));
     patch.visible=near;const c=chart(lat,lon);
     district.visible=near&&alt<2000&&Math.hypot(c.x,c.z)<2300;
     if(district.visible){build();time+=dt;for(const fn of animations)fn(dt,time);}
     if(!near){last=null;uniforms.cut.value=2;return;}
-    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>Math.min(470,3.5+alt*.21)){
-      placePatch(lat,lon);last=c;
+    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>(mode==='surface'?3.5:patchReach*.55)){
+      const homeView=mode==='flight'&&Math.hypot(c.x,c.z)<patchReach*.50;
+      placePatch(homeView?home.lat:lat,homeView?home.lon:lon);last=homeView?{x:0,z:0}:c;
     }
   }
   const nothing=()=>null;
@@ -237,7 +241,7 @@ function createTwinSurface(T,world,definition){
     landingSite:id=>landingSites.find(s=>s.id===id),groundCorrection:()=>0,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),clipCamera,
     flightHeight:(lat,lon,r=0)=>footprint(lat,lon,r).top,landingInfo:footprint,
-    setMode(next){mode=next;root.visible=next!=='hidden';},update,
+    setMode(next){if(mode!==next)last=null;mode=next;root.visible=next!=='hidden';},update,prepareFlight:build,
     setSunDirection:dir=>uniforms.sunDir.value.copy(dir),
     nearbySpirit:nothing,spiritObservation:nothing,pickSpirit:nothing,withdrawSpirit:nothing,
     safariAction:nothing,safariHint:()=>'',safariWalk:nothing,interactSpiritSite:()=>'',setSafariState(){},

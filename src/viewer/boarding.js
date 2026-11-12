@@ -194,6 +194,27 @@
     let savedRig=null;
     const shadowFlags=new Map();
     const sizeProbe=new T.Box3(), sizeVector=new T.Vector3();
+    const cabinCasters=new Map();
+    let cabinProgramsPrepared=false;
+
+    function prepareCabinCasters(){
+      for(const room of habitat.rooms){
+        if(cabinCasters.has(room.id))continue;
+        const casters=[];
+        room.group.updateWorldMatrix(true,true);
+        function visit(part){
+          if(part.name==='舱室内衬')return;
+          if(part.isMesh&&part.material?.isMeshStandardMaterial&&!part.material.transparent&&!part.castShadow){
+            if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+            sizeProbe.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld).getSize(sizeVector);
+            sizeVector.multiplyScalar(1/worldMetre);
+            if(sizeVector.y>.20&&Math.max(sizeVector.x,sizeVector.z)>.60)casters.push(part);
+          }
+          for(const child of part.children)visit(child);
+        }
+        visit(room.group);cabinCasters.set(room.id,casters);
+      }
+    }
 
     function restoreCasters(){
       for(const [part,wasCasting] of shadowFlags)part.castShadow=wasCasting;
@@ -244,31 +265,16 @@
       const sign=room?.side===1?-1:1;
       taskLamp.position.copy(habitat.worldPosition(x-sign*width*.69,y+height*1.25+depth*.26,z+sign*depth*.52));
       taskLamp.target.position.copy(habitat.worldPosition(x,y+height*.18,z));
-      taskLamp.castShadow=Boolean(room);
+      // Keep the light/shadow shader layout fixed across cabin thresholds.
+      // Only the shadow volume and its cached caster list change.
+      taskLamp.castShadow=true;
       farBank.position.copy(habitat.worldPosition(x+sign*width*.31,y+height*.68,z-sign*depth*.26));
       farBank.distance=Math.max(width,depth)*1.06*worldMetre;
-      if(room){
-        const radius=Math.hypot(width,depth)*.57*worldMetre;
-        Object.assign(taskLamp.shadow.camera,{left:-radius,right:radius,bottom:-radius,top:radius,
-          near:.20*worldMetre,far:Math.max(width,depth,height)*3*worldMetre});
-        taskLamp.shadow.camera.updateProjectionMatrix();
-        // Major equipment casts contact shadows. The panelled roof and
-        // walls represent the lamp housings and must not shadow the room.
-        room.group.updateWorldMatrix(true,true);
-        function prepare(part){
-          if(part.name==='舱室内衬')return;
-          if(part.isMesh && part.material?.isMeshStandardMaterial && !part.material.transparent){
-            if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
-            sizeProbe.copy(part.geometry.boundingBox).applyMatrix4(part.matrixWorld);
-            sizeProbe.getSize(sizeVector).multiplyScalar(1/worldMetre);
-            if(sizeVector.y>.20 && Math.max(sizeVector.x,sizeVector.z)>.60 && !part.castShadow){
-              shadowFlags.set(part,false);part.castShadow=true;
-            }
-          }
-          for(const child of part.children)prepare(child);
-        }
-        prepare(room.group);
-      }
+      const radius=Math.hypot(width,depth)*.57*worldMetre;
+      Object.assign(taskLamp.shadow.camera,{left:-radius,right:radius,bottom:-radius,top:radius,
+        near:.20*worldMetre,far:Math.max(width,depth,height)*3*worldMetre});
+      taskLamp.shadow.camera.updateProjectionMatrix();
+      for(const part of cabinCasters.get(room?.id)||[]){shadowFlags.set(part,false);part.castShadow=true;}
       cabinLights.updateMatrixWorld(true);renderer.shadowMap.needsUpdate=true;
     }
     // Targets are measured above each room's floor. They keep the arrival
@@ -433,6 +439,7 @@
       const identity = [place.level,place.roomId||'',place.name||'',Boolean(place.lift)].join('|');
       if (!force && currentPlace === identity) return;
       if(force || currentRoomId!==(room?.id||null) || !room)placeCabinLamps(room);
+      carrierGlazing.setInteriorView(room?.id||null);
       currentPlace = identity;
       currentRoomId = room?.id || null;
       const ports=shipTransporters.ports(room),preferred=berthSelect.value;
@@ -490,6 +497,9 @@
       if(carried)carHeight.textContent='标高 '+s.center.y.toFixed(1)+' m'+(travelling?'　'+s.speed.toFixed(1)+' m/s':'');
     }
     function enter(roomId, saved) {
+      habitat.prepareRooms();
+      population.prepareRooms();
+      prepareCabinCasters();
       crewDialogue.close();crewDialogue.setBoarded(true);
       escort.hide();
       active = true;
@@ -526,6 +536,11 @@
       flight.restore(saved?.flight,pose);
       companion.arrive(pose,yaw);flightControls();
       refreshPlace(true);
+      if(!cabinProgramsPrepared){
+        // r128 compile traverses hidden cabins too. Prepare their shared
+        // programs under the actual cabin rig before the first walking frame.
+        renderer.compile(scene,camera);cabinProgramsPrepared=true;
+      }
       flightControls();
       if(passenger){
         const s=lifts.status(pose);
@@ -540,6 +555,7 @@
       if (!active) return;
       crewDialogue.setBoarded(false);
       active=false;clearInputs();restoreExteriorRig();clearTimeout(idleClock.timer);
+      carrierGlazing.setInteriorView(null);
       pilot.leave();population.setActive(false);populationText.hidden=true;
       companion.leave();escort.hide();flight.leave();
       habitat.setActive(false);

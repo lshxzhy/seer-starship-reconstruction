@@ -75,13 +75,15 @@
     observer.observe(stage);
     const keyNames=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','Space','KeyC','KeyX','KeyQ','KeyR']);
     const flightPulses=new Map();
-    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();drag=null;lastTime=null;}
+    let lookYaw=0,lookPitch=0;
+    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();lookYaw=lookPitch=0;drag=null;lastTime=null;}
     const displacement=(a,b)=>navigationDisplacement(a,b,definition);
     const coordinates=(p,surface=body)=>surface.coordinates?surface.coordinates(p):spherical(p);
     function usePlanet(id){
       throughScope=false;sisterAbove=false;
       for(const mesh of Object.values(skyPlanets))mesh.visible=false;
       body?.setMode('hidden');body=getSurface(regions[id]?id:'klose');
+      body.prepareFlight?.();
       region=regions[id]||regions.klose;definition=region.definition;radius=definition.radius;home=definition.sites[0];
       airWeights=new Float32Array(definition.sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
       stage.dataset.planet=definition.id;
@@ -352,6 +354,7 @@
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
       facing=Number.isFinite(saved.facing)?saved.facing:yaw;eye=!!saved.eye;external=current&&!!saved.external;
+      if(phase==='helm'&&!flight.status().auto)yaw=pitch=0;
       door=clamp(current&&Number.isFinite(saved.door)?saved.door:1,0,1);gear=flight.status().phase==='flying'?0:1;
       feet.set(0,0,11.8);
       if(current&&Array.isArray(saved.feet)&&saved.feet.length===3&&saved.feet.every(Number.isFinite))feet.fromArray(saved.feet);
@@ -362,7 +365,8 @@
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
-      if(saved.format===2&&phase==='surface')position=compactSurfacePoint(position,definition);
+      if(saved.format===2&&phase==='surface')position=compactSurfacePoint(position,definition,previousPlanetRadius[definition.id]);
+      if(saved.format===3&&phase==='surface')position=compactSurfacePoint(position,definition,saved.surfaceRadius);
       if(!current&&saved.phase==='surface'){
         // The previous radius was 780 km. Keep the visitor's distances from the meadow.
         position=compactSurfacePoint(position,definition,780000);
@@ -388,7 +392,7 @@
       delete stage.dataset.domain;delete stage.dataset.planet;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
-      return {format:3,origin,phase,planetId:definition.id,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
+      return {format:3,origin,phase,planetId:definition.id,surfaceRadius:definition.radius,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
         door,transfer:dock.travel,transferSign,external,navTarget,pending,arrivedOnDeck,yaw,pitch,eye,facing,targetId};
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
@@ -518,9 +522,10 @@
     function directionArrow(a){return ['↑','↗','→','↘','↓','↙','←','↖'][((Math.round(a/(Math.PI/4))%8)+8)%8];}
     function flyCommand(kind){
       if(phase!=='helm'||pending)return;
-      if(kind==='manual'){flight.manual();updateUI();persist();return;}
+      if(kind==='manual'){flight.manual();yaw=pitch=lookYaw=lookPitch=0;updateUI();persist();return;}
       if(flight.status().phase!=='flying'&&door>0){pending=kind;updateUI();requestFrame();persist();return;}
       if(kind==='auto'){
+        yaw=pitch=lookYaw=lookPitch=0;
         const dest=flights.get(navTarget);
         if(!dest||!flight.autopilot(navTarget==='dock'?'dock':'surface',navTarget==='dock'?undefined:dest,dest.planetId))
           say('已位于目标，或该处暂时无法进场');
@@ -805,12 +810,15 @@
       door=T.MathUtils.clamp(door+(openDoor?1:-1)*dt*.9,0,1);
       if(pending&&door===0){const command=pending;pending=null;flyCommand(command);}
       const handInput=phase==='helm'&&atlas.hidden&&!stage.dataset.consoleOpen&&!s.auto;
+      const mouseYaw=handInput?lookYaw:0,mousePitch=handInput?lookPitch:0;
+      lookYaw=lookPitch=0;
       let remaining=dt;
       while(remaining>0){
         const sub=flightPulses.size?Math.min(remaining,...flightPulses.values()):remaining;
         const held=k=>pressed(k)||flightPulses.has(k),axis=(a,b)=>Number(held(a))-Number(held(b));
         flight.tick(sub,handInput?{forward:axis('KeyW','KeyS'),turn:Number(held('KeyD')||held('ArrowRight'))-Number(held('KeyA')||held('ArrowLeft')),
         strafe:axis('KeyR','KeyQ'),pitch:axis('ArrowUp','ArrowDown'),lift:axis('Space','KeyC'),
+        lookYaw:dt?mouseYaw*sub/dt:0,lookPitch:dt?mousePitch*sub/dt:0,
         boost:held('ShiftLeft')||held('ShiftRight'),brake:held('KeyX')||time<brakeUntil}:{});
         for(const [key,left] of flightPulses){if(left<=sub)flightPulses.delete(key);else flightPulses.set(key,left-sub);}
         remaining-=sub;
@@ -848,6 +856,7 @@
         insideCamera(s,dt);
         sky.position.copy(view.position);sky.quaternion.copy(groundFrame.quaternion);sky.scale.setScalar(agl>1800?30000:7500);
       }
+      dock.updateView(view.position);
       drawWorld(agl,walking);
       if(time-uiClock>140){updateUI();uiClock=time;}
       if(!atlas.hidden&&time-chartClock>750){showSelection();chartClock=time;}
@@ -1007,6 +1016,8 @@
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.travel+=Math.abs(dx)+Math.abs(dy);
       if(observedBird!==null&&phase==='surface'){
         observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,observingWreck()?-.95:-.04,1.12);
+      }else if(phase==='helm'&&!flight.status().auto&&flight.status().phase==='flying'){
+        lookYaw+=dx*.004;lookPitch-=dy*.004;
       }else{yaw-=dx*.004;pitch=clamp(pitch-dy*.004,-1.1,1.12);}
       requestFrame();
     });

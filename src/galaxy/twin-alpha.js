@@ -1,7 +1,7 @@
 // Taomee maps 105, 106, 46 and 407. Walkable distances, hidden backs and the
 // meandering connection between these painted scenes are authored for this world.
 const ALPHA_WORLD=defineTwinWorld({
-  id:'alpha',name:'双子阿尔法星',radius:38000,lat:.29,lon:-.95,
+  id:'alpha',name:'双子阿尔法星',radius:800,lat:.29,lon:-.95,
   sites:[
     {id:'alpha-springs',name:'双子阿尔法星 · 温泉群',mapId:105,x:0,z:0,lookAt:[-4,-23],lookPitch:.24,description:'矿物环托住碧色温泉，蒸汽从金色菌台与孔树之间升起。'},
     {id:'alpha-rock',name:'阿尔法星岩地',mapId:106,x:65,z:-103,lookAt:[106,-190],lookPitch:.18,description:'紫色盘根穿过开裂的银灰板岩；巨型豆豆果树与能源高塔分立岩地两侧。'},
@@ -42,8 +42,24 @@ const ALPHA_WORLD=defineTwinWorld({
   buildLandmarks:buildAlphaLandmarks
 });
 
-function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}){
+function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal,projection}){
   const tau=Math.PI*2,V=(x,y,z)=>new T.Vector3(x,y,z);
+  const projectedPoint=V(0,0,0),particleRotation=new T.Quaternion();
+  function projectAbsolute(geo,particles=false){
+    const positions=geo.attributes.position,rotations=particles?new Float32Array(positions.count*4):null;
+    for(let i=0;i<positions.count;i++){
+      const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);
+      if(rotations)projection.rotation(x,z,particleRotation).toArray(rotations,i*4);
+      projection.point(x,y,z,projectedPoint);positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
+    }
+    positions.needsUpdate=true;geo.userData.surveyProjected=true;
+    if(rotations)geo.setAttribute('surveyRotation',new T.BufferAttribute(rotations,4));
+    else geo.computeVertexNormals();
+    geo.computeBoundingSphere();return geo;
+  }
+  // Rotate each GPU-animated puff and droplet in its own local surface frame.
+  const particleDirection=`attribute vec4 surveyRotation;
+    vec3 surveyDelta(vec3 d){return d+2.*cross(surveyRotation.xyz,cross(surveyRotation.xyz,d)+surveyRotation.w*d);}`;
   const sphere=new T.SphereGeometry(1,18,12),cube=new T.BoxGeometry(1,1,1);
   const rod=new T.CylinderGeometry(1,1,1,16),disc=new T.CylinderGeometry(1,1,1,52);
   const hoop=new T.TorusGeometry(1,.045,8,64);
@@ -232,13 +248,15 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   }
   const sinterMesh=new T.BufferGeometry();sinterMesh.setAttribute('position',new T.Float32BufferAttribute(sinterVertices,3));
   sinterMesh.setAttribute('color',new T.Float32BufferAttribute(sinterColors,3));sinterMesh.setIndex(sinterIndices);
-  sinterMesh.computeVertexNormals();stamp(sinterMesh,stone,0,0,0);
+  stamp(projectAbsolute(sinterMesh),stone,0,0,0);
   const mistGeom=new T.BufferGeometry();mistGeom.setAttribute('position',new T.Float32BufferAttribute(mistPos,3));
   mistGeom.setAttribute('flow',new T.Float32BufferAttribute(mistData,4));
+  projectAbsolute(mistGeom,true);
   const mistMat=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{clock:{value:0}},
-    vertexShader:`attribute vec4 flow;uniform float clock;varying float opacity;varying float curl;
+    vertexShader:`${particleDirection}
+      attribute vec4 flow;uniform float clock;varying float opacity;varying float curl;
       void main(){float t=fract(clock*.25+flow.x);float beat=.66+.34*sin(clock*.65+flow.z);
-        vec3 p=position+vec3(sin(t*7.+flow.z)*t*.64+1.25*t*t,flow.w*t*beat,cos(t*6.+flow.z)*t*.52);
+        vec3 p=position+surveyDelta(vec3(sin(t*7.+flow.z)*t*.64+1.25*t*t,flow.w*t*beat,cos(t*6.+flow.z)*t*.52));
         vec4 mv=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*mv;
         gl_PointSize=clamp(flow.y*(.67+t*2.7)*600./max(.1,-mv.z),2.,170.);
         opacity=.60*(1.-t)*smoothstep(0.,.12,t);curl=flow.z+t*2.;}`,
@@ -280,9 +298,11 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   // Water at the top separates into illuminated beads and falls back inside the basin.
   const drops=new T.BufferGeometry();drops.setAttribute('position',new T.Float32BufferAttribute(dropPos,3));
   drops.setAttribute('flight',new T.Float32BufferAttribute(dropCycle,4));
+  projectAbsolute(drops,true);
   const bead=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{clock:water.uniforms.clock},
-    vertexShader:`attribute vec4 flight;uniform float clock;varying float fade;void main(){
-      float t=fract(clock*.55+flight.w);vec3 p=position+vec3(t*flight.x,4.*flight.z*t*(1.-t),t*flight.y);
+    vertexShader:`${particleDirection}
+      attribute vec4 flight;uniform float clock;varying float fade;void main(){
+      float t=fract(clock*.55+flight.w);vec3 p=position+surveyDelta(vec3(t*flight.x,4.*flight.z*t*(1.-t),t*flight.y));
       vec4 v=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*v;
       gl_PointSize=clamp(110./max(.1,-v.z),1.4,12.);fade=smoothstep(.07,.28,t)*(1.-smoothstep(.87,1.,t));}`,
     fragmentShader:`varying float fade;void main(){vec2 p=(gl_PointCoord*2.-1.)*vec2(1.45,1.);
@@ -416,7 +436,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     for(const side of [-1,1])paving(x+side*(1.53+.24*Math.sin(i*1.3)),z+side*.42,1.93+.35*Math.cos(i*.9),1.64,side*.24,i+side);
     if(i>7)paving(x+2.7+(i-7)*1.47,z-.75,1.68,1.26,-.64,i*2);
   }
-  const path=new T.BufferGeometry();path.setAttribute('position',new T.Float32BufferAttribute(paved,3));path.setAttribute('color',new T.Float32BufferAttribute(pavedRGB,3));path.setIndex(pavedIdx);path.computeVertexNormals();stamp(path,stone,0,0,0);
+  const path=new T.BufferGeometry();path.setAttribute('position',new T.Float32BufferAttribute(paved,3));path.setAttribute('color',new T.Float32BufferAttribute(pavedRGB,3));path.setIndex(pavedIdx);stamp(projectAbsolute(path),stone,0,0,0);
   const groveLeaf=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.86}),'moss');
   const leafbank=revolve([[.25,-.24,0x213b31],[.78,-.10,0x2c513a],[1,.16,0x3b6346],
     [.93,.38,0x577e53],[.72,.57,0x648757],[.38,.73,0x82a06a],[.02,.79,0x96ae7d]],32,

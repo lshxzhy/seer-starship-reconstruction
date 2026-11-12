@@ -7,11 +7,11 @@ function createShipApproach(T,body,saved){
   const mark=new T.Vector3(),attitude=new T.Quaternion(),forward=new T.Vector3(),euler=new T.Euler(0,0,0,'YXZ');
   const gearSamples=[[0,.04,-4.3],[-2.93,.04,2.75],[2.93,.04,2.75],[0,1.55,-6.4],[0,1.6,6.3],[-5.4,1.8,0],[5.4,1.8,0]].map(a=>new T.Vector3(...a));
   const clamp=T.MathUtils.clamp;
-  let phase='landed',auto=null,leg='',yaw=0,pitch=0,roll=0,throttle=0,timeScale=1,range=0;
+  let phase='landed',auto=null,leg='',yaw=0,pitch=0,roll=0,throttle=0,timeScale=1,range=0,boostPower=0,lastDriveSign=1;
   let stage='接驳坪已停稳';
   function settle(){
     phase='landed';auto=null;leg='';velocity.set(0,0,0);
-    quaternion.setFromAxisAngle(localUp,yaw);pitch=roll=throttle=0;timeScale=1;stage='接驳坪已停稳';
+    quaternion.setFromAxisAngle(localUp,yaw);pitch=roll=throttle=boostPower=0;timeScale=1;stage='接驳坪已停稳';
   }
   function launch(){
     if(phase!=='landed')return false;
@@ -49,9 +49,11 @@ function createShipApproach(T,body,saved){
     return false;
   }
   function step(dt,input){
-    const distance=nearestHullDistance(),speedLimit=Math.min(1700,13+distance*.72);
-    const accel=Math.min(650,21+distance*.48);
     const guided=Boolean(auto||leg==='rise');
+    boostPower=clamp(boostPower+(input.boost&&!guided ? .22 : -.32)*dt,0,1);
+    const distance=nearestHullDistance(),clearanceLimit=Math.min(1700,13+distance*.72);
+    const speedLimit=guided?Math.min(90,clearanceLimit*.42):clearanceLimit*(.52+.48*boostPower);
+    const accel=Math.min(650,21+distance*.48)*(guided ? .64 : 1+2.4*boostPower);
     if(guided){
       if(leg==='rise'||auto==='outbound'){
         mark.copy(position);
@@ -82,16 +84,24 @@ function createShipApproach(T,body,saved){
       }
       pitch*=Math.exp(-4*dt);roll*=Math.exp(-4*dt);
     }else{
-      yaw-=(input.turn||0)*dt*1.15;pitch=clamp(pitch+(input.pitch||0)*dt*.82,-1.32,1.32);
+      yaw-=(input.turn||0)*dt*1.15+(input.lookYaw||0);
+      pitch=clamp(pitch+(input.pitch||0)*dt*.82+(input.lookPitch||0),-1.32,1.32);
       roll+=(-(input.turn||0)*.2-roll)*(1-Math.exp(-3*dt));
       attitude.setFromEuler(euler.set(pitch,yaw,0));
-      desired.set(input.strafe||0,0,-(input.forward||0)).applyQuaternion(attitude);
-      desired.y+=input.lift||0;desired.clampLength(0,1).multiplyScalar(speedLimit*(input.boost?1:.48));
+      const drive=input.forward||(input.boost?1:0);if(drive)lastDriveSign=Math.sign(drive);
+      desired.set(input.strafe||0,0,-drive).applyQuaternion(attitude);
+      desired.y+=input.lift||0;desired.clampLength(0,1).multiplyScalar(speedLimit);
       if(input.brake)desired.set(0,0,0);
+      // Mouse steering rotates the actual craft and redirects its existing
+      // forward speed immediately; acceleration still controls its magnitude.
+      const speed=velocity.length();
+      if(desired.lengthSq()>1e-8)velocity.copy(desired).setLength(speed);
+      else if(speed>1e-8)velocity.set(0,0,-lastDriveSign).applyQuaternion(attitude).setLength(speed);
     }
-    quaternion.slerp(attitude.setFromEuler(euler.set(pitch,yaw,roll)),1-Math.exp(-5*dt));
+    attitude.setFromEuler(euler.set(pitch,yaw,roll));
+    if(guided)quaternion.slerp(attitude,1-Math.exp(-5*dt));else quaternion.copy(attitude);
     desired.sub(velocity);throttle=Math.min(1,desired.length()/Math.max(1,accel));
-    velocity.add(desired.clampLength(0,dt*accel*(input.brake&&!guided?2:1)));
+    velocity.add(desired.clampLength(0,dt*accel*(input.brake&&!guided?2.5:1)));
     next.copy(position).addScaledVector(velocity,dt);
     const at=body.coordinates(next),over=body.landingInfo(at.lat,at.lon,7.4).ok;
     if(over&&position.y>=socket.y-.1&&next.y<socket.y+.07&&velocity.y<=0){
@@ -107,9 +117,13 @@ function createShipApproach(T,body,saved){
   }
   function tick(dt,input={}){
     if(phase==='landed')return dt;
-    timeScale=auto?1.5+4*T.MathUtils.smoothstep(nearestHullDistance(),70,1200):1;
-    const elapsed=dt*timeScale;let left=elapsed;
-    while(phase==='flying'&&left>1e-7){const sub=Math.min(left,.035);step(sub,input);left-=sub;}
+    timeScale=1;
+    const elapsed=dt,controls={...input};let left=elapsed;
+    while(phase==='flying'&&left>1e-7){
+      const sub=Math.min(left,.035);
+      controls.lookYaw=(input.lookYaw||0)*sub/elapsed;controls.lookPitch=(input.lookPitch||0)*sub/elapsed;
+      step(sub,controls);left-=sub;
+    }
     return elapsed;
   }
   function placeOnSurface(site,angle=0){
@@ -120,17 +134,18 @@ function createShipApproach(T,body,saved){
   if(saved?.p&&saved.q&&saved.v){
     position.fromArray(saved.p);velocity.fromArray(saved.v);quaternion.fromArray(saved.q).normalize();
     euler.setFromQuaternion(quaternion,'YXZ');yaw=euler.y;pitch=euler.x;roll=euler.z;
+    lastDriveSign=velocity.dot(forward.set(0,0,-1).applyQuaternion(quaternion))<0?-1:1;
     if(saved.phase==='landed')settle();
-    else{phase='flying';auto=['surface','outbound'].includes(saved.auto)?saved.auto:null;
+    else{phase='flying';boostPower=clamp(Number(saved.boostPower)||0,0,1);auto=['surface','outbound'].includes(saved.auto)?saved.auto:null;
       leg=['rise','approach'].includes(saved.leg)?saved.leg:'';stage=auto?'接驳续航':'舷侧手动驾驶';}
   }
   function snapshot(){
     return {phase,auto,leg,p:position.toArray(),v:velocity.toArray(),q:quaternion.toArray(),
-      heading:forward.set(0,0,-1).applyQuaternion(quaternion).toArray(),target:auto==='surface'?berth:null};
+      heading:forward.set(0,0,-1).applyQuaternion(quaternion).toArray(),target:auto==='surface'?berth:null,boostPower};
   }
   function status(){
     return {...body.coordinates(position),phase,auto,stage,speed:velocity.length(),verticalSpeed:velocity.y,
-      clearance:nearestHullDistance(),altitude:position.y,heading:-yaw,range,timeScale,throttle,
+      clearance:nearestHullDistance(),altitude:position.y,heading:-yaw,range,timeScale,throttle,boostPower,
       targetName:auto==='surface'?berth.name:'',targetId:auto==='surface'?berth.id:null,
       canCapture:false,canLand:canLand(),landingReason:'请进近外甲板接驳坪'};
   }

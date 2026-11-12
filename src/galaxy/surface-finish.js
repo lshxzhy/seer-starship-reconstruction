@@ -1,3 +1,38 @@
+// Fixed scenery is authored in a metre chart about the district origin. Its
+// builders already lower y by groundY(x,z); this adapter maps that same chart
+// onto the sphere instead of leaving x/z on the original tangent plane.
+// Apply matrix() once to static instance placements, or to freshly written
+// dynamic placements. Point buffers can use point() after their ordinary
+// animation update. Never repeatedly project an already projected placement.
+function createSurveyProjection(T,radius,groundY,height,radialAt){
+  const localUp=new T.Vector3(0,1,0),normal=new T.Vector3();
+  const position=new T.Vector3(),scale=new T.Vector3(),attitude=new T.Quaternion(),tilt=new T.Quaternion();
+  function radial(x,z,out){
+    if(radialAt)return radialAt(x,z,out);
+    const distance=Math.hypot(x,z);
+    if(distance<1e-8)return out.set(0,1,0);
+    const angle=distance/radius,factor=Math.sin(angle)/distance;
+    return out.set(x*factor,Math.cos(angle),z*factor);
+  }
+  function point(x,y,z,out=new T.Vector3()){
+    // Separate the builder's old projected base from the object's height
+    // above it, then use the same radial terrain height as the walker.
+    const above=y-groundY(x,z),r=radius+height(x,z)+above;
+    radial(x,z,normal);out.copy(normal).multiplyScalar(r);out.y-=radius;return out;
+  }
+  function rotation(x,z,out=new T.Quaternion()){
+    radial(x,z,normal);
+    return out.setFromUnitVectors(localUp,normal);
+  }
+  function matrix(source,out=source){
+    source.decompose(position,attitude,scale);
+    rotation(position.x,position.z,tilt);point(position.x,position.y,position.z,position);
+    attitude.premultiply(tilt);
+    return out.compose(position,attitude,scale);
+  }
+  return {point,rotation,matrix};
+}
+
 // Object-space relief stays attached to a growing stem or tilted rock.
 // Pixel derivatives suppress detail below one pixel in the orbital view.
 function fieldSurfaceFinish(material,kind){

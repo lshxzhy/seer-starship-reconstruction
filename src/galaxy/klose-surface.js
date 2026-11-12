@@ -1,7 +1,7 @@
 // Latitude and longitude are radians. One scene unit is one metre. East, up,
 // south form a right-handed local frame everywhere, including at the poles.
 const KLOSE_WORLD = (() => {
-  const radius = 48000, latitude = .32, longitude = .54;
+  const radius = 900, latitude = .32, longitude = .54;
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
@@ -26,8 +26,8 @@ const KLOSE_WORLD = (() => {
     ['forest','林间南缘',-305,-40],['vineway','藤蔓通道外沿',-242,124],
     ['wetland','湿地东岸',47,-173],['flame','烈焰丛林东缘',179,-109],
     ['sanctuary','神宠高地东坪',177,68],
-    ['ridge','蓝脊山鞍部',2880,-1480],['delta','金河口高岸',-2720,-2940],
-    ['grove','绯叶林台',4500,1980]
+    ['ridge','蓝脊山鞍部',570,-295],['delta','金河口高岸',-545,-590],
+    ['grove','绯叶林台',900,395]
   ].map(([id,name,x,z])=>({id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude))}));
   return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites};
 })();
@@ -137,12 +137,12 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   // One continuous field describes its drainage, forest cover and relief at
   // every scale. The broad colour belts remain visible from deep space.
   function landform(lat,lon,x,z,out){
-    const d=Math.hypot(x,z),globalWeight=smooth(6600,15200,d);
+    const d=Math.hypot(x,z),globalWeight=smooth(1100,2200,d);
     let h=120,water=0,rock=0,forest=0;
     if(d>350 && globalWeight<1){
       // The survey watershed and its three landing shelves share a 1:5 map
       // scale. The connected classic clearings still have metre-scale actors.
-      const sx=x*5,sz=z*5;
+      const sx=x*25,sz=z*25;
       const hills=fractal(sx*.00032,18,sz*.00032),grain=noise(sx*.0015,5,sz*.0015);
       const crest=sx-(12500+sz*.14+2600*Math.sin(sz/7800)+950*Math.sin(sz/2300));
       const ridge=Math.exp(-((crest/3400)**2));
@@ -160,7 +160,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
       const upland=138+70*hills+15*grain+ridge*ridgeline+130*shoulders+shelf*145;
       const channel=56+Math.max(0,drainage)*.09;
       h=T.MathUtils.lerp(upland,channel,valley);
-      const inner=smooth(350,820,d);
+      const inner=smooth(350,580,d);
       h=120+(h-120)*inner;forest*=inner;rock*=inner;water*=inner;
     }
     if(globalWeight>0){
@@ -667,7 +667,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   const groundGroup=new T.Group(); local.add(groundGroup);
   let lastFocus=null,terrain=null,details=null,groundTime=0,safariState=null;
-  const diskRadius=radius*.57;
+  const diskRadius=radius*.82;
   const groundInverse=new T.Quaternion(),groundQuery=new T.Vector3();
   // A 37 cm animal can visibly sink between samples of a coarser terrain
   // ring. Interpolate the rendered triangle directly beneath its feet.
@@ -772,14 +772,17 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     if(mode!=='surface'&&mode!=='flight')return;
     altitude=mode==='surface'?0:Math.max(0,altitude);
     if(atmosphereRim)atmosphereRim.visible=altitude>radius*.05;
-    local.visible=altitude<radius*.19;
+    local.visible=mode==='surface'||altitude<Math.max(350,radius*.30);
     if(!local.visible){shellCut.value=2;lastFocus=null;return;}
     buildGround();groundTime+=dt;
     const moved=lastFocus?Math.hypot((lat-lastFocus.lat)*radius,unwrap(lon-lastFocus.lon)*radius*Math.cos(lat)):Infinity;
-    const tolerance=mode==='surface'?4:clamp(4+altitude*.2,4,1700);
+    // The metre mesh stays fixed during a flyby. Recentring/relighting every
+    // few metres rebuilt thousands of terrain vertices on the flight frame.
+    const tolerance=mode==='surface'?4:diskRadius*.55;
     const rising=lastFocus&&Math.abs(altitude-lastFocus.altitude)>Math.max(14,altitude*.1);
-    if((moved>tolerance||rising)&&(mode==='surface'||groundTime>.09||moved>Math.max(250,tolerance*3))){
-      placeGround(lat,lon,altitude);groundTime=0;
+    if(!lastFocus||((moved>tolerance||(mode==='surface'&&rising))&&(mode==='surface'||groundTime>.28))){
+      const c=chart(lat,lon),nearHome=Math.hypot(c.x,c.z)<diskRadius*.50;
+      placeGround(mode==='flight'&&nearHome?origin.lat:lat,mode==='flight'&&nearHome?origin.lon:lon,mode==='flight'?120:altitude);groundTime=0;
     }
     shellCut.value=mode==='flight'?Math.cos(.95*diskRadius/radius):2;
     details.update(lat,lon,dt,altitude,mode==='surface',shuttleStatus);updateGroves(lat,lon,altitude);
@@ -850,8 +853,14 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       if(o.isInstancedMesh && o.dispose)o.dispose();});
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
+  let flightPrepared=false;
+  function prepareFlight(){
+    if(flightPrepared)return;
+    buildOrbit();buildGround();details.prepareFlight();
+    flightPrepared=true;
+  }
   setMode('hidden');
-  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,
+  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,prepareFlight,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
     nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null,
     nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,

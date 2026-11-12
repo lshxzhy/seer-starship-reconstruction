@@ -2,7 +2,7 @@
 // X/Z describe one survey in metres. Reverse sides, distances and ramps connect
 // the original stage views without moving the visitor between separate maps.
 const BETA_WORLD=defineTwinWorld({
-  id:'beta',name:'双子贝塔星',radius:35000,lat:.19,lon:-.47,
+  id:'beta',name:'双子贝塔星',radius:850,lat:.19,lon:-.47,
   sites:[
     {id:'beta-plain',name:'双子贝塔星',x:0,z:0,mapId:47,lookAt:[4,-32],lookPitch:.22,description:'红褐色巨型掘进机。单目绿灯下方是红色进气口，两条节臂垂下三枚锥钻。'},
     {id:'beta-waste',name:'贝塔星荒原',x:-105,z:-60,mapId:49,lookAt:[-109,-83],lookPitch:.24,description:'青光裂谷贯穿六角电能石层。隔岸可以看见成组的玻璃罩勘察站；左侧圆台通往双子阿尔法星海盗能源站。'},
@@ -45,7 +45,17 @@ const BETA_WORLD=defineTwinWorld({
 });
 
 function buildBetaLandmarks(kit){
-  const {T,ground,stamp,block,root,material}=kit,tau=2*Math.PI;
+  const {T,ground,stamp,block,root,material,projection}=kit,tau=2*Math.PI;
+  const projectedPoint=new T.Vector3();
+  function projectAbsolute(geo){
+    const positions=geo.attributes.position;
+    for(let i=0;i<positions.count;i++){
+      projection.point(positions.getX(i),positions.getY(i),positions.getZ(i),projectedPoint);
+      positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
+    }
+    positions.needsUpdate=true;geo.userData.surveyProjected=true;
+    geo.computeVertexNormals();geo.computeBoundingSphere();return geo;
+  }
   const box=new T.BoxGeometry(1,1,1),ball=new T.SphereGeometry(1,32,20);
   const drum=new T.CylinderGeometry(1,1,1,36),hex=new T.CylinderGeometry(1,1,1,6);
   const chamfer=new T.CylinderGeometry(.82,1,1,8),torus=new T.TorusGeometry(1,.085,10,44);
@@ -90,7 +100,7 @@ function buildBetaLandmarks(kit){
   }
   function pipe(points,r,m,segments=32){
     const line=new T.CatmullRomCurve3(points);
-    add(new T.TubeGeometry(line,segments,r,12,false),m,0,0,0);return line;
+    add(projectAbsolute(new T.TubeGeometry(line,segments,r,12,false)),m,0,0,0);return line;
   }
   function sleeve(curve,count,r,m){
     for(let i=0;i<count;i++){
@@ -138,7 +148,7 @@ function buildBetaLandmarks(kit){
   function finishDeck(){
     for(const [mat,{v,i}] of deck){
       const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));
-      g.setIndex(i);g.computeVertexNormals();add(g,mat,0,0,0);
+      g.setIndex(i);add(projectAbsolute(g),mat,0,0,0);
     }
   }
 
@@ -162,8 +172,8 @@ function buildBetaLandmarks(kit){
       v.push(at.x,at.y,at.z);
       if(row<4&&k<4){const i=row*5+k;idx.push(i,i+1,i+5,i+1,i+6,i+5);}
     }
-    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setIndex(idx);g.computeVertexNormals();
-    add(g,metal(j%2===0?0x907987:0xa27f8b),0,0,0);
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setIndex(idx);
+    add(projectAbsolute(g),metal(j%2===0?0x907987:0xa27f8b),0,0,0);
     const seamA=hullPoint(a,7.35,.10),seamB=hullPoint(a,11.94,.10);
     pipe([seamA,hullPoint(a,9.6,.12),seamB],.066,patina,5);
     for(const h of [7.63,11.58]){
@@ -234,7 +244,7 @@ function buildBetaLandmarks(kit){
     for(const [index,m] of mounts.entries()){
       bitPose.position.set(m.x,m.y,m.z);bitPose.scale.set(1,1.13,1);
       bitPose.rotation.set(0,m.turn+m.sign*time*.56,0);bitPose.updateMatrix();
-      bits.setMatrixAt(index,bitPose.matrix);
+      bits.setMatrixAt(index,projection.matrix(bitPose.matrix));
     }
     bits.instanceMatrix.needsUpdate=true;
   }
