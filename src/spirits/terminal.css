@@ -20,6 +20,9 @@
 .spirit-stage{position:relative;height:clamp(190px,34cqw,300px);background:radial-gradient(ellipse at 50% 20%,#466f73 0%,#2b4c58 51%,#1b343d 99%);border-radius:7px;overflow:hidden}
 .spirit-stage.duel{background:radial-gradient(ellipse at 50% 30%,#5b7776,#3f5b63 55%,#263a43);}
 .spirit-stage canvas{display:block;width:100%;height:100%}
+.spirit-stage .spirit-diorama{cursor:grab;touch-action:none}
+.spirit-stage .spirit-diorama.turning{cursor:grabbing}
+.spirit-turn-hint{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);width:max-content;padding:2px 7px;border-radius:4px;background:#102c36d9;text-align:center;color:#d9eeea;font-size:11px;pointer-events:none}
 .spirit-missing{position:absolute;inset:auto 10px 8px;color:#d8e4db;font-size:12px;text-align:center}
 .spirit-battle-heads{display:grid;grid-template-columns:1fr 1fr;gap:clamp(15px,6cqw,74px);padding:0 2px}
 .spirit-meter{display:flex;align-items:center;gap:8px;min-width:0}

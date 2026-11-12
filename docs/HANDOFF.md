@@ -83,6 +83,8 @@
 
 `src/spirits/catalog.json` 是游戏和本机服务共读的图鉴快照。物种编号、持有个体 UID 和现场遭遇键分别标识三个对象。每次捕捉要同时处理个体去向、胶囊消耗和遭遇结束；六位队伍已满则入仓。`createCompanionFigure` 为图鉴、回合战和随行提供同一三维入口。
 
+初始线由 `createStarterGrassFigure`（1–3）、`createIyooFigure`（4）、`createStarterWaterFigure`（5–6）、`createStarterFireFigure`（7–9）分别制作；鸟类进化由 `createBirdEvolutionFigure`（11、12、165、166）制作。各模块返回 `{root,update,dispose}`，局部 +Z 为前方，显示尺寸交给共同入口计算。装配器在 `partner-figures.js` 前加载这些文件，旧的 `bloom/water/fire/bird` 实现已移除，其余家族保留原入口。`portrait-stage.js` 保存各形态默认朝向与拖动角度，双击或切换对象复位；旋转只影响展示，不写入存档。
+
 `challenges.js` 登记两位 SPT 首领的地点、等级、专属体力和首胜奖励。SPT 卡片、野外首领生成、对战和存档读取均使用对应记录。精灵背包里的同种个体按个体值计算能力。湿地场次的专用胶囊、鱼竿和截止时间由 `safari-rules.js` 结算，不能用普通战斗的胶囊扣费。黄金布布的孵化有单独的现实时间记录。[系统规则](精灵系统.md)
 
 角色名册在 `src/ai/characters.json`。具名角色用稳定 ID，普通船员按 SE 编号区分，精灵区分野生、持有和图鉴模拟。名册的 `facts`、`sources` 记录出处，`persona`、`expertise` 保存项目演绎。启动本机通讯后才请求本机 Ollama，默认模型 `qwen3.5:9b`，思考关闭。[舰上组织与角色](舰上组织与角色.md)

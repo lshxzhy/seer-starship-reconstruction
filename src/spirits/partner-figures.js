@@ -53,7 +53,8 @@ function finishSpiritPart(mesh,kind,palette){
   mesh.material=spiritCoating(mesh.material,kind,palette);return mesh;
 }
 function createCompanionFigure(T,id){
-  return createIyooFigure(T,id)||createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
+  return createIyooFigure(T,id)||createStarterGrassFigure(T,id)||createStarterWaterFigure(T,id)||createStarterFireFigure(T,id)||
+    createBirdEvolutionFigure(T,id)||createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
 // World presentation uses catalogue height once, with a visibility floor for
 // tiny species. This is a scene presentation rule, not a change to their data.
@@ -119,151 +120,6 @@ function createPartnerFigure(T,id){
       const a=i*Math.PI*.4;finishSpiritPart(oval(x+Math.sin(a)*size*.48,y+Math.cos(a)*size*.48,z,size*.33,size*.52,size*.23,color,-a),'petal',mats);
     }
     oval(x,y,z+size*.2,size*.28,size*.28,size*.17,core);
-  }
-  function bloom(stage){
-    const tall=stage===3,bulb=stage===1,green=0x548544,pale=0xc1d578,pink=0xf48bae;
-    oval(0,.55,0,tall?.27:.34,tall?.52:.35,.29,green);
-    oval(0,.73,.22,.24,tall?.29:.25,.16,0xffe3a1);face(.76,.368,.108,bulb?.078:.059);
-    for(const s of [-1,1]){
-      if(bulb)leaf(s*.17,.015,.02,.063,.35,.054,pale,-s*.17,.09);
-      else oval(s*.17,.18,.02,.105,.215,.12,pale,-s*.16);
-      if(bulb){
-        const start=[s*.25,.54,.04],end=[s*.54,.67,.08];
-        limb(start,end,.081,0xe68aaf);
-        const axis=new T.Vector3(...end).sub(new T.Vector3(...start)).normalize();
-        const tangent=new T.Vector3(0,0,1).cross(axis).normalize(),binormal=axis.clone().cross(tangent);
-        const thread=[];
-        for(let i=0;i<=42;i++){
-          const t=i/42,phase=t*Math.PI*5,rad=.065*Math.sin(Math.PI*(.08+.84*t))**.68;
-          thread.push(new T.Vector3(...start).lerp(new T.Vector3(...end),t)
-            .addScaledVector(tangent,rad*Math.cos(phase)).addScaledVector(binormal,rad*Math.sin(phase)));
-        }
-        const g=new T.TubeGeometry(new T.CatmullRomCurve3(thread),44,.009,7,false);
-        geometries.add(g);body.add(new T.Mesh(g,material(0xae557b)));
-        // The original pink cuffs finish in a folded spiral instead of a round fist.
-        const curl=[];
-        for(let i=0;i<=48;i++){
-          const t=i/48,a=t*Math.PI*4,rad=.060*(1-.89*t);
-          curl.push(new T.Vector3(...end).addScaledVector(axis,.018)
-            .addScaledVector(tangent,rad*Math.cos(a)).addScaledVector(binormal,rad*Math.sin(a)));
-        }
-        const cuff=new T.TubeGeometry(new T.CatmullRomCurve3(curl),48,.0065,7,false);
-        geometries.add(cuff);body.add(new T.Mesh(cuff,material(0x9e4c76)));
-      }
-      else if(!tall)petals(s*.36,.56,.01,.20,pink,0xffdd7c);
-      else leaf(s*.18,.25,-.04,.13,.53,.09,green,-s*.45);
-    }
-    if(bulb){
-      const bud=oval(0,1.08,-.02,.43,.34,.36,0xffffff,-.16);
-      const g=sphere.clone(),pos=g.getAttribute('position'),colour=[];
-      const base=new T.Color(0xafc854).convertSRGBToLinear(),rose=new T.Color(0xf0a4bf).convertSRGBToLinear();
-      const c=new T.Color();
-      for(let i=0;i<pos.count;i++){
-        const y=pos.getY(i),angle=Math.atan2(pos.getX(i),pos.getZ(i));
-        const lobe=(1-y*y)*(.028*Math.cos(5*angle)+.012*Math.cos(3*angle+.7));
-        pos.setXYZ(i,pos.getX(i)*(1+lobe),y,pos.getZ(i)*(1+lobe));
-        c.copy(base).lerp(rose,T.MathUtils.smoothstep(y+.18*pos.getX(i),.04,.96));
-        colour.push(c.r,c.g,c.b);
-      }
-      g.setAttribute('color',new T.Float32BufferAttribute(colour,3));g.computeVertexNormals();
-      const m=material(0xffffff).clone();m.vertexColors=true;geometries.add(g);mats.set('seed-cap',m);bud.geometry=g;bud.material=m;
-      // A continuous slanted leaf brim replaces the two intersecting oval lobes.
-      // Its upturned left edge and hanging right corner follow the classic #001 art.
-      const vertices=[],indices=[],segments=64,rows=10;
-      for(let side=0;side<2;side++)for(let j=0;j<=rows;j++)for(let k=0;k<segments;k++){
-        const a=k*Math.PI*2/segments,t=j/rows,r=.52+.48*t;
-        const x=.48*r*Math.sin(a),z=.34*r*Math.cos(a)+.022;
-        const y=1.035-.135*Math.sin(a)+.095*Math.cos(a)+.065*Math.sin(t*Math.PI)-.095*t*t*t;
-        vertices.push(x,y-side*.022,z);
-        if(j<rows){const p=side*(rows+1)*segments+j*segments+k,q=side*(rows+1)*segments+j*segments+(k+1)%segments;
-          if(side)indices.push(p,q,p+segments,q,q+segments,p+segments);
-          else indices.push(p,p+segments,q,q,p+segments,q+segments);
-        }
-      }
-      const layer=(rows+1)*segments;
-      for(let k=0;k<segments;k++){const a=rows*segments+k,b=rows*segments+(k+1)%segments;indices.push(a,b,a+layer,b,b+layer,a+layer);}
-      const brim=new T.BufferGeometry();brim.setAttribute('position',new T.Float32BufferAttribute(vertices,3));brim.setIndex(indices);brim.computeVertexNormals();
-      geometries.add(brim);
-      const leafHat=new T.Mesh(brim,material(0xb2ce78));finishSpiritPart(leafHat,'petal',mats);body.add(leafHat);
-      for(const a of [-2.1,-.70,.74,2.25]){
-        const seam=[];
-        for(let i=0;i<=22;i++){const t=.20+i/22*1.19;seam.push(new T.Vector3(Math.sin(t)*Math.sin(a)*1.004,Math.cos(t)*1.004,Math.sin(t)*Math.cos(a)*1.004));}
-        const vein=new T.TubeGeometry(new T.CatmullRomCurve3(seam),24,.008,6,false);geometries.add(vein);bud.add(new T.Mesh(vein,material(0x94ac54)));
-      }
-      petals(.24,1.35,0,.095,pink,0xf4bdd0);
-    }else{
-      const top=tall?1.24:1.19;
-      for(let i=0;i<5;i++){
-        const a=i*2*Math.PI/5;
-        const m=oval(Math.sin(a)*.25,top,Math.cos(a)*.23,.22,tall?.38:.26,.21,pink,-Math.sin(a)*.56);
-        finishSpiritPart(m,'petal',mats);m.rotation.x=Math.cos(a)*.56;
-      }
-      for(const s of [-1,1]){
-        oval(s*.19,top-.17,.17,.22,.16,.18,pale,s*.34);
-        const a=[s*.03,top+.08,0],b=[s*.15,top+.43,.01];
-        limb(a,b,.023,0xb68f36);oval(...b,.056,.059,.056,0xffdb60);
-      }
-    }
-  }
-  function water(stage){
-    const blue=0x348ed6,light=0xa6e2e9,white=0xf3f8f4,adult=stage===3;
-    oval(0,.52,-.06,adult?.37:.265,adult?.51:.34,adult?.6:.28,blue);
-    oval(0,.69,.15,.205,.32,.145,white);
-    if(adult){
-      oval(0,1.03,.24,.21,.40,.29,blue);oval(0,1.27,.41,.30,.25,.38,blue);
-      oval(0,1.20,.57,.31,.15,.36,white);face(1.31,.68,.181,.055,0x7e1948);
-    }else{
-      oval(0,.93,.12,stage===1?.405:.33,.37,.33,blue);
-      oval(0,.88,.30,.327,.27,.208,white);
-      for(const s of [-1,1])oval(s*.18,.99,.415,.080,.133,.050,blue,-s*.36);
-      face(.925,.478,.167,.071,0x78224f);
-    }
-    for(const s of [-1,1]){
-      const base=adult?.22:.145;oval(s*base,.14,.13,adult?.17:.12,.125,.22,blue);
-      const fin=leaf(s*.2,.59,-.03,.088,stage===1?.23:.39,.082,light,-s*1.12,-.26);
-      fin.rotation.y=s*.28;
-    }
-    if(stage===1){
-      leaf(-.10,1.21,.04,.113,.23,.08,blue,.40,-.46);
-      const tail=oval(0,.43,-.33,.14,.30,.14,light);tail.rotation.x=-.73;
-    }else{
-      for(const s of [-1,1])leaf(s*.15,adult?1.42:1.17,.14,.067,.28,.10,light,-s*.51,-.28);
-      limb([0,.47,-.22],[0,.22,-.88],.105,blue);leaf(0,.19,-.80,.17,.32,.12,light,.1,-.65);
-    }
-  }
-  function fire(stage){
-    const orange=stage===3?0xb74717:0xf37923,cream=0xffda9c,gold=0xffc13f;
-    const large=stage===3;
-    oval(0,.50,0,large?.38:.252,large?.50:.32,.26,orange);
-    oval(0,.48,.17,.18,.245,.12,cream);
-    oval(0,large?1.06:.85,0,large?.34:.395,large?.29:.35,.31,orange);
-    oval(0,large?1.02:.79,.226,large?.26:.329,.219,.155,cream);
-    face(large?1.065:.824,.356,large?.145:.175,large?.066:.08,0x572d22);
-    for(const s of [-1,1]){
-      oval(s*.15,.15,.07,.125,.145,.166,orange);
-      const hand=[s*(large?.45:.34),large?.28:.52,large?.20:.08];
-      limb([s*.19,.69,0],hand,large?.149:.083,orange);
-      oval(...hand,large?.169:.125,large?.17:.111,.13,large?gold:orange);
-    }
-    for(let j=-1;j<=1;j++)leaf(.14*j,large?1.24:1.04,0,.12,.30+.15*(j===0),.12,
-      stage===1?orange:gold,-j*.24,-.27);
-    if(stage>1)leaf(.04,large?1.34:1.12,.08,.063,.23,.07,0xffeb68,-.18,-.12);
-    limb([.015,.35,-.12],[.11,.45,-.37],.055,orange);
-    leaf(.11,.43,-.38,.07,.26,.055,stage===1?orange:gold);
-  }
-  function bird(final,shiny){
-    const pink=shiny?0xf6f1f8:final?0xffeded:0xed9ebb,blue=shiny?0xc9608c:0x2378ac,brown=shiny?0xecc759:0x764456;
-    finishSpiritPart(oval(0,.68,0,.31,.44,.28,pink),'velvet',mats);
-    finishSpiritPart(oval(0,1.02,.12,.29,.30,.255,pink),'velvet',mats);
-    finishSpiritPart(oval(0,1.02,.37,.107,.095,final?.24:.30,blue),'horn',mats);face(1.09,.34,.143,.068);
-    for(const s of [-1,1]){
-      oval(s*.27,.67,0,.15,.32,.16,pink,-s*.28);
-      leaf(s*.12,1.2,0,.095,.26,.06,final?pink:brown,-s*.39,-.31);
-      limb([s*.12,.40,.03],[s*.12,.10,.09],.05,final?blue:pink);
-      oval(s*.12,.07,.14,.10,.052,.115,final?blue:pink);
-      if(shiny)oval(s*.24,.85,-.06,.13,.16,.11,0xffdb83,-s*.30);
-    }
-    for(let i=-1;i<=1;i++){const a=leaf(i*.08,.49,-.14,.085,.4,.10,pink,-i*.30,-.4);a.rotation.x=-.83;}
   }
   function cactus(final){
     const green=0x77972f;
@@ -336,11 +192,7 @@ function createPartnerFigure(T,id){
       limb(a,b,.021,gold);oval(...b,.047,.055,.047,gold);
     }
   }
-  if(id>=1&&id<=3)bloom(id);
-  else if(id>=4&&id<=6)water(id-3);
-  else if(id>=7&&id<=9)fire(id-6);
-  else if([11,12,165,166].includes(id))bird(id===12||id===166,id>=165);
-  else if(id===17||id===18)cactus(id===18);
+  if(id===17||id===18)cactus(id===18);
   else if(id===28||id===29)sprout(id===29);
   else if([84,85,443,444].includes(id))yiyi(id===85||id===444,id>=443);
   else if(id===702)fireCrab();

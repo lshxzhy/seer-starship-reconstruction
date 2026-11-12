@@ -1,7 +1,23 @@
 function createSpiritStage(T){
-  let gpu=null,scene,eye,frame=0,last=0,cast=[],mount=null,attack=null,signature='';
+  let gpu=null,scene,eye,frame=0,last=0,cast=[],mount=null,attack=null,signature='',spin=0,drag=null;
   const canvas=document.createElement('canvas');
   canvas.className='spirit-diorama';canvas.setAttribute('role','img');
+  const turnHint=document.createElement('span');turnHint.className='spirit-turn-hint';turnHint.textContent='拖动旋转 · 双击复位';
+  canvas.addEventListener('pointerdown',event=>{
+    if(event.button!==0||!cast.some(c=>c.model))return;
+    event.preventDefault();drag={id:event.pointerId,x:event.clientX,spin};
+    canvas.setPointerCapture(event.pointerId);canvas.classList.add('turning');
+  });
+  canvas.addEventListener('pointermove',event=>{
+    if(drag?.id===event.pointerId)spin=drag.spin+(event.clientX-drag.x)*.012;
+  });
+  function finishTurn(event){
+    if(drag?.id!==event.pointerId)return;
+    if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
+    drag=null;canvas.classList.remove('turning');
+  }
+  canvas.addEventListener('pointerup',finishTurn);canvas.addEventListener('pointercancel',finishTurn);
+  canvas.addEventListener('dblclick',()=>{spin=0;});
   const resources=[];
   function boot(){
     gpu=new T.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power'});
@@ -21,9 +37,10 @@ function createSpiritStage(T){
   }
   function clear(){
     cancelAnimationFrame(frame);frame=0;last=0;
+    if(drag&&canvas.hasPointerCapture(drag.id))canvas.releasePointerCapture(drag.id);
     for(const c of cast){scene.remove(c.anchor);c.model?.dispose?.();}
     for(const resource of resources)resource.dispose();
-    resources.length=0;cast=[];attack=null;signature='';
+    resources.length=0;cast=[];attack=null;signature='';spin=0;drag=null;canvas.classList.remove('turning');turnHint.remove();
   }
   function render(now){
     frame=0;if(!mount?.isConnected||mount.closest('[hidden]'))return;
@@ -37,6 +54,7 @@ function createSpiritStage(T){
     eye.left=-half*aspect;eye.right=half*aspect;eye.top=half;eye.bottom=-half;eye.updateProjectionMatrix();
     const dt=last?Math.min(.09,(now-last)/1000):0;last=now;
     for(const [i,c] of cast.entries()){
+      c.anchor.rotation.y=c.bearing+spin;
       c.model?.update?.(dt);
       let offset=0,height=0;
       if(attack){
@@ -69,11 +87,12 @@ function createSpiritStage(T){
           arranged.add(model.root);holder.add(arranged);
         }
         anchor.position.x=entries.length===1?0:(i===0?-1.25:1.25);
-        anchor.rotation.y=entries.length===1?(entry.id===4?-.55:-.28):(i===0?.66:-.66);
-        cast.push({anchor,holder,model});
+        const bearing=entries.length===1?([6,11,12,165,166].includes(entry.id)?-.68:entry.id===4?-.55:-.28):(i===0?.66:-.66);
+        anchor.rotation.y=bearing;cast.push({anchor,holder,model,bearing});
       }
     }
     canvas.setAttribute('aria-label',entries.map(e=>e.name).join(' 对战 '));element.prepend(canvas);
+    if(cast.some(c=>c.model))element.append(turnHint);
     const unavailable=cast.filter(c=>!c.model).length;
     if(unavailable){
       const label=document.createElement('span');label.className='spirit-missing';

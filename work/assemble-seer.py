@@ -51,6 +51,8 @@ scripts.insert(scripts.index(galaxy/'byron-ship.js'),galaxy/'byron-training-hold
 scripts.insert(scripts.index(galaxy/'twin-surface.js'),galaxy/'twin-ecology.js')
 scripts.insert(scripts.index(spirits/'partner-figures.js'),spirits/'twin-figures.js')
 scripts.insert(scripts.index(spirits/'partner-figures.js'),spirits/'iyou-figure.js')
+for name in ('starter-grass.js','starter-water.js','starter-fire.js','bird-evolutions.js'):
+    scripts.insert(scripts.index(spirits/'partner-figures.js'),spirits/name)
 images = {'byron-blackstone.webp':'BYRON_COATING_URL','survey-albedo.webp':'SURVEY_ALBEDO_URL'}
 image_dir = root / 'src' / 'galaxy' / 'assets'
 slot = scripts.index(root/'src'/'galaxy'/'surface-finish.js')
