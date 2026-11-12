@@ -293,7 +293,8 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
 // The remote navigation sphere and the orbital mesh use the same four bands and gaps.
 function addKloseRingBands(T,parent,definition,sunDirection,segments){
   const {inner,outer,normal}=definition.rings,radius=definition.radius;
-  const rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3(...normal).normalize());
+  const pole=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3(...normal).normalize());
+  const rotation=new T.Matrix4().makeRotationFromQuaternion(pole);
   const material=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide,fog:false});
   material.onBeforeCompile=shader=>{
     shader.uniforms.ringSun={value:sunDirection};
@@ -312,7 +313,7 @@ function addKloseRingBands(T,parent,definition,sunDirection,segments){
     [.707,.89,'#f4d269','#fff484'],[.907,1,'#efbd5a','#ffff77']]){
     const start=T.MathUtils.lerp(inner,outer,a)*radius,end=T.MathUtils.lerp(inner,outer,b)*radius;
     const ring=new T.RingGeometry(start,end,segments,12);
-    ring.applyMatrix4(new T.Matrix4().makeRotationFromQuaternion(rotation));
+    ring.applyMatrix4(rotation);
     const position=ring.getAttribute('position'),rgb=new Float32Array(position.count*3);
     const low=new T.Color(dark).convertSRGBToLinear(),high=new T.Color(bright).convertSRGBToLinear();
     for(let i=0;i<position.count;i++){

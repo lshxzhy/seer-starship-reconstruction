@@ -171,6 +171,7 @@
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: seerShellEnamel,
+      // The gold side covers and waist band are solid, satin-finished colour.
       alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.38, metalness:.65}),
       machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
       gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
