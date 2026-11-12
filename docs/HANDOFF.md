@@ -1,5 +1,13 @@
 # SEER 系统逻辑与开发交接
 
+## 2026-11-12 晚间接续
+
+稳定可玩版为 [v0.19.0 / 65cd9197](https://github.com/lshxzhy/seer-starship-reconstruction/releases/tag/v0.19.0)。本次工作分支为 `codex/desktop-handoff-20261112`。分支保留切换开发机时已经写入的修改，尚未作为新版本发布或进行实机确认。资料包中的 `outputs/seer-starship.html` 与 `work/seer-fragment.html` 均为上一版可玩成品。按需在项目根执行 `python work/assemble-seer.py`，可将它们更新为当前分支的源码版本。
+
+今晚先处理拜伦号精灵舱。上一版的舰壳和钢肋穿过了精灵舱与神秘空间。分支已保存舰壳切除与碰撞净空的代码，以及精灵舱可拖动的较高观察机位。下一步按 316 号原图重建后排四台训练设备、前排三口泡泡机、雷伊图腾公告板和玻璃下层。独立的 `byron-training-hold.js` 尚未创建，装配入口仍使用既有舱内模型。完成后从人员地图进入精灵舱，并走到神秘空间看门口和地板衔接。[页游场景 316](https://seer.61.com/resource/map/316.swf) · [设备说明与实机图](https://www.bilibili.com/opus/573571209985030700/)
+
+并行修改已保存至克洛斯草原、皮皮模型、小赛尔与超能 NoNo。草原按地图 10 调整左侧粉色伏根、右侧多孔根和台地；优先核对这些实物与皮皮活动空间。角色改过面盘、侧盖和翼座。蘑菇怪与布布种子另需核对厚帽檐、短弯四肢、花苞、斜叶帽和袖口，未保存的构思不能当成已完成建模。原版和研究截图留在开发机的项目资料目录。[地图 10](https://seer.61.com/resource/map/10.swf) · [原版皮皮战斗形象](https://seer.61.com/resource/fightResource/pet/swf/10.swf)
+
 玩家操作见[项目首页](../README.md)，未完事项见[开发路线](ROADMAP.md)。修改源码后在仓库根目录运行 `python work/assemble-seer.py`。本机服务和聊天打包读取 `work/seer-fragment.html`，单文件游玩读取 `outputs/seer-starship.html`。发布的源码运行包从对应 Git 提交导出。早期整份脚本副本已退出默认构建。
 
 ## 界面、控制器与持久化

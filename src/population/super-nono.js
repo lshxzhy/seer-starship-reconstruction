@@ -5,14 +5,16 @@
     root.name='超能 NoNo · 玩家伙伴';root.visible=false;
     root.scale.setScalar(worldMetre);root.add(body);world.add(root);
     body.scale.setScalar(1.12);
-    const shell=new T.MeshPhysicalMaterial({color:0xeaf4f5,metalness:.13,roughness:.30,clearcoat:.54});
-    const seal=new T.MeshStandardMaterial({color:0x223846,metalness:.38,roughness:.43});
-    const glass=new T.MeshPhysicalMaterial({color:0x030b10,emissive:0x02080b,metalness:.12,roughness:.19,clearcoat:.72});
-    const aqua=new T.MeshStandardMaterial({color:0x04d5db,emissive:0x03898f,emissiveIntensity:.52,roughness:.34});
+    const tint=n=>new T.Color(n).convertSRGBToLinear();
+    const shell=new T.MeshPhysicalMaterial({color:tint(0xeaf5f4),metalness:.08,roughness:.32,clearcoat:.36});
+    const seal=new T.MeshStandardMaterial({color:tint(0x27505a),metalness:.31,roughness:.43});
+    const glass=new T.MeshPhysicalMaterial({color:tint(0x040c11),metalness:.04,roughness:.25,
+      clearcoat:.26,clearcoatRoughness:.22,envMapIntensity:.37});
+    const aqua=new T.MeshStandardMaterial({color:tint(0x10d4d3),emissive:tint(0x0ba5a9),emissiveIntensity:.57,roughness:.38});
     const lens=new T.MeshBasicMaterial({vertexColors:true,toneMapped:false});
-    const reflection=new T.MeshBasicMaterial({color:0xc6ecee,transparent:true,opacity:.18,depthWrite:false});
-    const blades=new T.MeshStandardMaterial({vertexColors:true,emissive:0x089b9e,emissiveIntensity:.32,
-      metalness:.12,roughness:.29});
+    const reflection=new T.MeshBasicMaterial({color:0xdeeeee,transparent:true,opacity:.45,depthWrite:false});
+    const blades=new T.MeshStandardMaterial({vertexColors:true,emissive:tint(0x0c9d9c),emissiveIntensity:.22,
+      metalness:.03,roughness:.37});
 
     function part(parent,name,geometry,material){
       const mesh=new T.Mesh(geometry,material);mesh.name=name;parent.add(mesh);return mesh;
@@ -43,10 +45,33 @@
       g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
       g.setIndex(indices);g.computeVertexNormals();return g;
     }
-    part(body,'屏周深色密封环',inset(0,.04,1.37,1.10,1.012,.91,0,.44),seal);
-    part(body,'下沿青色导光条',inset(0,.04,1.335,1.06,1.023,.91,0,.422),aqua);
-    part(body,'弧面墨色屏',inset(0,.057,1.305,1.015,1.036,.91,0,.373),glass);
-    part(body,'面屏左上柔光',inset(-.53,.59,.205,.202,1.046,1,.36),reflection);
+    // Trace the domed window in the front elevation, then project each
+    // contour onto the spherical hull. This leaves two visible pearl cheeks.
+    const outline=new T.Shape();outline.moveTo(0,.86);
+    outline.bezierCurveTo(.58,.86,.91,.50,.93,.06);
+    outline.bezierCurveTo(.94,-.12,.87,-.22,.71,-.30);
+    outline.bezierCurveTo(.40,-.47,-.40,-.47,-.71,-.30);
+    outline.bezierCurveTo(-.87,-.22,-.94,-.12,-.93,.06);
+    outline.bezierCurveTo(-.91,.50,-.58,.86,0,.86);
+    const border=outline.getPoints(14).slice(0,-1);
+    function visor(from,to,stand,rings){
+      const xyz=[],ix=[],count=border.length;
+      for(let row=0;row<=rings;row++){
+        const t=from+(to-from)*row/rings;
+        for(let i=0;i<count;i++){
+          const x=t*border[i].x,y=.16+t*(border[i].y-.16);
+          xyz.push(rx*x*stand,ry*y*stand,-rz*stand*Math.sqrt(1-x*x-y*y));
+          if(row){const a=(row-1)*count+i,b=(row-1)*count+(i+1)%count;
+            ix.push(a,a+count,b+count,a,b+count,b);}
+        }
+      }
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(xyz,3));
+      g.setIndex(ix);g.computeVertexNormals();return g;
+    }
+    part(body,'白壳嵌窗密封边',visor(.966,1,1.022,3),seal);
+    part(body,'绕屏青色导光缘',visor(.908,.970,1.026,4),aqua);
+    part(body,'弧顶墨色面屏',visor(0,.914,1.036,17),glass);
+    part(body,'面屏左上柔光',inset(-.53,.58,.196,.220,1.045,1,-.39),reflection);
     // The unseen rear service cover follows the pearl sphere without changing its outline.
     const seam=new T.MeshStandardMaterial({color:0xb5cbce,metalness:.16,roughness:.42});
     part(body,'后壳同色检修边',inset(Math.PI,-.19,.68,.55,1.008,.83),seam);
@@ -98,14 +123,17 @@
       const g=new T.LatheGeometry(profile.map(([h,r])=>new T.Vector2(r,h)),32);
       if(paint){
         const p=g.getAttribute('position'),colors=[],color=new T.Color();
-        const foot=new T.Color(0xb8fff7),edge=new T.Color(0x38e9e8),tip=new T.Color(0x05f3f5);
+        const foot=tint(0x4ad9d7),edge=tint(0x11c6d6),light=tint(0x93fff0),tip=tint(0x3ce4ec);
         const len=profile[profile.length-1][0];
         for(let i=0;i<p.count;i++){
           const t=T.MathUtils.clamp(p.getY(i)/len,0,1);
           // Sweep toward the rear while pinching the blade to a thin bright edge.
-          p.setZ(i,p.getZ(i)*(1-.36*t)+sweep*t*t);
-          if(t<.27)color.copy(foot).lerp(edge,t/.27);
-          else color.copy(edge).lerp(tip,(t-.27)/.73);
+          const x=p.getX(i),z=p.getZ(i),r=Math.hypot(x,z),face=r?-z/r:0;
+          p.setX(i,x*(1+.17*Math.sin(Math.PI*t))+.025*t*t);
+          p.setZ(i,z*(.87-.47*t)+sweep*t*t);
+          color.copy(foot).lerp(tip,t);
+          color.lerp(edge,.64*(1-Math.abs(face)));
+          color.lerp(light,.66*Math.max(0,face)*(.85-.35*t));
           colors.push(color.r,color.g,color.b);
         }
         g.setAttribute('color',new T.Float32BufferAttribute(colors,3));
@@ -113,9 +141,9 @@
       }
       return g;
     }
-    const crownShape=spindle([[0,0],[.014,.036],[.047,.056],[.094,.067],[.204,.066],[.312,.050],[.412,.028],[.470,.012],[.480,0]],true,.105);
+    const crownShape=spindle([[0,0],[.014,.042],[.047,.065],[.094,.071],[.204,.061],[.312,.044],[.412,.024],[.474,.011],[.487,0]],true,.066);
     const finShape=spindle([[0,0],[.012,.024],[.04,.047],[.072,.055],[.115,.048],[.151,.029],[.180,.010],[.186,0]],true,.055);
-    const crownCup=spindle([[0,0],[.009,.040],[.028,.062],[.053,.072],[.075,.071],[.098,.060],[.107,.048],[.109,0]],false);
+    const crownCup=spindle([[0,0],[.005,.036],[.018,.058],[.041,.075],[.068,.077],[.084,.073],[.092,.061],[.074,.054],[.064,0]],false);
     const socketRing=new T.TorusGeometry(.053,.006,8,36),earGroups=[],fins=[];
     for(const side of [-1,1]){
       const ear=new T.Group();body.add(ear);earGroups.push(ear);
@@ -123,12 +151,12 @@
       const cup=part(ear,'耳翼悬浮白底座',crownCup,shell);cup.scale.z=.74;
       const keeper=part(ear,'翼座压圈',socketRing,seam);
       keeper.rotation.x=Math.PI/2;keeper.scale.y=.74;keeper.position.y=.062;
-      const blade=part(ear,'上部浮空能量翼',crownShape,blades);blade.position.y=.053;
-      blade.scale.z=.54;
+      const blade=part(ear,'上部浮空能量翼',crownShape,blades);blade.position.y=.058;
+      blade.scale.set(side,1,.57);
       const wing=new T.Group();body.add(wing);fins.push(wing);
       part(body,'侧鳍青色耦合口',inset(side*1.48,-.52,.14,.142,1.011,.95),aqua);
       wing.position.set(side*.273,-.155,-.015);
-      const fin=part(wing,'浮动侧鳍',finShape,blades);fin.scale.z=.53;fin.position.y=.041;
+      const fin=part(wing,'浮动侧鳍',finShape,blades);fin.scale.set(side,1,.55);fin.position.y=.055;
       wing.rotation.z=-side*2.12;
     }
     const shadowMaterial=new T.ShaderMaterial({

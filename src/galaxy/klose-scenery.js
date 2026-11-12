@@ -144,6 +144,7 @@ function createKloseScenery(T, parent, surface) {
   shape('coreCrystal',crystalShape,fieldSurfaceFinish(new T.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:.39,
     metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}),'crystal'));
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.8,side:T.DoubleSide});
+  for(const [key,geometry] of Object.entries(buildMeadowPlants(T)))shape(key,geometry,colored);
   const mushroomCap=(()=>{
     const p=[],rgb=[],ix=[],segments=64;
     for(const [j,[r,y]] of mushroomProfile.entries())for(let k=0;k<segments;k++){
@@ -479,14 +480,34 @@ function createKloseScenery(T, parent, surface) {
     }
     // Foreground characteristic details are deliberately hand-placed at each clearing.
     if(site.id==='grassland') {
-      for(const [x,z,s] of [[-8,-11,2.2],[-11,-9,1.1],[-10,-14,1.7]]) {
+      for(const [x,z,s] of [[-14,-18,1.32],[-15.6,-16.8,.83],[-13.1,-19.4,.76]]) {
         stones(x,z,s*1.1,'#a77860');crystals(x+.27*s,z+.78*s,s*.93,true);
       }
-      for(const [x,z,s] of [[6,-14,2.3],[9,-13,1.65],[10,-17,2.8],[-11,5,2.6]])
-        curled(x,yAt(x,z),z,s,.4,'#f474a7',openGround.grassland.fruit);
+      // On map 10 the pink plant grows in low lobes on the left. The blue
+      // fruit hangs from a separate frond above it. The perforated root is
+      // across the clearing on the right bank.
+      for(const [x,z,s] of [[-7.6,-9.4,2.7],[-9.7,-12,2.3]]){
+        for(const [j,a] of [-.45,.61,1.46,2.57,4.2].entries())
+          stamp('meadowRoot',x,yAt(x,z),z,s*(1+.07*j),s,s,j%2?'#f08cab':'#df709d',.03,a,-.035);
+        obstacle(x,z,s*.24);
+      }
+      for(const [x,z,s] of [[-11.6,-13.9,2.0],[-13.7,-13.1,1.67],[-10.6,-15.1,1.83]]){
+        const y=yAt(x,z);
+        curled(x,y,z,s,.4,'#ed8cae',openGround.grassland.fruit);
+        for(let j=0;j<5;j++){
+          const a=j*2.15,yy=y+s*(1.30-.13*j),xx=x+s*.20*Math.cos(a),zz=z+s*.20*Math.sin(a);
+          stamp('leaf',xx,yy,zz,s*.77,s*.41,s*.77,'#e48fae',.67,a);
+          stamp('round',xx+.16*s*Math.sin(a),yy-.18*s,zz+.16*s*Math.cos(a),.105*s,.14*s,.11*s,'#314677');
+        }
+      }
+      for(const [x,z,s,rx,rz] of [[8.4,-6.2,1.67,-.86,-.34],[9.8,-7.5,1.24,-.46,-.54],
+        [10.7,-9.7,1.66,-.72,-.30],[11.8,-11.7,1.26,-.54,-.50]]){
+        stamp('meadowSocket',x,yAt(x,z)-.18,z,s,s,s,'#ffffff',rx,.12,rz);
+        obstacle(x,z,.56*s);
+      }
       // Blue turf in scalloped beds gives the upper terraces and the landing
       // clearing different silhouettes. The orange walking lanes stay visible.
-      for(const [x,z,sx,sz] of [[-8,-12,5.4,5.1],[-10,-5,4.3,2.8],[8,-13,5.2,6.3],[8,-6,3.4,3.1],[13,2,7,4.6],[-8,2.5,3.6,2.2],[-15,-21,9,7],[14,-22,10,7]]) {
+      for(const [x,z,sx,sz] of [[-14,-16,5.1,3.5],[-14,-7,3.2,2.8],[13,-14,5.2,4.3],[13,-6,3.4,3.1],[13,2,5,3.6],[-15,-21,9,7],[14,-22,10,7]]) {
         const g=yAt(x,z),leaves=x>=8&&z<=-13?meadowLeaves:azureLeaves;
         stamp('sod',x,g+.08,z,sx,1.35,sz,leaves[1],0,seed()*.66);
         for(let j=0;j<32;j++) {
@@ -505,17 +526,18 @@ function createKloseScenery(T, parent, surface) {
       // turning chartreuse at the eastern terrace. Leave the wetland trail
       // open at the centre and the flame trail open on the eastern flank.
       const masonry=['#936341','#b17c4e','#c18e60','#cc9b6e','#b98359'];
-      for(let i=0;i<21;i++){
-        const x=(i-10)*2.85,z=-24+3.9*Math.sin(.14*x);
-        if(blocked(x,z,2.5))continue;
-        const ground=yAt(x,z),rise=1.92+.44*Math.cos(.26*x),leaves=x>8?meadowLeaves:azureLeaves;
-        const turn=.22*Math.cos(.14*x);
+      for(let i=0;i<27;i++){
+        const a=-1.19+i*.099,x=21.0*Math.sin(a),z=1-21.8*Math.cos(a);
+        if(blocked(x,z,1.7))continue;
+        const ground=yAt(x,z),rise=3.55+.62*Math.sin(.29*x),leaves=x>10?meadowLeaves:azureLeaves;
+        const turn=-a+.08*Math.cos(x);
         for(let j=0;j<3;j++){
           const dx=x+.48*(j%2),dz=z-.38*j;
-          stamp('boulder',dx,ground+(.15+.32*j)*rise,dz,2.08,.69*rise,1.64,
+          stamp('boulder',dx,ground+(.11+.31*j)*rise,dz,2.45,.70*rise,1.94,
             masonry[(i*2+j)%masonry.length],.05*(j-1),turn+.17*j,-.07*Math.sin(i+j));
         }
         obstacle(x,z,1.72);
+        stamp('sod',x,ground+rise+.04,z-.73,3.05,1.68,3.46,leaves[1],0,turn);
         for(let j=0;j<4;j++){
           const dx=x+.70*(j-1.5),dz=z-.70+.32*Math.sin(i+j);
           stamp('canopy',dx,ground+rise+.13*Math.cos(j+i),dz,1.55,.49,1.65,

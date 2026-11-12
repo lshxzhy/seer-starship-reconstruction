@@ -44,6 +44,9 @@ scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'persona
                 root/'src'/'galaxy'/'voyage-scale.js',root/'src'/'galaxy'/'ship-approach.js',root/'src'/'galaxy'/'pano-transfer.js',root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'byron-instruments.js',root/'src'/'galaxy'/'expedition.js'])
 scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','system.js','safari-figures.js','wetland-evolutions.js','yunas.js','partner-figures.js','escort.js','field-tool.js','portrait-stage.js','storage.js','widget-records.js','save-transfer.js','safari-terminal.js','terminal.js'))
 scripts.append(viewer/'explore.js')
+galaxy=root/'src'/'galaxy'
+scripts.insert(scripts.index(galaxy/'klose-scenery.js'),galaxy/'klose-meadow.js')
+scripts.insert(scripts.index(galaxy/'byron-ship.js'),galaxy/'byron-clearance.js')
 images = {'byron-blackstone.webp':'BYRON_COATING_URL','survey-albedo.webp':'SURVEY_ALBEDO_URL'}
 image_dir = root / 'src' / 'galaxy' / 'assets'
 slot = scripts.index(root/'src'/'galaxy'/'surface-finish.js')

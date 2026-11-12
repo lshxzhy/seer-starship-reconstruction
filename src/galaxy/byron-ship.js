@@ -317,7 +317,14 @@ function createByronHull(T,distant=false){
     paint.map=armourColour;paint.bumpMap=paint.roughnessMap=armourHeight;paint.bumpScale=.046;
     finishByronCoating(T,paint);
   }
-  k.put(geo,paint,0,0,0);k.finish();root.userData.blocksShuttle=k.contains;return root;
+  k.put(geo,paint,0,0,0);k.finish();
+  if(!distant){
+    const rooms=byronInteriorClearances();
+    cutByronHull(T,root,rooms);
+    root.userData.blocksShuttle=p=>k.contains(p)&&!rooms.some(planes=>planes.every(
+      ([a,b,c,d])=>a*p.x+b*p.y+c*p.z+d<=0));
+  }
+  return root;
 }
 
 function createByronSurface(T,world){

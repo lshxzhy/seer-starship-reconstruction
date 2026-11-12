@@ -12,6 +12,17 @@
     const clamp = T.MathUtils.clamp;
     // The portrait graphics are drawn once per expression and shared across rigs.
     const faceMaterials=new Map();
+    // Registration and dialogue show a rounder outside edge and a flatter
+    // inside edge. The two lit areas almost meet across the dark centre.
+    function eyeWhite(ctx,side,width,height) {
+      const x=k=>side*width*k,y=k=>height*k;
+      ctx.beginPath();ctx.moveTo(x(-.12),y(-1));
+      ctx.bezierCurveTo(x(.65),y(-1.04),x(1.06),y(-.43),x(1),y(.18));
+      ctx.bezierCurveTo(x(.98),y(.77),x(.48),y(1.04),x(-.18),y(.99));
+      ctx.bezierCurveTo(x(-.87),y(.95),x(-.99),y(.48),x(-.98),y(-.03));
+      ctx.bezierCurveTo(x(-.95),y(-.60),x(-.86),y(-.96),x(-.12),y(-1));
+      ctx.closePath();
+    }
     function faceMaterial(frame,officer) {
       const key=officer?officer+'/'+frame:frame;
       if (faceMaterials.has(key)) return faceMaterials.get(key);
@@ -29,14 +40,14 @@
       const opening=frame==='closed'?.055:half?.53:1;
       for (const sign of [-1,1]) {
         ctx.save();
-        ctx.translate(128+sign*51,131);
+        ctx.translate(128+sign*50,131);
         ctx.scale(1,opening);
         // Create the gradient in eye coordinates so the lower rim remains shaded.
         const white=ctx.createRadialGradient(-12,-32,9,0,2,81);
         white.addColorStop(0,'#fffefa');white.addColorStop(.78,officer==='roger'?'#d6f3f1':'#f6f6ed');
         white.addColorStop(1,'#bec8ca');
         ctx.fillStyle=white;
-        ctx.beginPath();ctx.ellipse(0,0,48,82,0,0,TAU);ctx.fill();
+        eyeWhite(ctx,sign,49,79);ctx.fill();
         if (frame!=='closed') {
           ctx.translate(-sign*6,-10);
           ctx.fillStyle='#11141a';
@@ -47,7 +58,7 @@
             ctx.bezierCurveTo(-20,-36,19,-38,24,17);
             ctx.bezierCurveTo(12,-6,-8,-9,-24,17);
             ctx.closePath();
-          } else ctx.ellipse(0,0,20,38,0,0,TAU);
+          } else ctx.ellipse(0,0,16,37,-sign*.06,0,TAU);
           ctx.fill();
         }
         ctx.restore();
@@ -84,7 +95,7 @@
       for(const [index,id] of expressionIds.entries()){
         for(const side of [-1,1]){
           ctx.save();
-          ctx.translate((index%4)*256+128+side*49,Math.floor(index/4)*256+131);
+          ctx.translate((index%4)*256+128+side*50,Math.floor(index/4)*256+131);
           ctx.fillStyle='white';ctx.strokeStyle='white';
           if((id==='wink'&&side===1)||id==='sleepy'){
             const high=id==='wink'?-14:23;
@@ -92,8 +103,8 @@
             ctx.beginPath();ctx.moveTo(-32,12);ctx.quadraticCurveTo(0,high,32,12);ctx.stroke();
           }else{
             if(id==='curious')ctx.translate(0,side===1?-14:8);
-            const width=id==='surprise'?40:45,height=id==='surprise'?75:id==='curious'&&side===-1?51:72;
-            ctx.beginPath();ctx.ellipse(0,0,width,height,0,0,TAU);ctx.clip();
+            const width=id==='surprise'?44:49,height=id==='surprise'?79:id==='curious'&&side===-1?55:79;
+            eyeWhite(ctx,side,width,height);ctx.clip();
             if(id==='focus'||id==='anger'){
               // The inner tips of the two upper lids angle toward the nose.
               const slope=id==='anger'?-.68*side:-.20*side,top=id==='anger'?-22:-32;
@@ -108,8 +119,8 @@
               ctx.moveTo(-25,13);ctx.bezierCurveTo(-22,-42,20,-44,25,13);
               ctx.bezierCurveTo(10,-10,-12,-10,-25,13);
             }else{
-              const rx=id==='surprise'?13:19,ry=id==='surprise'?19:32;
-              ctx.ellipse(0,0,rx,ry,0,0,TAU);
+              const rx=id==='surprise'?12:16,ry=id==='surprise'?21:37;
+              ctx.ellipse(0,0,rx,ry,-side*.06,0,TAU);
             }
             ctx.fill();
           }
@@ -146,10 +157,10 @@
             float r=length(p);
             float rim=(1.-smoothstep(.007,.016,abs(r-.932)))*.45;
             float reflection=(1.-smoothstep(.0,.49,abs(p.y-.42*p.x-.59)))*.035;
-            vec3 substrate=mix(vec3(.018,.041,.059),vec3(.035,.098,.117),1.-smoothstep(.27,.98,r));
+            vec3 substrate=mix(vec3(.021,.023,.030),vec3(.043,.045,.055),1.-smoothstep(.27,.98,r));
             substrate+=reflection+vec3(.022,.092,.102)*rim;
             float emitter=mix(.58+.42*dots,.90,distant);
-            vec3 light=mix(vec3(.48,.93,.98),vec3(.85,1.,.99),panelUV.y);
+            vec3 light=mix(vec3(.84,.88,.89),vec3(1.,.995,.975),smoothstep(.16,.70,panelUV.y));
             gl_FragColor=vec4(mix(substrate,light,signal*emitter),1.);
           }`});
     }
@@ -230,7 +241,8 @@
           if (colors) dest.col.push(tint.r*colors.getX(i),tint.g*colors.getY(i),tint.b*colors.getZ(i));
           else dest.col.push(tint.r,tint.g,tint.b);
         }
-        for (let i=0;i<geometry.index.count;i++) dest.ix.push(geometry.index.getX(i)+offset);
+        if(geometry.index)for(let i=0;i<geometry.index.count;i++)dest.ix.push(geometry.index.getX(i)+offset);
+        else for(let i=0;i<positions.count;i++)dest.ix.push(i+offset);
       }
       function coreShape(shape,x,y,z,color,rx=0,ry=0,rz=0) {
         cast('core',shape,x,y,z,1,1,1,color,null,rx,ry,rz);
@@ -260,25 +272,27 @@
         const a=i*TAU/8, x=Math.sin(a), z=-Math.cos(a);
         // Place the local +Y axis of each stud radially outwards.
         cast('core',rivet,x*.561,-.325,z*.561,1,1,1,graphite,null,-PI/2,0,-a);
-        if (!simple) cast('core',studCap,x*.591,-.325,z*.591,1,1,1,0x44484b,'machined',-PI/2,0,-a);
+        if (!simple) cast('core',studCap,x*.591,-.325,z*.591,1,1,1,0x788186,'machined',-PI/2,0,-a);
       }
 
       // Short plug with a flat, broad button on the crown.
       const stem = profile([[0,-.012],[.098,-.012],[.099,.017],[.082,.026],
         [.082,.075],[.099,.081],[0,.081]]);
-      const button = profile([[0,0],[.170,0],[.200,.014],[.215,.11],[.209,.125],
-        [.184,.137],[0,.137]]);
+      const button = profile([[0,0],[.153,0],[.195,.014],[.218,.085],[.234,.103],
+        [.231,.122],[.206,.134],[.104,.139],[0,.139]]);
+      const rake=.13;
+      function crown(g,y,col,sy=1){
+        cast('core',g,0,.483+(y-.483)*Math.cos(rake),(y-.483)*Math.sin(rake),1,sy,1,col,null,rake);
+      }
       if(!officer){
-        coreShape(stem,0,.483,0,graphite);
-        cast('core',button,0,.563,0,1,1.33,1,paint);
-        cast('core',drum,0,.570,0,.174,.013,.174,dark);
+        crown(stem,.483,graphite);
+        crown(button,.563,paint,1.27);
       }
       if (!simple&&!officer) {
         const socketLip=profile([[.078,0],[.104,0],[.112,.005],[.111,.012],[.100,.017],[.078,.017]]);
         coreShape(socketLip,0,.487,0,0x696d70);
         const capInset=profile([[.143,0],[.154,0],[.155,.002],[.153,.004],[.145,.004],[.143,.002]]);
-        coreShape(capInset,0,.743,0,graphite);
-        cast('core',drum,0,.745,0,.144,.002,.144,paint);
+        crown(capInset,.736,graphite);
       }
 
       // The side-on assembly frame shows a round gold service cover. The rear
@@ -287,13 +301,33 @@
         [.284,.016],[.257,.033],[0,.033]]);
       const brassRim=profile([[.225,0],[.257,0],[.274,.007],[.274,.014],
         [.265,.024],[.236,.024],[.225,.018],[.225,0]]);
+      // One diagonal slot and two short parallel stamps are cut into the
+      // circular gold cheek, with the graphite liner showing through the holes.
+      const slots=[[-.053,.031,.245,.049,-.72],[.044,.027,.085,.045,.71],
+        [-.003,-.090,.076,.047,.71]];
+      function stampedCheek(){
+        const face=new T.Shape();face.absarc(0,0,.227,0,TAU,false);
+        for(const [x,y,length,width,tilt] of slots){
+          const hole=new T.Path(),c=Math.cos(tilt),s=Math.sin(tilt);
+          const corners=[[-1,-1],[-1,1],[1,1],[1,-1]];
+          for(const [i,[a,b]] of corners.entries()){
+            const u=a*width/2,v=b*length/2;
+            hole[i?'lineTo':'moveTo'](x+u*c-v*s,y+u*s+v*c);
+          }
+          hole.closePath();face.holes.push(hole);
+        }
+        const g=new T.ExtrudeGeometry(face,{depth:.007,curveSegments:24,bevelEnabled:true,
+          bevelThickness:.002,bevelSize:.002,bevelSegments:2});
+        primitives.push(g);return g;
+      }
+      const cheek=simple?null:stampedCheek();
       for (const sign of [-1,1]) {
         coreShape(sideCover,sign*.499,-.005,.031,graphite,0,0,-sign*PI/2);
         coreShape(brassRim,sign*.533,-.005,.031,gold,0,0,-sign*PI/2);
-        cast('core',drum,sign*.546,-.005,.031,.228,.026,.228,0xe4ab43,null,0,0,PI/2);
-        // The three stamped marks are distinct in the side-on assembly frame.
-        for(const [dy,dz,height] of [[.010,-.018,.221],[.066,.062,.075],[-.071,.007,.070]])
-          cast('core',cube,sign*.563,dy,.031+sign*dz,.007,height,.029,graphite,null,-sign*.55);
+        cast('core',drum,sign*.546,-.005,.031,.228,.010,.228,simple?gold:graphite,null,0,0,PI/2);
+        if(cheek)cast('core',cheek,sign*.551,-.005,.031,1,1,1,0xe7b45b,'alloy',0,sign*PI/2);
+        else for(const [u,v,h,w,tilt] of slots)
+          cast('core',cube,sign*.553,-.005+v,.031-sign*u,.006,h,w,graphite,null,sign*tilt);
       }
 
       // Removable rear access plate follows the painted shell rather than
@@ -322,7 +356,10 @@
       }
 
       const faceY = faceAxisY;
-      const panelZ=display?-.574:glassZ,panelDepth=display?.032:glassDepth;
+      const panelZ=display?-.574:glassZ,panelDepth=display?.069:glassDepth;
+      const collar=profile([[.350,-.195],[.378,-.16],[.407,-.081],
+        [.410,-.068],[.396,-.064],[.356,-.089]],simple?24:64);
+      coreShape(collar,0,faceY,-.498,0x494950,-PI/2);
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
         [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]],simple?segments:88);
       coreShape(bezel,0,faceY,-.498,graphite,-PI/2);
@@ -357,26 +394,44 @@
       const sole = profile([[0,0],[.94,0],[1,.022],[1,.032],[.94,.05],[0,.05]]);
       const shoe = smoothProfile([[0,0],[.95,0],[1,.018],[.99,.044],[.91,.075],[.72,.101],
         [.54,.119],[.26,.13],[0,.133]]);
-      const wiper=simple?null:profile([[.055,-.018],[.067,-.018],[.071,-.013],[.071,.010],
-        [.068,.015],[.064,.017],[.055,.017]],32);
-      const retainingLip=simple?null:profile([[.062,0],[.069,0],[.070,.002],[.069,.005],[.062,.005]],32);
-      for (const sign of [-1,1]) {
-        const side=sign<0?'L':'R', leg='leg'+side, foot='foot'+side;
-        cast(leg,drum,0,-restLegLength/2,0,.061,restLegLength,.061,steel);
-        for(let i=0;i<4;i++) {
-          const y=-(.042+i*.081);
-          if (simple) cast(leg,drum,0,y,0,.070,.032,.070,graphite);
-          else {
-            cast(leg,wiper,0,y,0,1,1,1,rubber);
-            cast(leg,retainingLip,0,y+.008,0,1,1,1,steel);
+      // The production sprite has a broad toe, a pinched heel and a gold rail
+      // that rises around the toe before returning to the outside of the sole.
+      for(const g of [sole,shoe]){
+        const p=g.attributes.position;
+        for(let i=0;i<p.count;i++)p.setX(i,p.getX(i)*(1.04-.13*p.getZ(i)));
+        g.computeVertexNormals();
+      }
+      function toeRail(sign){
+        const pts=[],ix=[],count=simple?10:22;
+        for(let i=0;i<=count;i++){
+          const t=i/count,a=-sign*.25+(t-.5)*1.43;
+          const h=.035+.075*Math.sin(Math.PI*t)**.46;
+          for(const [rise,r] of [[.034,1],[h-.009,1.01],[h,.976],[h-.022,.913]]){
+            pts.push(.225*r*Math.sin(a),rise,-.051-.259*r*Math.cos(a));
+          }
+          if(i)for(let j=0;j<3;j++){
+            const v=i*4+j;ix.push(v-4,v-3,v,v,v-3,v+1);
           }
         }
+        const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pts,3));
+        g.setIndex(ix);g.computeVertexNormals();primitives.push(g);return g;
+      }
+      const legProfile=[[.060,-restLegLength],[.073,-restLegLength+.012]];
+      for(let i=0;i<6;i++){
+        const y=-restLegLength+.024+.052*i;
+        legProfile.push([.067,y],[.066,y+.008],[.075,y+.014],[.076,y+.032],[.070,y+.038]);
+      }
+      legProfile.push([.070,-.019],[.063,-.006]);
+      const gaiter=profile(legProfile,simple?14:28);
+      for (const sign of [-1,1]) {
+        const side=sign<0?'L':'R', leg='leg'+side, foot='foot'+side;
+        cast(leg,gaiter,0,0,0,1,1,1,0x697175,'machined');
         cast(foot,sole,0,-ankleY,-.051,.222,1,.258,rubber);
         cast(foot,sole,0,-ankleY+.032,-.051,.226,.78,.26,gold);
         cast(foot,shoe,0,-ankleY+.058,-.050,.211,1,.247,paint);
         cast(foot,drum,0,-.003,0,.103,.040,.105,bronze);
         cast(foot,drum,0,.020,0,.084,.014,.086,gold);
-        cast(foot,cube,-sign*.073,-.104,-.285,.074,.041,.044,bronze,null,-.42,0,0);
+        cast(foot,toeRail(sign),0,-ankleY,0,1,1,1,gold);
         if(!simple){
           const pivot=profile([[0,-.018],[.066,-.018],[.076,-.010],[.076,.011],[.064,.018],[.035,.018],[.031,.012],[0,.012]],32);
           cast(foot,pivot,sign*.080,-.014,-.004,1,1,1,steel,'machined',0,0,-sign*PI/2);

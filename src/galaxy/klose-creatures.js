@@ -14,32 +14,47 @@ function createKloseBird(T,speciesId) {
     function oval(x,y,z,sx,sy,sz,hex) {
       const m=new T.Mesh(round,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);body.add(m);return m;
     }
-    finishSpiritPart(oval(0,.102,0,.104,.078,.073,pink),'velvet',materials);
-    oval(0,.067,-.083,.044,.043,.047,light);
+    finishSpiritPart(oval(0,.098,0,.102,.076,.080,pink),'velvet',materials);
+    const tail=oval(0,.098,-.096,.048,.043,.052,light);tail.rotation.x=.42;
+    // Face paint sits on the round head; cheeks must keep its contour in profile.
+    function cheekPatch(side){
+      const p=[],ix=[],rings=5,n=32;
+      for(let j=0;j<=rings;j++)for(let k=0;k<n;k++){
+        const u=j/rings,a=k*tau/n;
+        const longitude=side*(.93+.52*u*Math.cos(a)),latitude=-.19+.34*u*Math.sin(a);
+        p.push(.103*Math.sin(longitude)*Math.cos(latitude),.098+.077*Math.sin(latitude),
+          .081*Math.cos(longitude)*Math.cos(latitude));
+        if(j){const i=(j-1)*n+k,next=(j-1)*n+(k+1)%n;ix.push(i,next,i+n,next,next+n,i+n);}
+      }
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));
+      g.setIndex(ix);g.computeVertexNormals();const ink=paint(cheek);ink.side=T.DoubleSide;body.add(new T.Mesh(g,ink));
+    }
     const span=18,steps=42;
     for (const side of [-1,1]) {
-      const foot=oval(side*.063,.035,.031,.050,.035,.048,pink);foot.rotation.z=side*.17;
+      const foot=oval(side*.063,.035,.036,.049,.035,.052,pink);foot.rotation.z=side*.17;
       animal.add(foot);feet.push(foot);
-      const blush=oval(side*.080,.087,.044,.031,.021,.013,cheek);blush.rotation.y=side*.56;
-      const eye=new T.Group();eye.position.set(side*.034,.119,.065);eye.rotation.y=side*.23;body.add(eye);eyes.push(eye);
-      eye.add(finishSpiritPart(oval(0,0,0,.0115,.020,.008,'#2a202b'),'iris',materials));
+      cheekPatch(side);
+      const eye=new T.Group();eye.position.set(side*.034,.121,.072);eye.rotation.y=side*.28;body.add(eye);eyes.push(eye);
+      eye.add(finishSpiritPart(oval(0,0,0,.0109,.0179,.0058,'#29202a'),'iris',materials));
       eye.add(oval(-.002,.007,.007,.0048,.008,.0028,'#fff8fc'));
       eye.add(oval(.003,-.008,.007,.0026,.0028,.0017,'#bfabb5'));
-      const ear=new T.Group();ear.position.set(side*.055,.149,0);body.add(ear);ears.push(ear);
-      const curve=new T.CubicBezierCurve3(v(0,0,0),v(side*.028,.277,-.006),v(side*.16,.294,-.012),v(side*.175,-.024,.012));
+      const ear=new T.Group();ear.position.set(side*.048,.147,-.003);body.add(ear);ears.push(ear);
+      const curve=new T.CatmullRomCurve3([[0,0,0],[.014,.091,-.002],[.031,.169,-.007],
+        [.066,.213,-.012],[.108,.219,-.014],[.151,.179,-.016],[.177,.103,-.013],
+        [.187,.027,-.006],[.187,-.062,.004],[.182,-.103,.011]].map(([x,y,z])=>v(side*x,y,z)));
       const p=[],rgb=[],idx=[],base=color(pink),end=color(tip),glow=color(light),tone=new T.Color();
       for(let j=0;j<=steps;j++) {
         const t=j/steps,center=curve.getPoint(t),tangent=curve.getTangent(t);
         const lateral=v(-tangent.y,tangent.x,0).normalize();
-        const rad=.017+.015*Math.sin(Math.PI*t)+.021*Math.exp(-((t-.87)**2)/.012);
-        const taper=t>.91?Math.sqrt(Math.max(0,1-((t-.91)/.09)**2)):1;
+        const rad=.018+.014*Math.sin(Math.PI*t)+.017*T.MathUtils.smoothstep(t,.58,.83);
+        const taper=t>.89?Math.sqrt(Math.max(0,1-((t-.89)/.11)**2)):1;
         for(let k=0;k<span;k++) {
           const a=tau*k/span,offset=lateral.clone().multiplyScalar(rad*taper*Math.cos(a));
           p.push(center.x+offset.x,center.y+offset.y,center.z+.72*rad*taper*Math.sin(a));
-          const darkTip=t>.74+.026*Math.cos(a);
+          const darkTip=t>.66+.033*Math.cos(a);
           const ridge=Math.max(0,Math.cos(a-side*.42))**5;
           p[p.length-1]+=.0015*rad/.035*Math.sin(Math.PI*t)*Math.cos(3*a);
-          tone.copy(darkTip?end:base).lerp(glow,ridge*(darkTip?.075:.28));
+          tone.copy(darkTip?end:base).lerp(glow,ridge*(darkTip?.12:.22));
           rgb.push(tone.r,tone.g,tone.b);
           if(j) {const l=(j-1)*span+k,r=(j-1)*span+(k+1)%span;idx.push(l,r,l+span,r,r+span,l+span);}
         }
@@ -49,8 +64,16 @@ function createKloseBird(T,speciesId) {
       const earFinish=spiritCoating(paint('#ffffff'),'velvet',materials);earFinish.vertexColors=true;earFinish.side=T.DoubleSide;
       ear.add(new T.Mesh(geo,earFinish));
     }
-    oval(0,.083,.078,.014,.008,.013,shiny?'#b86976':'#3177a3');
-    const bill=oval(0,.091,.082,.019,.009,.015,shiny?'#f29798':'#63c8ee');bill.rotation.x=.14;
+    // The sprite's tiny cyan mouth has a broad upper edge and a rounded downward point.
+    const bill=round.clone(),bp=bill.attributes.position;
+    for(let i=0;i<bp.count;i++){
+      const y=bp.getY(i);
+      bp.setXYZ(i,bp.getX(i)*(.68+.32*y),y+.16*(1-y*y),bp.getZ(i)*(1+.17*y));
+    }
+    bill.computeVertexNormals();
+    const lip=new T.Mesh(bill,paint(shiny?'#f29798':'#399ce6'));lip.position.set(0,.084,.081);
+    lip.scale.set(.031,.012,.013);body.add(lip);
+    oval(0,.089,.087,.019,.004,.007,shiny?'#ffc7ce':'#7bd9ff');
     animal.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
     animal.name=shiny?'164 · 闪光皮皮':'010 · 皮皮';
     let time=0;
@@ -177,15 +200,15 @@ function createKloseSpiritModel(T,id){
   function classicMushroom(){
     const young=id===46,ochre='#a38d60',brown='#735831',ivory='#f4dda5';
     const hood=joint(0,0,0,young?.030:.018,'x');
-    const crown=young?.975:1.025,brim=young?.37:.575;
+    const crown=young?.975:1.015,brim=young?.37:.53;
     // The curved front opening lifts over the eyes. The sides hang lower and curl in.
     function surface(a,t,lift=0){
       const end=t*Math.PI*.55,lip=t*t*t,front=Math.cos(a),side=Math.sin(a);
-      const fold=young?.013*Math.cos(3*a+.7):.039*Math.cos(3*a+.3)+.018*Math.sin(5*a);
+      const fold=young?.013*Math.cos(3*a+.7):.076*Math.cos(3*a+.45)+.028*Math.sin(2*a);
       const brow=young?0:Math.exp(-12*(t-.79)**2)*Math.max(0,front)*(.7+.3*Math.cos(2*a));
-      const rad=(young?.463:.494)*Math.sin(end)*(1+lip*fold)+.034*brow;
-      const y=brim+(crown-brim)*Math.cos(t*Math.PI*.5)+lip*((young?.072:.105)*front*front+.037*front+fold)-.060*brow;
-      return new T.Vector3((rad+lift)*side-.024*(1-t),(y+lift*Math.cos(end)),(rad+lift)*front*(young?.91:.88));
+      const rad=(young?.463:.506)*Math.sin(end)*(1+lip*fold)+.034*brow;
+      const y=brim+(crown-brim)*Math.cos(t*Math.PI*.5)+lip*((young?.072:.118)*front*front+.037*front+fold)-.030*brow;
+      return new T.Vector3((rad+lift)*side-(young?.024:.057)*(1-t),(y+lift*Math.cos(end)),(rad+lift)*front*(young?.91:.88));
     }
     function skin(vertices,triangles,color,group){
       const geo=new T.BufferGeometry();
@@ -230,7 +253,7 @@ function createKloseSpiritModel(T,id){
     // Each coloured island follows the actual hood surface, including its bent brim.
     const patches=young?
       [[-.74,.86,.34,.135],[.91,.79,.41,.205],[-.43,.36,.52,.16],[2.39,.58,.41,.20],[-2.24,.63,.46,.21],[2.19,.22,.45,.12]]:
-      [[-.64,.80,.24,.15],[.92,.79,.49,.21],[-1.36,.68,.19,.18],[.17,.39,.33,.105],[2.32,.56,.40,.17],
+      [[-.64,.80,.33,.19],[1.03,.73,.55,.29],[-1.36,.68,.19,.18],[-.29,.37,.46,.17],[2.32,.56,.40,.17],
         [-2.39,.67,.37,.21],[-1.75,.29,.37,.12],[2.98,.29,.31,.10]];
     for(const [a,t,w,h] of patches){
       const pts=[],indices=[],steps=32,ringsOnSpot=5;
@@ -241,6 +264,28 @@ function createKloseSpiritModel(T,id){
         if(j){const l=(j-1)*steps+k,r=(j-1)*steps+(k+1)%steps;indices.push(l,r,l+steps,r,r+steps,l+steps);}
       }
       skin(pts,indices,ivory,hood).material.side=T.DoubleSide;
+    }
+    if(!young){
+      // A thick, folded band wraps across the front of #047. Its ends curl
+      // under the adjoining lobes, while the centre lifts clear of the eyes.
+      const p=[],rgb=[],ix=[],rows=52,n=18;
+      const russet=new T.Color('#782e09').convertSRGBToLinear(),sand=new T.Color(ivory).convertSRGBToLinear(),c=new T.Color();
+      for(let i=0;i<=rows;i++){
+        const t=i/rows,a=-1.68+3.34*t,front=Math.cos(a);
+        const end=Math.sin(Math.PI*t)**.43,h=.66+.074*front+.029*Math.cos(3*a+.25);
+        const radius=.442+.030*Math.cos(2*a+.7);
+        for(let j=0;j<n;j++){
+          const b=tau*j/n,rad=radius+(.075*Math.cos(b)+.014*Math.sin(b))*end;
+          p.push(rad*Math.sin(a),h+.092*Math.sin(b)*end,rad*.93*front);
+          const arc=(a>-.97-.10*Math.sin(b)&&a<-.44+.12*Math.cos(b))||a>.78+.13*Math.cos(b);
+          c.copy(arc?sand:russet).multiplyScalar(.82+.17*Math.sin(b)+.065*Math.cos(3*a));
+          rgb.push(c.r,c.g,c.b);
+          if(i){const l=(i-1)*n+j,r=(i-1)*n+(j+1)%n;ix.push(l,r,l+n,r,r+n,l+n);}
+        }
+      }
+      const fold=skin(p,ix,'#ffffff',hood);
+      fold.geometry.setAttribute('color',new T.Float32BufferAttribute(rgb,3));
+      const finish=fold.material.clone();finish.vertexColors=true;finish.side=T.DoubleSide;fold.material=finish;
     }
     const face=new T.Group();body.add(face);
     if(young){
@@ -253,24 +298,28 @@ function createKloseSpiritModel(T,id){
         const eyeWhite=oval('#fffcef',s*.099,.005,.019,.041,.088,.019,face);eyeWhite.rotation.z=-s*.065;
       }
     }else{
-      body.scale.x=.92;body.scale.z=.96;
-      oval(brown,0,.40,-.018,.30,.195,.26);oval(ochre,0,.469,.006,.326,.183,.256);
-      const toes=[[-.227,-.077],[-.188,.140],[.145,.161],[.236,-.062]];
+      body.scale.x=.97;body.scale.z=.96;
+      oval(brown,0,.40,-.018,.316,.192,.27);oval(ochre,0,.454,.006,.35,.164,.265);
+      const toes=[[-.220,-.105],[-.248,.12],[.153,.233],[.253,-.096]];
       for(const [x,z] of toes){
         const s=Math.sign(x),group=joint(x,.50,z,.032,'x',z*15);
-        const bend=z>0?.11:.17,pts=[],indices=[],n=20;
-        const sections=[[0,.018,0,.001],[.06,0,0,.068],[.16,-.046,.005,.105],[.25,-.104,.012,.117],
-          [.32,-.173,.026,.116],[.40,-.245,.029,.094],[.44,-.305,.031,.069],[.56,-.360,.043,.054],
-          [.73,-.397,.065,.047],[.89,-.410,.084,.032],[1,-.406,.099,.001]];
+        const fore=z>.2,bend=fore?.065:.18,pts=[],rgb=[],indices=[],n=28;
+        const sections=[[0,.018,0,.001],[.09,0,0,.089],[.27,-.053,.014,.128],[.47,-.125,.025,.143],
+          [.58,-.205,.024,.129],[.57,-.254,.018,.100],[.54,-.296,.021,.080],[.62,-.330,.048,.068],
+          [.78,-.363,.082,.061],[.92,-.374,.104,.047],[1,-.367,.128,.001]];
+        const tone=new T.Color(),amber=new T.Color('#c2a675').convertSRGBToLinear(),stem=new T.Color('#8d744b').convertSRGBToLinear();
         for(const [j,[offset,y,dz,r]] of sections.entries())for(let k=0;k<n;k++){
           const a=k*tau/n;
-          pts.push(s*offset*bend+Math.sin(a)*r,y,dz+Math.cos(a)*r*(.88+.21*offset));
+          pts.push(s*offset*bend+Math.sin(a)*r,y*(fore?1.37:1),dz*(fore?.76:1)+Math.cos(a)*r*(.86+.19*offset));
+          const marking=Math.cos(a-s*.72+j*.16)>.42 && (j<=3||j>=7);
+          tone.copy(marking?amber:stem);rgb.push(tone.r,tone.g,tone.b);
           if(j){const l=(j-1)*n+k,rgt=(j-1)*n+(k+1)%n;indices.push(l,l+n,rgt+n,rgt+n,rgt,l);}
         }
-        skin(pts,indices,'#9b8358',group);
+        const foot=skin(pts,indices,'#ffffff',group);foot.geometry.setAttribute('color',new T.Float32BufferAttribute(rgb,3));
+        const finish=foot.material.clone();finish.vertexColors=true;foot.material=finish;
       }
       oval('#1b140f',0,.618,.016,.310,.162,.24);face.position.set(0,.627,.25);
-      for(const s of [-1,1])oval('#fffdee',s*.097,-.004,-.004,.042,.061,.024,face);
+      for(const s of [-1,1])oval('#fffdee',s*.089,-.008,.002,.047,.059,.024,face);
       strand('#806742',[[-.286,.54,.10],[-.194,.492,.192],[0,.468,.255],[.157,.511,.219],[.28,.539,.119]],
         [.022,.037,.036,.026,.009]);
       strand('#d7c49a',[[-.293,.544,.101],[-.184,.512,.202],[0,.486,.265],[.161,.527,.213],[.25,.546,.149]],

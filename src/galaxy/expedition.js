@@ -585,7 +585,8 @@
       else escort.surface(body,position,eye?yaw:facing,dt,eye);
       const dir=f.north.clone().multiplyScalar(Math.cos(yaw)).addScaledVector(f.east,-Math.sin(yaw));
       const aim=p.clone().addScaledVector(f.up,eye?seerRobots.eyeHeight:1.08);
-      const atWindow=definition.kind==='ship'&&body.siteAt(position.lat,position.lon)?.id==='byron-witness';
+      const roomId=definition.kind==='ship'?body.siteAt(position.lat,position.lon)?.id:null;
+      const atWindow=roomId==='byron-witness';
       view.up.copy(f.up);
       if(eye){
         view.position.copy(aim);view.lookAt(aim.clone().addScaledVector(dir,Math.cos(pitch)).addScaledVector(f.up,Math.sin(pitch)));
@@ -600,6 +601,15 @@
           const shoulder=dir.clone().cross(f.up).multiplyScalar(Math.min(1.55,boom*.29));
           view.position.add(shoulder).addScaledVector(f.up,1.28);
           focus.add(shoulder).addScaledVector(f.up,1.38);
+        }
+        if(roomId==='byron-hold'&&boom>3){
+          // Look down the annular walkway at the four rear training machines.
+          // Moving the mouse and rolling into shoulder distance still work.
+          const weight=T.MathUtils.smoothstep(boom,3,4.8);
+          const rise=clamp(boom*1.43-pitch*4,2.0,9.1);
+          const high=p.clone().addScaledVector(f.up,rise+1).addScaledVector(dir,-boom*.46);
+          const ahead=p.clone().addScaledVector(dir,boom*2.98).addScaledVector(f.up,1.25+pitch*9);
+          view.position.lerp(high,weight);focus.lerp(ahead,weight);
         }
         body.clipCamera?.(aim,view.position);
         view.lookAt(focus);
