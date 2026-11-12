@@ -209,8 +209,10 @@
           panel.querySelector('.sm-target').textContent=regions[systemDestination]?.definition.name||'';
           chart.setAttribute('aria-label','帕诺星系轨道与各行星当前位置');
           drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(regions[id]){sitePicker.value=id;refresh();}});
-          text.textContent='球体半径 '+(regions[systemDestination].definition.radius/1000)+' 公里。在登陆艇驾驶席打开航线可飞往这颗行星。';
-          travel.textContent='查看地表地图';travel.hidden=false;return;
+          const world=regions[systemDestination].definition;
+          text.textContent=world.kind==='ship'?'《穿越黑暗之门》航行记录。逃生舰可观测原始黑洞·尤纳斯，L-01 可停靠拜伦号外甲板。':
+            '球体半径 '+(world.radius/1000)+' 公里。在登陆艇驾驶席打开航线可飞往这颗行星。';
+          travel.textContent=world.kind==='ship'?'查看舱区图':'查看地表地图';travel.hidden=false;return;
         }
         const region=regions[area],ramp=rampOnPlanet(parkedRamp(),area);
         const site=sitePicker.value==='shuttle-ramp'?ramp:region.byId.get(sitePicker.value);
@@ -218,9 +220,10 @@
         panel.querySelector('[data-sm-position]').textContent=visitor?'当前 · '+visitor.location:'帕诺星系';
         panel.querySelector('.sm-target').textContent=site?.name||'';
         const route=local&&site?visitor.routeTo(site.id):[];
-        const distance=local&&site?surfaceDisplacement(visitor.position,site,region.definition.radius).distance:null;
+        const distance=local&&site?navigationDisplacement(visitor.position,site,region.definition).distance:null;
         text.textContent=site?(site.description||'')+(local?'　／　距你 '+formatNavDistance(distance):''):'';
         if(local&&route.length>1)text.textContent+='　／　经 '+route.slice(0,-1).map(id=>region.byId.get(id)?.name).filter(Boolean).join(' → ');
+        if(local&&site&&region.definition.kind==='ship'&&!route.length)text.textContent+='　／　两舰之间隔着太空，可从地图转移。';
         guide.hidden=!local||!route.length||(distance<surfaceArrivalRadius(site.id)&&visitor.targetId!==site?.id);
         guide.textContent=site&&visitor?.targetId===site.id?'取消引导':'步行引导';
         chart.setAttribute('aria-label',region.definition.name+'地点图，可使用目的地列表选择');

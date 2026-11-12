@@ -38,6 +38,7 @@
   let spiritArchive=null;
   const recentSaves=[];
   const voyageStore=window.openai?.setWidgetState?null:createVoyageStore();
+  const byronStory=createByronStory();
   const parkedPlanetName=()=>parkedLanding?.vehicle?.phase==='landed'
     ?(PANO_NAVIGATION.regions[parkedLanding.vehicle.planetId||'klose']?.definition.name||'星球地表'):'';
   const boarding=createBoardingController(requestDraw,save,parkedPlanetName);
@@ -79,7 +80,7 @@
     parkedLanding=null;
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
     syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
-  },()=>cockpit.openMap(null,true),bird=>spiritTerminal.observe(bird));
+  },site=>cockpit.openMap(site||null,true),bird=>spiritTerminal.observe(bird),byronStory);
   root.querySelector('[data-face-expression="planet"]').addEventListener('change',event=>{
     boarding.setExpression(event.currentTarget.value);
     cockpit.close(false);canvas.focus({preventScroll:true});
@@ -112,7 +113,7 @@
     if(boarding.inTransit||boarding.commsOpen||stage.dataset.consoleOpen||
       (state.mode!=='board'&&!expedition.canOpenSpirits))return;
     const wild=contact?expedition.nearbySpirit():null;
-    if(contact&&(!wild||wild.distance>22))return;
+    if(contact&&(!wild||wild.kind==='apparition'||wild.distance>22))return;
     boarding.clearInputs();expedition.clearInputs();
     if(wild?.kind==='safari')spiritTerminal.open(null,trigger,{op:wild.method==='field'?'field':'menu',speciesId:wild.speciesId});
     else spiritTerminal.open(wild,trigger);
@@ -250,6 +251,7 @@
   function restore(saved){
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
+    byronStory.restore(saved.byronStory);
     const formerBoard=saved.board||saved.expedition?.origin?.board||saved.parkedLanding?.origin?.board;
     boarding.setExpression(saved.faceExpression??formerBoard?.expression??(formerBoard?.smiling?'smile':'neutral'));
     if(saved.pack)boarding.restorePack(saved.pack);
@@ -278,7 +280,7 @@
     state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
   }
   function save(requireArchive=false){
-    const privateContent={version:3,...state,faceExpression:boarding.expression,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
+    const privateContent={version:3,...state,byronStory:byronStory.snapshot(),faceExpression:boarding.expression,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
       expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding,dockedVehicle:state.mode==='planet'||parkedLanding?null:dockedVehicle,spiritArchive};
     if(requireArchive===true&&new TextEncoder().encode(JSON.stringify(privateContent)).length>15850){
       throw new Error('聊天存档空间不足，请在本机游戏中继续扩充队伍。');

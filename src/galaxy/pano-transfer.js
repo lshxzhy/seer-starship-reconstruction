@@ -15,7 +15,8 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   const tuple=(a,n)=>Array.isArray(a)&&a.length===n&&a.every(Number.isFinite);
   let reference='klose',local=null,transit=false,route=null,time=0,range=0,stage='',scale=1,power=0;
   function createLocal(id,record){
-    reference=id;local=createShuttleFlight(T,bodies[id],id==='klose'?dock:emptyDock,record);
+    reference=id;local=bodies[id].kind==='ship'?createShipApproach(T,bodies[id],record):
+      createShuttleFlight(T,bodies[id],id==='klose'?dock:emptyDock,record);
     transit=false;syncLocal();
   }
   function syncLocal(){
@@ -58,7 +59,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   }
   function resumeLocal(id){
     reference=id;syncInertial();localHeading.copy(forward).applyQuaternion(quaternion);
-    radial.copy(position).normalize();
+    if(bodies[id].kind==='ship')radial.copy(up);else radial.copy(position).normalize();
     const pitch=Math.asin(clamp(localHeading.dot(radial),-1,1));
     const side=axis.copy(right).applyQuaternion(quaternion);
     const flatRight=along.crossVectors(localHeading,radial);
@@ -75,6 +76,8 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     if(r.destination==='dock'){
       approach.copy(dock.position);
       approach.addScaledVector(axis.copy(forward).applyQuaternion(dock.quaternion),10000);
+    }else if(bodies[r.planet].kind==='ship'){
+      approach.copy(bodies[r.planet].point(r.site.lat,r.site.lon)).addScaledVector(up,2200);
     }else{
       const b=bodies[r.planet];approach.copy(b.frame(r.site.lat,r.site.lon).up).multiplyScalar(b.radius+Math.min(28000,b.radius*.36));
     }
@@ -149,7 +152,8 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     const radius=id==='star'?pano.starRadius:bodies[id].radius;
     pano.center(id,time,centre);radial.subVectors(globalP,centre);
     const altitude=radial.length()-radius;
-    if(altitude>radius*.65)return;
+    const brakingReach=id==='byron'?Math.max(7000,prev.distanceTo(globalP)+radius):radius*.65;
+    if(altitude>brakingReach)return;
     radial.normalize();
     // Bound closing speed as the distance to the approach shell falls. Both
     // manual boost and guidance must leave enough braking distance to enter local flight.
@@ -202,7 +206,10 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     syncInertial();
     if(route&&route.planet===reference){
       const d=globalP.distanceTo(approachPoint(route));
-      if(d<9000&&velocity.length()<2100)resumeLocal(reference);
+      const vessel=bodies[reference].kind==='ship';
+      if(d<(vessel?230:9000)&&velocity.length()<(vessel?165:2100))resumeLocal(reference);
+    }else if(!route&&bodies[reference].kind==='ship'&&position.length()<3800){
+      resumeLocal(reference);
     }else if(!route&&velocity.length()<8000){
       const r=bodies[reference].radius;
       if(position.length()-r<Math.min(26000,r*.30)||(reference==='klose'&&position.distanceTo(dock.position)<4200))resumeLocal(reference);
@@ -215,7 +222,8 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       time+=local.tick(dt,input);
       const s=local.status();syncLocal();
       const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>(route?1850:5100);
-      const orbitalBoundary=route?Math.min(33000,bodies[reference].radius*.54):Math.min(65000,bodies[reference].radius);
+      const orbitalBoundary=bodies[reference].kind==='ship'?(route?1700:4500):
+        route?Math.min(33000,bodies[reference].radius*.54):Math.min(65000,bodies[reference].radius);
       if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer();
       return;
     }
@@ -237,11 +245,11 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       }
       return {...s,planetId:reference,destinationPlanetId,interplanetary:!!route};
     }
-    const lat=Math.atan2(position.y,Math.hypot(position.x,position.z)),lon=Math.atan2(-position.z,position.x);
-    const b=bodies[reference],height=position.length()-b.radius,f=b.frame(lat,lon);
+    const b=bodies[reference],coords=b.coordinates?b.coordinates(position):{lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
+    const {lat,lon}=coords,height=position.length()-b.radius,f=b.frame(lat,lon);
     localHeading.copy(forward).applyQuaternion(quaternion);
     return {phase:'flying',auto:route?.destination||null,stage,speed:velocity.length(),verticalSpeed:velocity.dot(f.up),
-      clearance:Math.max(0,height-b.height(lat,lon)),altitude:height,lat,lon,heading:Math.atan2(localHeading.dot(f.east),localHeading.dot(f.north)),
+      clearance:Math.max(0,b.kind==='ship'?height:height-b.height(lat,lon)),altitude:height,lat,lon,heading:Math.atan2(localHeading.dot(f.east),localHeading.dot(f.north)),
       range,timeScale:scale,throttle:power,planetId:reference,destinationPlanetId,interplanetary:true,
       targetName:route?.site?.name||(route?.destination==='dock'?'赛尔号泊位':''),targetId:route?.site?.id||null,
       canCapture:false,canLand:false,landingReason:'进入行星近地航段后可着陆'};

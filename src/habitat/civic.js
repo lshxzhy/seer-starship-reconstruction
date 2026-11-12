@@ -14,7 +14,7 @@ cabinBuilders.teleport = kit=>shipTransporters.install(kit,'teleport',[
   {slot:'01',x:-12,z:-8,yaw:.24,tint:0x70d8d6,finish:'sand',destination:'klose',alternates:['alpha']},
   {slot:'02',x:-4.8,z:-10,yaw:.10,tint:0x86e899,finish:'bronze',destination:'klose',alternates:['alpha']},
   {slot:'03',x:4.8,z:-10,yaw:-.10,tint:0x9396ed,finish:'silver',destination:'ocean',alternates:['beta']},
-  {slot:'04',x:12,z:-8,yaw:-.24,tint:0x70e0df,finish:'sand',destination:'ocean',alternates:['beta']}
+  {slot:'04',x:12,z:-8,yaw:-.24,tint:0x70e0df,finish:'sand',destination:'ocean',alternates:['beta','byron']}
 ]);
 
 cabinBuilders.instructor = function(kit) {

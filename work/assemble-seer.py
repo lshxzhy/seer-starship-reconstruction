@@ -39,9 +39,9 @@ scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'persona
                 viewer/'boarding.js',root/'src'/'galaxy'/'surface-finish.js',root/'src'/'galaxy'/'klose-safari.js',root/'src'/'galaxy'/'klose-creatures.js',root/'src'/'galaxy'/'klose-scenery.js',root/'src'/'galaxy'/'klose-surface.js',
                 root/'src'/'galaxy'/'navigation-map.js',root/'src'/'galaxy'/'landing-shuttle.js',root/'src'/'galaxy'/'shuttle-flight.js',
                 root/'src'/'galaxy'/'ocean-ecology.js',root/'src'/'galaxy'/'ocean-surface.js',
-                root/'src'/'galaxy'/'twin-surface.js',root/'src'/'galaxy'/'twin-alpha.js',root/'src'/'galaxy'/'twin-beta.js',root/'src'/'galaxy'/'pano-system.js',root/'src'/'galaxy'/'twin-panorama.js',
-                root/'src'/'galaxy'/'voyage-scale.js',root/'src'/'galaxy'/'pano-transfer.js',root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'expedition.js'])
-scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','system.js','safari-figures.js','wetland-evolutions.js','partner-figures.js','escort.js','field-tool.js','portrait-stage.js','storage.js','widget-records.js','save-transfer.js','safari-terminal.js','terminal.js'))
+                root/'src'/'galaxy'/'twin-surface.js',root/'src'/'galaxy'/'twin-alpha.js',root/'src'/'galaxy'/'twin-beta.js',root/'src'/'galaxy'/'byron-ship.js',root/'src'/'galaxy'/'pano-system.js',root/'src'/'galaxy'/'twin-panorama.js',
+                root/'src'/'galaxy'/'voyage-scale.js',root/'src'/'galaxy'/'ship-approach.js',root/'src'/'galaxy'/'pano-transfer.js',root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'byron-story.js',root/'src'/'galaxy'/'expedition.js'])
+scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','system.js','safari-figures.js','wetland-evolutions.js','yunas.js','partner-figures.js','escort.js','field-tool.js','portrait-stage.js','storage.js','widget-records.js','save-transfer.js','safari-terminal.js','terminal.js'))
 scripts.append(viewer/'explore.js')
 def script_source(path):
     raw = path.read_text('utf-8')

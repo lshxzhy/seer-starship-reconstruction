@@ -8,12 +8,13 @@ const PANO_ORBITS=(()=>{
   };
   const klose=icon(KLOSE_WORLD,551,154,'#e8d34e');
   const rows=[klose,icon(OCEAN_WORLD,409,78,'#7ed9f5'),
-    icon(ALPHA_WORLD,345,221,'#81d7a2'),icon(BETA_WORLD,237,341,'#efbf75')];
+    icon(ALPHA_WORLD,345,221,'#81d7a2'),icon(BETA_WORLD,237,341,'#efbf75'),
+    icon(BYRON_WORLD,884,229,'#a490cd')];
   for(const row of rows)row.period=period*Math.pow(row.a/klose.a,1.5);
   return Object.fromEntries(rows.map(row=>[row.id,row]));
 })();
 
-const PANO_NAVIGATION=createPlanetNavigation([KLOSE_WORLD,OCEAN_WORLD,ALPHA_WORLD,BETA_WORLD]);
+const PANO_NAVIGATION=createPlanetNavigation([KLOSE_WORLD,OCEAN_WORLD,ALPHA_WORLD,BETA_WORLD,BYRON_WORLD]);
 
 function panoCenter(id,time,out=new T.Vector3()){
   if(id==='star')return out.set(0,0,0);
@@ -140,8 +141,8 @@ function createPanoSystem(T,world){
     sphere.name=PANO_ORBITS[id].name;sphere.frustumCulled=false;root.add(sphere);return sphere;
   }
   const proxies={klose:remoteSphere('klose',KLOSE_WORLD.radius),ocean:remoteSphere('ocean',OCEAN_WORLD.radius),
-    alpha:createTwinGlobe(T,ALPHA_WORLD),beta:createTwinGlobe(T,BETA_WORLD)};
-  root.add(proxies.alpha,proxies.beta);
+    alpha:createTwinGlobe(T,ALPHA_WORLD),beta:createTwinGlobe(T,BETA_WORLD),byron:createByronHull(T)};
+  root.add(proxies.alpha,proxies.beta,proxies.byron);
   const rings=KLOSE_WORLD.rings;
   const band=new T.Mesh(new T.RingGeometry(rings.inner*KLOSE_WORLD.radius,rings.outer*KLOSE_WORLD.radius,100),
     new T.MeshBasicMaterial({color:0xe4c54b,side:T.DoubleSide,fog:false}));
@@ -150,8 +151,10 @@ function createPanoSystem(T,world){
   function update(reference,time){
     panoCenter(reference,time,root.position).negate();
     for(const id of ids){
-      const sphere=proxies[id];sphere.visible=id!==reference;
-      panoCenter(id,time,sphere.position);sphere.material.uniforms.sunDir.value.copy(sphere.position).normalize().negate();
+      const proxy=proxies[id];proxy.visible=id!==reference;
+      panoCenter(id,time,proxy.position);
+      const direction=proxy.material?.uniforms?.sunDir;
+      if(direction)direction.value.copy(proxy.position).normalize().negate();
     }
   }
   function dispose(){
@@ -174,7 +177,8 @@ function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,veh
     for(const id of ids){
       const orbit=PANO_ORBITS[id],path=[];
       for(let i=0;i<100;i++){const [x,y]=project(panoCenter(id,orbit.period*i/100));path.push((i?'L':'M')+x.toFixed(1)+','+y.toFixed(1));}
-      mark('path',{d:path.join('')+'Z',fill:'none',stroke:orbit.colour,'stroke-width':1,'stroke-opacity':.45});
+      mark('path',{d:path.join('')+'Z',fill:'none',stroke:orbit.colour,'stroke-width':1,'stroke-opacity':.45,
+        'stroke-dasharray':PANO_NAVIGATION.regions[id].definition.kind==='ship'?'3 6':'none'});
     }
     mark('circle',{cx:252,cy:139,r:7,fill:'#ffe4a1'});
     mark('text',{x:264,y:145,fill:'#e2cda3','font-size':11},'帕诺星系中心');
@@ -192,14 +196,17 @@ function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,veh
       const fill={klose:'#a6a27e',ocean:'#53829d',alpha:'#51a58b',beta:'#ae839c'}[id];
       const label=orbit.name+(current===id?' · 当前':''),left=x+13+label.length*12>505;
       const hit=mark('g',{'data-pano-planet':id,role:'button',tabindex:'0','aria-label':orbit.name,'aria-pressed':String(selected===id),style:'cursor:pointer'});
+      const symbol=PANO_NAVIGATION.regions[id].definition.kind==='ship'?
+        ['path',{d:`M${x-10},${y-4}l6,-1 5,-5 1,5 7,2 -5,3 -2,6 -3,-4 -6,1z`,fill:'#605575',stroke:selected===id?'#f7fff2':orbit.colour,'stroke-width':1.6}]:
+        ['circle',{cx:x,cy:y,r:radius,fill,stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}];
       for(const [tag,args,words] of [
         ['circle',{cx:x,cy:y,r:15,fill:'transparent'}],
-        ['circle',{cx:x,cy:y,r:radius,fill,stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}],
+        symbol,
         ['text',{x:left?x-13:x+13,y:y-7,'text-anchor':left?'end':'start',fill:'#e5f2ec','font-size':12},label]
       ])hit.append(mark(tag,args,words));
       if(id==='klose')hit.append(mark('ellipse',{cx:x,cy:y,rx:radius*1.39,ry:radius*.31,transform:'rotate(-24 '+x+' '+y+')',fill:'none',stroke:orbit.colour,'stroke-width':2}));
       else if(id==='ocean')for(const [dx,dy,r] of [[-.36,-.22,.27],[.39,.22,.20]])hit.append(mark('circle',{cx:x+dx*radius,cy:y+dy*radius,r:r*radius,fill:'none',stroke:'#b7d6e2','stroke-width':1}));
-      else for(const [dx,dy,r] of [[-.34,-.05,.40],[.40,.20,.30]])hit.append(mark('ellipse',{
+      else if(id==='alpha'||id==='beta')for(const [dx,dy,r] of [[-.34,-.05,.40],[.40,.20,.30]])hit.append(mark('ellipse',{
         cx:x+dx*radius,cy:y+dy*radius,rx:r*radius*.53,ry:r*radius,
         fill:id==='alpha'?'#b5c962':'#8e544e',stroke:id==='alpha'?'#538655':'#f7c75b','stroke-width':1}));
       hit.onclick=()=>onSelect?.(id);

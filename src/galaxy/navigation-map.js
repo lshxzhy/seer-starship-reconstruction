@@ -10,6 +10,13 @@ function formatNavDistance(m){
   return m>=1000?(m/1000).toFixed(m>=10000?0:1)+' km':Math.round(m)+' m';
 }
 function surfaceArrivalRadius(id){return id==='shuttle-ramp'?1.65:9;}
+// Wreck locations store deck metres in scaled chart coordinates so saved
+// positions have the same shape as planetary positions. Its decks are flat.
+function navigationDisplacement(a,b,world){
+  if(world.kind!=='ship')return surfaceDisplacement(a,b,world.radius);
+  const east=(b.lon-a.lon)*world.chartScale,north=(b.lat-a.lat)*world.chartScale;
+  return {east,north,distance:Math.hypot(east,north),bearing:Math.atan2(east,north)};
+}
 function createPlanetNavigation(definitions){
   const regions={},flights=new Map([['dock',{id:'dock',planetId:'klose',name:'赛尔号泊位'}]]);
   const outlands={ridge:'山脊之间的鞍部',delta:'能俯瞰河口水道的高岸',grove:'绯叶山林边缘的台地'};
@@ -30,8 +37,9 @@ function createPlanetNavigation(definitions){
       byId.set(place.id,place);walkingLinks.push([place.area,place.id]);
       (local?pads:outlying).push(place);
     }
+    const vessel=definition.kind==='ship';
     regions[definition.id]={definition,byId,places:[...byId.values()],walkingLinks,
-      groups:[['经典探索区',sites],['外围地形',outlying],['探索区着陆坪',pads]]};
+      groups:[[vessel?'舰上区域':'经典探索区',sites],['外围地形',outlying],[vessel?'接驳区':'探索区着陆坪',pads]]};
   }
   return {regions,flights};
 }
@@ -50,7 +58,7 @@ function appendSurfaceOptions(select,region,ramp){
 function drawSurfaceMap(chart,{region,selected,ramp,observer,route=[],onSelect}){
   const {definition,places:sites}=region;
   const home=definition.sites[0],places=ramp?[...sites,ramp]:sites;
-  const offset=p=>surfaceDisplacement(home,p,definition.radius);
+  const offset=p=>navigationDisplacement(home,p,definition);
   const points=new Map(places.map(p=>[p.id,offset(p)]));
   const regional=points.get(selected)?.distance>800;
   const entries=places.filter(p=>{

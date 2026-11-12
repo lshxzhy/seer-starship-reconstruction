@@ -94,7 +94,7 @@ function createSpiritEscort(T,world,metre=1){
     anchor.position.copy(habitat.worldPosition(foot.x,foot.y+contactFloor(foot),foot.z));
   }
   function surface(body,owner,yaw,dt,firstPerson,mayStand){
-    const delta=(a,b)=>{const d=surfaceDisplacement(a,b,body.radius);return {x:d.east,z:-d.north,distance:d.distance};};
+    const delta=(a,b)=>{const d=navigationDisplacement(a,b,body);return {x:d.east,z:-d.north,distance:d.distance};};
     function move(p,dx,dz){
       const dest=body.walk(p.lat,p.lon,dx,-dz),length=Math.hypot(dx,dz);
       const side=radius-.26;
