@@ -35,7 +35,13 @@
 .spirit-panel input[type=search]{width:min(245px,100%);min-width:100px}
 .spirit-panel .spirit-dex-results{max-height:116px;overflow:auto;align-items:flex-start}
 .spirit-panel .spirit-dex-results button{font-size:13px}
-.spirit-panel .spirit-dex-info{max-height:138px;overflow:auto}
+.spirit-panel .spirit-dex-info{max-height:clamp(190px,42vh,450px);overflow:auto}
+.spirit-skill{display:grid;gap:3px;padding:7px 2px;border-bottom:1px solid #344e58;overflow-wrap:anywhere}
+.spirit-skill:last-child{border-bottom:0}
+.spirit-evolutions{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+.spirit-evolutions button small{display:block;color:#b9d5d2}
+.spirit-skill strong{font-size:13px;color:#ecf5ed}
+.spirit-panel .spirit-skill p{font-size:12px;color:#d5e5e0;margin:0}
 .spirit-panel .spirit-catalog-number{color:#96bcb9;font:12px Consolas,monospace}
 @container(max-width:660px){.spirit-columns{grid-template-columns:1fr}.spirit-scroll{padding:9px}.spirit-panel .spirit-stage{height:137px}.spirit-tabs{padding:5px 8px}.spirit-page{gap:8px}.spirit-row,.spirit-actions{gap:5px}}
 @container(max-width:450px){.spirit-panel .spirit-stage{height:105px}.spirit-panel button:not(.ship-dismiss){padding:4px 6px;font-size:12px}.spirit-tabs{gap:4px}}

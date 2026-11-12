@@ -7,6 +7,8 @@
     const huntButton=stage.querySelector('[data-wetland-action]');
     const spiritBook=nav.querySelector('[data-spirit-book]');
     const select=atlas.querySelector('[data-site-select]'),chart=atlas.querySelector('[data-site-map]');
+    const atlasModes=[...atlas.querySelectorAll('[data-atlas-view]')];
+    let atlasView='system',landingViewKey='';
     const summary=atlas.querySelector('[data-site-summary]'),closeButton=atlas.querySelector('[data-chart-close]');
     const hint=stage.querySelector('[data-route-hint]'),trackButton=atlas.querySelector('[data-track-site]');
     const optics=nav.querySelector('[data-flight-view]'),hand=stage.querySelector('[data-shuttle-hand]');
@@ -867,9 +869,25 @@
       const planet=regions[name.planetId].definition;
       summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':planet.name+(planet.kind==='ship'?' · 幽灵飞船':' · 半径 '+(planet.radius/1000)+' 公里')+' · '+name.name)+
         '　／　直距 '+distanceText(dest.distanceTo(flight.position));
-      drawSystemChart(chart,name.planetId,selected=>{
-        select.value=selected==='dock'?'dock':regions[selected].definition.landingSites[0].id;showSelection();
-      });
+      if(id==='dock')atlasView='system';
+      for(const button of atlasModes){
+        button.disabled=button.dataset.atlasView==='landing'&&id==='dock';
+        button.setAttribute('aria-pressed',String(button.dataset.atlasView===atlasView));
+      }
+      if(atlasView==='landing'){
+        const key=[id,chart.parentElement.clientWidth,chart.parentElement.clientHeight].join('/');
+        if(key===landingViewKey)return;
+        landingViewKey=key;chart.setAttribute('aria-label',planet.name+'着陆点');
+        drawSurfaceMap(chart,{region:regions[name.planetId],selected:id,flightOnly:true,onSelect:pad=>{
+          select.value=pad;showSelection();
+        }});
+      }else{
+        landingViewKey='';chart.setAttribute('aria-label','帕诺星系轨道与泊位');
+        drawSystemChart(chart,id==='dock'?'dock':name.planetId,selected=>{
+          select.value=selected==='dock'?'dock':regions[selected].definition.landingSites[0].id;
+          atlasView=selected==='dock'?'system':'landing';showSelection();
+        });
+      }
     }
     function toggleAtlas(){
       if(!atlas.hidden){
@@ -885,6 +903,7 @@
         select.append(group);
       }
       select.add(new Option('赛尔号 · 原泊位','dock'));select.value=navTarget;
+      landingViewKey='';atlasView='system';chart.parentElement.scrollTop=0;
       chart.setAttribute('aria-label','帕诺星系行星轨道、舰艇位置与目的地');
       trackButton.hidden=!helm;trackButton.disabled=targetOnly.disabled=!!pending;
       unseat.hidden=!helm||!!pending;atlas.hidden=false;stage.dataset.consoleOpen='planet';
@@ -892,7 +911,10 @@
     }
     listen(openChart,'click',toggleAtlas);listen(closeButton,'click',toggleAtlas);
     listen(atlas,'click',e=>{if(e.target===atlas)toggleAtlas();});
-    listen(select,'change',showSelection);
+    listen(select,'change',()=>{showSelection();if(atlasView==='landing')revealMapAddress(chart,select.value);});
+    for(const button of atlasModes)listen(button,'click',()=>{
+      atlasView=button.dataset.atlasView;chart.parentElement.scrollTop=0;showSelection();
+    });
     listen(trackButton,'click',()=>{
       navTarget=select.value;toggleAtlas();flyCommand('auto');
     });

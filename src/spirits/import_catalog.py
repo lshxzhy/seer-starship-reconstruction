@@ -53,7 +53,7 @@ def read_tables(path):
                 end=value.index(0,index+2)
                 names[value[index+2:end].decode().split(".")[-1]]=symbol
                 index=end+1
-    keys=("PetXMLInfo_xmlClass","TypeXMLInfo_xmlClass","PetBookXMLInfo_xmlClass","SkillXMLInfo_typeClass","NatureXMLInfo_xmlClass")
+    keys=("PetXMLInfo_xmlClass","TypeXMLInfo_xmlClass","PetBookXMLInfo_xmlClass","SkillXMLInfo_typeClass","NatureXMLInfo_xmlClass","EvolveXMLInfo_xmlcls")
     return {key:ET.fromstring(binary[names[key]]) for key in keys}
 
 
@@ -113,6 +113,36 @@ def collect(folder,client):
             while len(row)<11:row.append(0)
             row.append(extra)
         moves[mid] = row
+    # EvolvFlag points into a separate table. A zero EvolvesTo on these
+    # monsters does not mean that they are the last member of their family.
+    conditions={int(row.get("ID")): row.findall("Branch") for row in tables["EvolveXMLInfo_xmlcls"]}
+    branches={}
+    edges={(sid, detail["evolves"][1]) for sid,detail in species.items() if "evolves" in detail}
+    for sid in species:
+        mon=monsters[sid]
+        for branch in conditions.get(int(mon.get("EvolvFlag") or 0), ()):
+            target=int(branch.get("MonTo"))
+            if target not in species or (sid,target) in edges:continue
+            route=dict(target=target,level=int(mon.get("EvolvingLv") or 0),method="chamber")
+            if branch.get("EvolvItem"):
+                route.update(item=int(branch.get("EvolvItem")),count=int(branch.get("EvolvItemCount")))
+            branches.setdefault(sid,[]).append(route)
+            edges.add((sid,target))
+    # The client also names some relatives without giving a public acquisition
+    # rule. Show the relationship without treating it as a free level evolution.
+    for sid in species:
+        mon=monsters[sid]
+        for source,target in ((int(mon.get("EvolvesFrom") or 0),sid),(sid,int(mon.get("EvolvesTo") or 0))):
+            if source in species and target in species and source!=target and (source,target) not in edges:
+                branches.setdefault(source,[]).append(dict(target=target,method="special"))
+                edges.add((source,target))
+    resources={r["item"] for paths in branches.values() for r in paths if "item" in r}
+    items={}
+    for category in json.loads((folder / "items.json").read_bytes())["Items"]["Cat"]:
+        rows=category.get("Item",[])
+        for item in rows if isinstance(rows,list) else [rows]:
+            iid=int(item["ID"])
+            if iid in resources:items[iid]=item["Name"]
     playable=set(PLAYABLE)
     frontier={sid for pool in SAFARI.values() for sid in pool}
     while frontier:
@@ -120,10 +150,12 @@ def collect(folder,client):
         playable.add(sid)
         next_form=species[sid].get("evolves",[0,0])[1]
         previous=int(monsters[sid].get("EvolvesFrom") or 0)
-        for link in (next_form, previous):
+        chamber=[r["target"] for r in branches.get(sid,[]) if r["method"]=="chamber"]
+        for link in (next_form, previous, *chamber):
             if link in species and link not in playable:frontier.add(link)
     return dict(sources=SOURCES, playable=sorted(playable), exhibits=EXHIBITS, safari=SAFARI, types=types, matchups=matchups,
-                natures=natures, index=index, species=species, moves=moves, missingMoves=sorted(wanted-moves.keys()))
+                natures=natures, index=index, species=species, moves=moves, missingMoves=sorted(wanted-moves.keys()),
+                evolutionBranches=branches,evolutionItems=items)
 
 
 def write_json(path, data):

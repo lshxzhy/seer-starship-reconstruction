@@ -148,14 +148,15 @@ def spirit_catalog():
         moves = data['moves']
         sources = [{'title': '淘米页游客户端参数' if url.startswith('https://seer.61.com/') else '技能参数表',
                     'url': url} for url in data.get('sources', []) if isinstance(url, str) and url.startswith('https://')]
-        return entries, data['species'], moves, frozenset(row[0] for row in moves.values()), sources, data['types']
+        return (entries, data['species'], moves, frozenset(row[0] for row in moves.values()),
+                sources, data['types'], data.get('evolutionBranches', {}), data.get('evolutionItems', {}))
     except (OSError, ValueError, TypeError, IndexError, KeyError) as exc:
         raise BridgeError(503, '精灵图鉴暂不可读，请使用完整的本机游戏目录。') from exc
 
 
 def spirit_character(identifier):
     number = int(identifier.split(':', 1)[1])
-    entries, species, moves, _, sources, types = spirit_catalog()
+    entries, species, moves, _, sources, types, branches, items = spirit_catalog()
     record = entries.get(number)
     if not record:
         raise BridgeError(404, '本版图鉴尚无这个精灵编号。')
@@ -164,11 +165,22 @@ def spirit_character(identifier):
     learnset = [(level, moves[str(move)][0]) for level, move, *_ in ability.get('skills', [])
                 if str(move) in moves]
     evolution = ability.get('evolves')
-    next_form = None
+    routes = []
     if isinstance(evolution, list) and len(evolution) == 2 and evolution[1] in entries:
-        next_form = [evolution[0], entries[evolution[1]][1]]
+        routes.append({'形态': entries[evolution[1]][1], '方式': '等级进化', '等级': evolution[0]})
+    for branch in branches.get(str(number), []):
+        target = entries.get(branch['target'])
+        if target is None:
+            continue
+        route = {'形态': target[1], '方式': '转生仓' if branch['method'] == 'chamber' else '特殊条件待核'}
+        if branch.get('level'):
+            route['等级'] = branch['level']
+        if branch.get('item'):
+            item = str(branch['item'])
+            route['材料'] = [items.get(item, '道具 #'+item), branch['count']]
+        routes.append(route)
     return {'id': identifier, 'kind': 'spirit', 'number': number, 'name': name,
-            'element': types.get(str(type_id), ''), 'learnset': learnset, 'evolution': next_form,
+            'element': types.get(str(type_id), ''), 'learnset': learnset, 'evolution': routes,
             'measurements': measurements, 'sources': sources}
 
 
@@ -195,7 +207,7 @@ def spirit_prompt(character, context):
     if character['learnset']:
         facts['部分可学招式（所需等级、名称）'] = [list(move) for move in character['learnset'][:5]]
     if character['evolution']:
-        facts['本系统记录的进化（等级、形态）'] = character['evolution']
+        facts['图鉴中的进化路线及条件'] = character['evolution']
     location = context.get('location')
     if isinstance(location, str) and location.strip():
         facts['玩家的位置'] = location.strip()[:64]

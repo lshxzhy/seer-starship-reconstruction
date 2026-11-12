@@ -179,43 +179,46 @@ function createPanoSystem(T,world){
 }
 
 function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,vehicle=null,vehiclePlanet=current,carrier=null}={}){
-    const ids=Object.keys(PANO_ORBITS);
-    svg.replaceChildren();svg.setAttribute('viewBox','0 0 510 286');
-    const scale=201/Math.max(...ids.map(id=>PANO_ORBITS[id].a)),project=p=>[252+(p.x+.28*p.z)*scale,139+p.z*scale*.56];
-    function mark(tag,attrs,words=''){
-      const el=document.createElementNS('http://www.w3.org/2000/svg',tag);
-      for(const [key,val] of Object.entries(attrs))el.setAttribute(key,val);
-      if(words)el.textContent=words;svg.append(el);return el;
-    }
+    const ids=Object.keys(PANO_ORBITS),clip=svg.parentElement,width=clip.clientWidth||510;
+    const focus=svg.contains(document.activeElement)?document.activeElement.getAttribute('data-nav-label'):null;
+    const polar=p=>({mapX:p.x+.28*p.z,mapY:p.z*.56});
+    const core={id:'star',name:'帕诺星系中心',mapX:0,mapY:0,selectable:false};
+    const planets=ids.map(id=>({id,name:PANO_ORBITS[id].name+(id===current?' · 当前':''),
+      fullName:PANO_ORBITS[id].name,colour:PANO_ORBITS[id].colour,...polar(panoCenter(id,time))}));
+    const ship=carrier?{id:'dock',name:'赛尔号',...polar(panoCenter('klose',time).add(carrier))}:null;
+    const boat=vehicle&&PANO_ORBITS[vehiclePlanet]?{id:'vehicle',name:'L-01',selectable:false,...polar(panoCenter(vehiclePlanet,time).add(vehicle))}:null;
+    const together=ship&&boat&&Math.hypot(ship.mapX-boat.mapX,ship.mapY-boat.mapY)<PANO_ORBITS.klose.a*.01;
+    if(together)ship.name='赛尔号 ／ L-01';
+    const nodes=[core,...planets,...(ship?[ship]:[]),...(boat&&!together?[boat]:[])];
+    const layout=mapLabelColumns(nodes,width,clip.clientHeight||330),height=layout.height;
+    const reach=Math.max(...ids.map(id=>PANO_ORBITS[id].a));
+    const scale=Math.min(Math.max(12,width-2*layout.rail-38)/(2.09*reach),(height-38)/(1.12*reach));
+    const xy=node=>[width/2+node.mapX*scale,height/2+node.mapY*scale];
+    const project=p=>xy(polar(p));
+    svg.replaceChildren();svg.style.height=height+'px';svg.setAttribute('viewBox','0 0 '+width+' '+height);
+    const mark=(tag,attrs,words)=>mapMark(svg,tag,attrs,words);
     for(const id of ids){
       const orbit=PANO_ORBITS[id],path=[];
       for(let i=0;i<100;i++){const [x,y]=project(panoCenter(id,orbit.period*i/100));path.push((i?'L':'M')+x.toFixed(1)+','+y.toFixed(1));}
       mark('path',{d:path.join('')+'Z',fill:'none',stroke:orbit.colour,'stroke-width':1,'stroke-opacity':.45,
         'stroke-dasharray':PANO_NAVIGATION.regions[id].definition.kind==='ship'?'3 6':'none'});
     }
-    mark('circle',{cx:252,cy:139,r:7,fill:'#ffe4a1'});
-    mark('text',{x:264,y:145,fill:'#e2cda3','font-size':11},'帕诺星系中心');
-    const shipPoint=carrier?project(panoCenter('klose',time).add(carrier)):null;
-    const boatPoint=vehicle&&PANO_ORBITS[vehiclePlanet]?project(panoCenter(vehiclePlanet,time).add(vehicle)):null;
-    const together=shipPoint&&boatPoint&&Math.hypot(shipPoint[0]-boatPoint[0],shipPoint[1]-boatPoint[1])<15;
-    if(boatPoint&&!together){
-      const [x,y]=boatPoint;
+    if(boat&&!together){
+      const [x,y]=xy(boat);
       mark('path',{d:'M'+x+','+(y-5)+'l4,8 -4,-2 -4,2z',fill:'#fff',stroke:'#17272b','stroke-width':1});
-      mark('text',{x:x+11,y:y+21,fill:'#d4ecec','font-size':10},'L-01');
     }
+    mark('circle',{cx:width/2,cy:height/2,r:5,fill:'#ffe4a1'});
     for(const id of ids){
       const orbit=PANO_ORBITS[id],[x,y]=project(panoCenter(id,time));
       const radius=9*PANO_NAVIGATION.regions[id].definition.radius/KLOSE_WORLD.radius;
       const fill={klose:'#a6a27e',ocean:'#53829d',alpha:'#51a58b',beta:'#ae839c'}[id];
-      const label=orbit.name+(current===id?' · 当前':''),left=x+13+label.length*12>505;
-      const hit=mark('g',{'data-pano-planet':id,role:'button',tabindex:'0','aria-label':orbit.name,'aria-pressed':String(selected===id),style:'cursor:pointer'});
+      const hit=mark('g',{style:'cursor:pointer'});
       const symbol=PANO_NAVIGATION.regions[id].definition.kind==='ship'?
         ['path',{d:`M${x-10},${y-4}l6,-1 5,-5 1,5 7,2 -5,3 -2,6 -3,-4 -6,1z`,fill:'#605575',stroke:selected===id?'#f7fff2':orbit.colour,'stroke-width':1.6}]:
         ['circle',{cx:x,cy:y,r:radius,fill,stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}];
       for(const [tag,args,words] of [
         ['circle',{cx:x,cy:y,r:15,fill:'transparent'}],
-        symbol,
-        ['text',{x:left?x-13:x+13,y:y-7,'text-anchor':left?'end':'start',fill:'#e5f2ec','font-size':12},label]
+        symbol
       ])hit.append(mark(tag,args,words));
       if(id==='klose')hit.append(mark('ellipse',{cx:x,cy:y,rx:radius*1.39,ry:radius*.31,transform:'rotate(-24 '+x+' '+y+')',fill:'none',stroke:orbit.colour,'stroke-width':2}));
       else if(id==='ocean')for(const [dx,dy,r] of [[-.36,-.22,.27],[.39,.22,.20]])hit.append(mark('circle',{cx:x+dx*radius,cy:y+dy*radius,r:r*radius,fill:'none',stroke:'#b7d6e2','stroke-width':1}));
@@ -225,11 +228,10 @@ function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,veh
       hit.onclick=()=>onSelect?.(id);
       hit.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect?.(id);}};
     }
-    if(shipPoint){
-      const [x,y]=shipPoint;
-      mark('rect',{x:x-2.5,y:y-2.5,width:5,height:5,fill:'#fff','pointer-events':'none'});
-      const label=mark('text',{x:x+9,y:y+23,fill:'#d4ecec','font-size':11,style:'cursor:pointer;pointer-events:auto',role:'button',tabindex:0},together?'赛尔号 ／ L-01':'赛尔号');
-      label.onclick=()=>onSelect?.('dock');
-      label.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect?.('dock');}};
+    if(ship){
+      const [x,y]=xy(ship),dock=mark('rect',{x:x-3,y:y-3,width:6,height:6,fill:'#fff',style:'cursor:pointer'});
+      dock.onclick=()=>onSelect?.('dock');
     }
+    layout.draw(svg,xy,id=>onSelect?.(id),selected,'data-pano-planet');
+    if(focus)Array.from(svg.querySelectorAll('[data-nav-label]')).find(el=>el.dataset.navLabel===focus)?.focus({preventScroll:true});
 }

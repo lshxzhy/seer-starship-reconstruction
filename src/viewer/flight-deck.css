@@ -6,13 +6,21 @@
 .shuttle-hand button{color:#e5f4ef;background:#18323be8;border:1px solid #668a8e;border-radius:5px;padding:4px 8px;font-size:12px}
 .seer-stage[data-console-open] .shuttle-hand{visibility:hidden}
 @container(max-width:580px){.seer-stage[data-helm] .planetary-dock{bottom:10px;max-width:calc(100% - 110px);flex-wrap:wrap;justify-content:flex-end}.seer-stage[data-helm] .planetary-dock button{font-size:11px}.shuttle-hand{bottom:110px;left:6px}}
-.planet-atlas .atlas-body{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(155px,1fr);align-items:center;overflow:auto}
-.planet-atlas svg{display:block;width:100%;height:auto;background:#142e33}
+.planet-atlas .atlas-body{display:grid;grid-template-columns:minmax(0,3fr) minmax(184px,1fr);align-items:start;overflow:auto;min-height:0}
+.atlas-chart{height:clamp(315px,52vh,562px);overflow:auto;scrollbar-gutter:stable;background:#142e33}
+.planet-atlas svg{display:block;width:100%;height:100%}
 .planet-atlas svg text{font:600 12px "Microsoft YaHei",sans-serif;fill:#eff9ee;paint-order:stroke;stroke:#122c30;stroke-width:3px;stroke-linejoin:round}
 .atlas-controls{padding:12px 14px;font-size:14px}.atlas-controls p{color:#c3d7cf}.atlas-controls label{display:block;color:#b0cfc7}
 .atlas-controls select{display:block;width:100%;margin-top:5px;border:1px solid #6a9190;background:#203e45;color:#eff9ee;padding:6px;border-radius:5px}
 .atlas-actions{display:flex;gap:5px;flex-wrap:wrap}.map-field-tools{align-items:center;border-top:1px solid #284958;padding-top:8px;margin-top:8px}.map-field-tools select{font:inherit;color:inherit;background:#203e45}
-@container(max-width:540px){.planet-atlas .atlas-body{grid-template-columns:1fr}.planet-atlas svg{max-height:220px}.atlas-controls{padding:7px 11px}.atlas-controls p{margin:4px 0}}
+@container(max-width:650px){.planet-atlas .atlas-body{grid-template-columns:1fr}.atlas-controls{padding:7px 11px}.atlas-controls p{margin:4px 0}}
+.atlas-modes{display:flex;gap:6px;margin:0 0 10px}.atlas-modes [aria-pressed=true]{border-color:#91ddd2;background:#285557}
+.seer-stage[data-console-open="map"] [data-overlay]>.ship-window,.seer-stage .planet-atlas{width:min(1180px,100%)}
+#seer-starship-3d svg .nav-map-label{font:600 13px "Microsoft YaHei",sans-serif;stroke:none;fill:#e6f2ef;pointer-events:none}
+#seer-starship-3d svg [data-nav-label][role="button"]{cursor:pointer}
+#seer-starship-3d svg [data-nav-label]:focus-visible rect{stroke:#f8db94;stroke-width:2.5}
+.sm-radar .sm-toolbar label,.atlas-controls{min-width:0;max-width:100%}
+.sm-radar .sm-toolbar select{min-width:0;max-width:100%}
 #seer-starship-3d [hidden]{display:none!important}
 .seer-stage {width:100%;height:clamp(390px,70vw,650px);position:relative;isolation:isolate;overflow:hidden;background:#101923;container-type:inline-size}
 .seer-stage>canvas {display:block;width:100%;height:100%;touch-action:none;cursor:grab}
