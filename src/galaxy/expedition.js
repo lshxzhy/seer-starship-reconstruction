@@ -44,7 +44,7 @@
     let lastAirLat,lastAirLon;
     const keys=new Set(),touch=new Map(),pendingSteps=new Map(),events=new AbortController();
     const listen=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:events.signal});
-    let world,body,pano,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight;
+    let world,body,pano,view,local,rig,drill,contact,nono,stars,sky,lamp,bounce,daylight,coreLight;
     let dockCenter=null,departurePort=null;
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
@@ -92,6 +92,7 @@
         sky.material.uniforms.ringBounds.value.set(rings?.inner||0,rings?.outer||0);
         const f=body.frame(home.lat,home.lon);
         daylight.copy(f.up).multiplyScalar(.79).addScaledVector(f.east,-.74).addScaledVector(f.north,-.36).normalize();
+        if(definition.kind==='ship')daylight.set(.72,.87,.32).normalize();
       }
     }
     function localVehicle(){return flight?.planetId===definition.id;}
@@ -151,6 +152,8 @@
       escort=createSpiritEscort(T,world);escort.setSpecies(escortId);
       bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
       lamp=new T.DirectionalLight(0xfff8ef,.97);world.add(bounce,lamp,lamp.target);
+      coreLight=new T.PointLight(0xff746a,1.18,1900,1);
+      bodies.byron.root.add(coreLight);
       lamp.shadow.mapSize.setScalar(Math.min(2048,renderer.capabilities.maxTextureSize));
       Object.assign(lamp.shadow.camera,{left:-27,right:27,bottom:-27,top:27,near:1,far:114});
       lamp.shadow.camera.updateProjectionMatrix();lamp.shadow.bias=-.00035;lamp.shadow.normalBias=.045;
@@ -304,7 +307,9 @@
       u.deepSpace.value=derelict?1:0;
       if(derelict){
         sky.visible=agl<20000;stars.visible=true;world.background.setHex(0x080b17);
-        world.fog.density=walking?.00055:0;
+        world.fog.density=walking?.00024:0;
+        coreLight.position.copy(body.encounterCore);
+        coreLight.visible=!walking||!body.isSheltered(at.lat,at.lon);
       }
       // Keep the star field inside the near camera on a deck exposed to space.
       stars.scale.setScalar(derelict&&agl<=1800?3600/(pano.far*.8):1);
@@ -622,8 +627,15 @@
         const bird=nearbySpirit();
         if(canObserve(bird)&&bird.kind==='apparition'){
           local.visible=false;escort.hide();view.position.copy(p).addScaledVector(f.up,seerRobots.eyeHeight);
-          const aim=bird.focusPoint.clone().sub(view.position).applyAxisAngle(f.up,observation.bearing);
-          aim.applyAxisAngle(f.east,observation.elevation);view.lookAt(aim.add(view.position));
+          const aim=bird.focusPoint.clone().sub(view.position).normalize();
+          if(atWindow){
+            const deck=region.byId.get('byron-deck');
+            const hullDirection=body.point(deck.lat,deck.lon).sub(view.position).normalize();
+            aim.lerp(hullDirection,.35*T.MathUtils.smoothstep(observation.zoom,.44,1)).normalize();
+          }
+          aim.applyAxisAngle(f.up,observation.bearing);
+          const right=aim.clone().cross(f.up).normalize();
+          aim.applyAxisAngle(right,observation.elevation);view.lookAt(aim.add(view.position));
         }else if(canObserve(bird)){
           const aim=bird.focusPoint;
           const distance=Math.max(1.45,(bird.size||.42)*2.4)*observation.zoom;
@@ -977,7 +989,7 @@
       if(drag?.id!==e.pointerId)return;
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.travel+=Math.abs(dx)+Math.abs(dy);
       if(observedBird!==null&&phase==='surface'){
-        observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,-.04,1.12);
+        observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,watchingByron()?-.95:-.04,1.12);
       }else{yaw-=dx*.004;pitch=clamp(pitch-dy*.004,-1.1,1.12);}
       requestFrame();
     });
@@ -1006,7 +1018,7 @@
       if(phase==='hidden'||!atlas.hidden)return;e.preventDefault();
       const factor=Math.exp(clamp(e.deltaY,-170,170)*.0018);
       if(phase==='helm'&&external)chaseBoom.length=clamp(chaseBoom.length*factor,13,55);
-      else if(watchingByron())observation.zoom=clamp(observation.zoom*factor,.22,1.35);
+      else if(watchingByron())observation.zoom=clamp(observation.zoom*factor,.22,1.76);
       else if(phase==='surface'&&observedBird!==null)observation.zoom=clamp(observation.zoom*factor,.75,2.8);
       else if(phase==='surface')boom=clamp(boom*factor,2.4,8);
       requestFrame();

@@ -2,7 +2,7 @@
 // red centre; the unskinned 4717 portrait supplies the pairs of satellite wells.
 function createYunasFigure(T,id,options={}){
   if(id!==4717)return null;
-  const height=Number.isFinite(options.height)&&options.height>0?options.height:260;
+  const height=Number.isFinite(options.height)&&options.height>0?options.height:BYRON_BOSS.height;
   const tau=2*Math.PI,root=new T.Group(),bearing=new T.Group(),sculpt=new T.Group();
   root.name='原始黑洞·尤纳斯';root.add(bearing);bearing.add(sculpt);
   const v=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
@@ -26,6 +26,9 @@ function createYunasFigure(T,id,options={}){
     if(z>0)positions.setZ(i,opening(x,y,z));
   }
   surface.computeVertexNormals();
+  const dustNoise=`float hash(vec2 p){return fract(sin(dot(p,vec2(117.07,43.59)))*14329.34);}
+    float noise2(vec2 p){vec2 g=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+      return mix(mix(hash(g),hash(g+vec2(1,0)),f.x),mix(hash(g+vec2(0,1)),hash(g+1.),f.x),f.y);}`;
   function vortex(primary){
     const uniforms=T.UniformsUtils.clone(T.UniformsLib.fog);
     Object.assign(uniforms,{age:clock,capture:phase,mainWell:{value:primary?1:0}});
@@ -40,15 +43,13 @@ function createYunasFigure(T,id,options={}){
         }`,
       fragmentShader:`varying vec3 ray,ne,stream;uniform float age,capture,mainWell;
         #include <fog_pars_fragment>
-        float hash(vec2 p){return fract(sin(dot(p,vec2(117.07,43.59)))*14329.34);}
-        float noise2(vec2 p){vec2 g=floor(p),f=fract(p);f=f*f*(3.-2.*f);
-          return mix(mix(hash(g),hash(g+vec2(1,0)),f.x),mix(hash(g+vec2(0,1)),hash(g+1.),f.x),f.y);}
+        ${dustNoise}
         void main(){
           vec3 n=normalize(stream),normal=normalize(ne);
           float edge=pow(1.-abs(dot(normal,normalize(ray))),2.);
           vec2 p=(n.xy+vec2(.26,.18))*vec2(1.06,.97);
           float r=length(p),a=atan(p.y,p.x+.00001);
-          float twist=a+(3.55+.54*sin(1.8*a+.9*r))*r+.22*sin(3.*a-4.7*r+age*.15)*r-age*(.12+.08*capture);
+          float twist=a+(4.35+.48*sin(2.*a+.9*r))*r+.22*sin(3.*a-4.7*r+age*.15)*r-age*(.10+.06*capture);
           vec2 field=vec2(cos(twist),sin(twist))*(r+.36);
           float cloud=.55*noise2(field*5.7+.026*age)+.30*noise2(field*12.3)+.15*noise2(field*25.7);
           float wave=.5+.5*cos(3.*twist+2.3*cloud+.55*sin(twist+7.*r));
@@ -59,10 +60,15 @@ function createYunasFigure(T,id,options={}){
           vec3 cool=mix(vec3(.035,.019,.090),vec3(.41,.23,.62),1.-smoothstep(.02,.77,r));
           vec3 hot=mix(vec3(.84,.042,.13),vec3(2.45,.54,.22),1.-smoothstep(.06,.49,r));
           vec3 trace=mix(cool,hot,mainWell*(1.-smoothstep(.24,.71,r)));
-          vec3 well=vec3(.006,.003,.016)+trace*(lanes+fibre+.018)*orbit;
+          float filament=.5+.5*cos(22.*twist+12.*cloud+noise2(field*42.)*2.);
+          float fineDust=noise2(field*56.+vec2(cloud,0.))*.7+noise2(field*117.)*.3;
+          vec3 well=vec3(.006,.003,.016)+trace*(lanes*(.73+.67*fineDust)+fibre+.018)*orbit;
+          well+=trace*pow(filament,8.)*smoothstep(.32,.82,wave)*(.09+.22*cloud)*orbit;
+          float crescent=exp(-abs(r-.24-.055*sin(twist*2.))*12.)*max(0.,cos(twist-.6));
+          well+=mainWell*vec3(.70,.15,.036)*crescent*(.33+.67*cloud);
           well+=mix(vec3(.26,.17,.58),vec3(1.64,.20,.085),mainWell)*exp(-7.*r);
           well+=mainWell*vec3(.63,.018,.031)*exp(-4.4*r)*(.28+.53*cloud);
-          float pin=(1.-smoothstep(.025,.135,r));
+          float pin=(1.-smoothstep(.036,.184,r));
           well+=mix(vec3(.87,.85,1.),vec3(2.4,1.56,.95),mainWell)*pin;
           vec2 grid=n.xy*28.;vec2 cell=floor(grid);
           float speck=(1.-smoothstep(.018,.059+min(.095,fwidth(grid.x)),
@@ -79,6 +85,26 @@ function createYunasFigure(T,id,options={}){
         }`}));
   }
   const major=vortex(true),minor=vortex(false),body=new T.Group();sculpt.add(body);
+  // A broken gas mantle behind the wells gathers into the throat. Three
+  // turbulent lobes keep the outer silhouette visible even when it spans the sky.
+  const halo=material(new T.ShaderMaterial({uniforms:{age:clock,capture:phase},
+    transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,
+    vertexShader:`varying vec2 q;void main(){q=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`varying vec2 q;uniform float age,capture;
+      ${dustNoise}
+      void main(){
+        vec2 p=q*vec2(1.,1.14);float r=length(p),a=atan(p.y,p.x+.00001);
+        float swirl=2.8*r+.36*sin(2.*a+5.*r)+.015*age;
+        vec2 curved=mat2(cos(swirl),sin(swirl),-sin(swirl),cos(swirl))*p;
+        float grain=noise2(11.*curved)*.54+noise2(27.*curved)*.30+noise2(68.*curved)*.16;
+        float veil=(1.-smoothstep(.45,.74,r))*.59*smoothstep(.24,.71,grain);
+        float lobes=.44+.56*pow(.5+.5*cos(3.*a+9.*r+4.*grain),2.);
+        float lip=exp(-abs(r-.233)*35.)*(.18+.72*grain);
+        vec3 glow=mix(vec3(.13,.062,.30),vec3(.71,.50,1.),lip);
+        gl_FragColor=vec4(glow,(veil*lobes+lip*.3)*(.87+.13*capture));
+      }`}));
+  const mantle=mesh(geometry(new T.PlaneGeometry(1.60,1.45)),halo,body);
+  mantle.position.z=-.27;
   const core=mesh(surface,major,body),rCore=.234;core.scale.set(rCore,rCore,rCore*.91);
   // Warm white at the bottom of the recess; intensity rises as the hull makes contact.
   const beacon=material(new T.MeshBasicMaterial({color:0xffedc8,toneMapped:false}));
@@ -175,7 +201,12 @@ function createYunasFigure(T,id,options={}){
   // The measured spindle/satellites define the height and encounter root. Dust is transient.
   const bounds=new T.Box3().makeEmpty();
   for(const obj of [body,...bodies.map(b=>b.orb)]){
-    obj.updateWorldMatrix(true,true);bounds.union(new T.Box3().setFromObject(obj));
+    obj.updateWorldMatrix(true,true);
+    obj.traverse(part=>{
+      if(!part.geometry||part===mantle)return;
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      bounds.union(part.geometry.boundingBox.clone().applyMatrix4(part.matrixWorld));
+    });
   }
   const size=bounds.getSize(v()),center=bounds.getCenter(v()),factor=height/size.y;
   bearing.rotation.y=Math.PI;bearing.scale.setScalar(factor);sculpt.position.set(-center.x,-bounds.min.y,-center.z);
