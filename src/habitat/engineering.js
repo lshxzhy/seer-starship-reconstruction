@@ -635,8 +635,8 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
   };
 
   cabinBuilders.workshop = function (kit) {
-    const {box,cyl,ball,beam,pipe,torus,panel,text,block,W,D,H,root} = kit;
-    const {ring,screen,bench,arm,toolWall,overhead,floorLine,platedFloor} = equipment(kit);
+    const {T,box,cyl,ball,beam,pipe,torus,panel,text,block,W,D,H,root} = kit;
+    const {ring,screen,bench,toolWall,overhead,floorLine,platedFloor} = equipment(kit);
     root.name='发明室 · W05/W06 经典尖锥装置';
     // The 2009 full-room views govern the arrangement and cream/cyan palette.
     platedFloor(W,D);
@@ -660,32 +660,51 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     const pz=-6.8;
     cyl(0,.28,pz,2.58,2.85,.55,C.edge);
     cyl(0,.65,pz,2.6,2.58,.22,C.ivory);
-    cyl(0,.79,pz,2.19,2.19,.1,C.blue);
-    ring(0,.87,pz,1.88,.085,C.cyan,{glow:.35});
-    cyl(0,.87,pz,1.17,1.17,.07,C.cyan,{glow:.32});
+    cyl(0,.78,pz,2.50,2.50,.14,0x236d8d);
+    ring(0,.87,pz,2.35,.07,0x82e6f3,{glow:.32});
+    cyl(0,.85,pz,2.14,2.16,.10,0x268dc2,{glow:.20});
+    ring(0,.93,pz,1.69,.046,0x59dbef,{glow:.34});
+    cyl(0,.93,pz,1.25,1.41,.12,C.cyan,{glow:.38});
     for(let i=0;i<6;i++) {
       const a=i*Math.PI/3;box(Math.sin(a)*2.42,.5,pz+Math.cos(a)*2.42,.4,.26,.33,C.navy,{ry:a});
     }
-    box(0,8.2,pz,4.7,.5,4.6,C.steel);
-    cyl(0,7.3,pz,1.06,1.06,1.5,C.steel);
-    cyl(0,6.3,pz,1.36,.98,.65,C.blue);
-    cyl(0,5.05,pz,1.32,.36,2.1,C.steel);
-    cyl(0,3.49,pz,.48,.065,1.05,C.edge);
+    // W05/W06: the hanging head is a teal, saw-edged crown around a
+    // down-pointing central spindle. The open gap to the blue bed is visible.
+    box(0,8.42,pz,4.3,.34,4.1,C.steel);
+    cyl(0,7.54,pz,1.13,1.26,1.57,0x32606c);
+    cyl(0,6.50,pz,1.26,1.12,.72,0x447b80);
+    cyl(0,5.15,pz,1.11,.37,2.12,0x517b77);
+    cyl(0,3.46,pz,.47,.042,1.46,0x799c94);
     for(const [yy,rad] of [[3.36,.28],[3.61,.38],[3.86,.47]])
-      ring(0,yy,pz,rad,.057,C.dark);
+      ring(0,yy,pz,rad,.043,0x445b59);
+    function headPlate(key,points,depth){
+      return cabinAsset(cabinAssets.geometries,'workshop/crown/'+key,()=>{
+        const outline=new T.Shape(points.map(p=>new T.Vector2(...p)));
+        const g=new T.ExtrudeGeometry(outline,{depth,bevelEnabled:true,bevelThickness:.035,
+          bevelSize:.035,bevelSegments:1,steps:1});g.translate(0,0,-depth/2);return g;
+      });
+    }
+    const outer=headPlate('shell',[[.88,7.66],[1.46,7.78],[1.52,7.12],[1.27,6.72],
+      [1.73,6.94],[1.71,6.17],[1.40,5.75],[1.85,5.94],[1.69,5.19],[1.24,4.58],
+      [1.53,4.69],[.40,2.85],[.65,4.61],[.87,5.58]],.41);
+    const raised=headPlate('face',[[1.29,7.39],[1.42,7.42],[1.23,6.56],[1.57,6.71],
+      [1.47,6.18],[1.10,5.45],[1.65,5.67],[1.45,5.11],[.56,3.32],[.89,4.89]],.46);
+    for(let i=0;i<6;i++){
+      const angle=(i+.5)*Math.PI/3;
+      for(const [g,color] of [[outer,0x32616d],[raised,0x75bbb9]]){
+        const m=box(0,0,pz,1,1,1,color,{ry:angle,structural:true});m.geometry=g;
+      }
+    }
     // Recessed centering jaws stand under the suspended tool on its existing bed.
     for(let i=0;i<3;i++){
       const a=i*Math.PI*2/3;
       box(.77*Math.sin(a),.965,pz+.77*Math.cos(a),.39,.15,.53,C.steel,{ry:a});
       box(.57*Math.sin(a),1.06,pz+.57*Math.cos(a),.27,.07,.16,C.edge,{ry:a});
     }
-    for(const y of [5.8,6.75,7.8])ring(0,y,pz,y===5.8?1.1:1.18,.13,C.edge);
+    for(const y of [6.78,7.95])ring(0,y,pz,1.19,.082,0x99c6bb);
     for(let i=0;i<4;i++) {
       const a=Math.PI/4+i*Math.PI/2,sx=Math.sin(a),sz=Math.cos(a);
-      beam([sx*1.24,6.4,pz+sz*1.24],[sx*1.93,5.9,pz+sz*1.93],.25,.42,C.edge);
-      beam([sx*1.93,5.9,pz+sz*1.93],[sx*.65,3.6,pz+sz*.65],.29,.44,C.blue);
-      beam([sx*.65,3.6,pz+sz*.65],[sx*.13,2.95,pz+sz*.13],.14,.22,C.steel);
-      beam([sx*1.4,8.15,pz+sz*1.4],[sx*2.8,8.2,pz+sz*2.8],.16,.21,C.dark);
+      beam([sx*.99,7.94,pz+sz*.99],[sx*1.93,8.36,pz+sz*1.93],.19,.25,C.dark);
     }
     pipe([[0,8.46,pz],[0,8.46,-10.9],[7.0,8.46,-10.9]],.17,C.dark);
     block(0,pz,5.8,5.8);
@@ -696,13 +715,18 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     // Rear-left open-mouthed cylindrical device, kept hollow with a dark inset.
     const lx=-8,lz=-7;
     cyl(lx,.25,lz,2.4,2.65,.5,C.edge);
-    cyl(lx,1.85,lz,1.95,2.22,2.7,C.ivory);
-    cyl(lx,3.21,lz,2.05,1.93,.18,C.steel);
-    cyl(lx,3.315,lz,1.69,1.69,.05,C.rubber);
-    ring(lx,3.35,lz,1.87,.11,C.cyan,{glow:.3});
+    cyl(lx,.70,lz,1.71,2.05,.55,C.ivory);
+    const collar=box(lx,0,lz,1,1,1,0x243849,{structural:true});
+    collar.geometry=cabinAsset(cabinAssets.geometries,'workshop/converter-cup',()=>new T.LatheGeometry(
+      [[1.33,1.09],[1.69,.97],[1.97,1.17],[2.09,1.77],[1.99,2.61],[1.77,3.07],
+       [1.66,3.29],[1.59,3.39],[1.21,3.39],[1.15,3.24],[1.22,2.70],[1.31,1.95],[1.33,1.09]]
+      .map(p=>new T.Vector2(...p)),56));
+    cyl(lx,2.40,lz,1.24,1.24,.10,C.rubber);
+    ring(lx,3.37,lz,1.33,.080,0x4acde7,{glow:.32});
+    ring(lx,1.67,lz,2.04,.075,0x52687a);
     for(let i=0;i<4;i++) {
       const a=i*Math.PI/2;
-      beam([lx+Math.sin(a)*2.15,.65,lz+Math.cos(a)*2.15],[lx+Math.sin(a)*1.98,2.8,lz+Math.cos(a)*1.98],.2,.25,C.steel);
+      beam([lx+Math.sin(a)*2.15,.65,lz+Math.cos(a)*2.15],[lx+Math.sin(a)*1.98,1.57,lz+Math.cos(a)*1.98],.2,.25,C.steel);
     }
     screen(lx,1.6,lz+2.1,1.8,.7,'部件转换');
     pipe([[lx-2,.9,lz],[lx-3,.9,lz],[lx-3,.9,-10.2],[lx-1.2,.9,-10.7]],.13,C.dark);
@@ -720,14 +744,17 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
       beam([rx+sx*2.05,2.8,rz-.9],[rx+sx*1.5,3.68,rz-1.3],.35,.4,C.edge);
       cyl(rx+sx*1.64,3.33,rz-1.12,.24,.24,.66,C.dark,{rz:Math.PI/2});
     }
-    box(rx,3.75,rz-1.33,4.6,2.4,.5,0x8492a7,{rx:-.32});
-    box(rx,3.79,rz-.98,3.9,1.7,.12,C.ivory,{rx:-.32});
-    box(rx,4.98,rz-1.71,2.5,.22,.35,C.steel);
+    box(rx,3.75,rz-1.33,4.6,2.4,.72,0x52596f,{rx:-.32});
+    box(rx,3.80,rz-.94,4.18,1.96,.24,0xb8b0ce,{rx:-.32});
+    box(rx,4.06,rz-.81,3.85,.97,.12,0xd3d2dc,{rx:-.32});
+    pipe([[rx-1.29,4.85,rz-1.68],[rx-1.21,5.32,rz-1.80],[rx-1.04,5.43,rz-1.84],
+      [rx+1.04,5.43,rz-1.84],[rx+1.21,5.32,rz-1.80],[rx+1.29,4.85,rz-1.68]],.14,C.dark);
+    for(const s of [-1,1])cyl(rx+s*2.18,3.77,rz-1.28,.87,.87,.26,0x647185,{rz:Math.PI/2});
     for(const sx of [-1,1])pipe([[rx+sx*2.1,.5,rz-1],[rx+sx*2.3,1.8,rz-1.4],[rx+sx*1.8,3.2,rz-1.2]],.085,C.dark);
     block(rx,rz,5.8,5.9);
 
-    // Left-front inventor's round table. Cyan work surface, console and an
-    // articulated assembly aid; the latter is a workflow design informed by W03.
+    // W05 shows two chips on the small blue bench in front of Shawn; W06
+    // retains that bench. The contacts and holders complete the obscured parts.
     const tx=-8,tz=2.8;
     cyl(tx,.2,tz,2.58,2.8,.4,C.steel);
     cyl(tx,.79,tz,1.55,1.98,.9,C.ivory);
@@ -735,8 +762,14 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     cyl(tx,1.49,tz,2.28,2.28,.09,C.blue);
     ring(tx,1.56,tz,1.95,.065,C.cyan,{glow:.15});
     cyl(tx,1.57,tz,.9,.9,.08,C.cyan,{glow:.22});
-    arm([[tx-1.65,1.48,tz-.9],[tx-1.8,2.9,tz-.9],[tx-.85,3.55,tz-.5],[tx-.1,2.6,tz-.1]],C.ivory);
-    box(tx-.1,2.48,tz-.1,.4,.29,.5,C.steel);
+    for(const s of [-1,1]){
+      const x=tx+s*.62;
+      box(x,1.67,tz-.14,.88,.16,.62,C.navy);
+      cyl(x,1.94,tz-.14,.30,.34,.35,0x86a9aa,{segments:8});
+      cyl(x,2.14,tz-.14,.36,.36,.13,s<0?C.steel:C.blue,{segments:8});
+      cyl(x,2.235,tz-.14,.21,.26,.10,s<0?C.gold:C.cyan,{segments:8,glow:.20});
+      for(const side of [-1,1])box(x+side*.29,2.02,tz+.11,.058,.17,.085,C.gold);
+    }
     for(let i=0;i<4;i++)box(tx-.6+i*.4,1.57,tz+1.75,.16,.07,.2,i===3?C.red:C.white);
     screen(tx-2.22,2.2,tz-1.5,1.65,1.16,'肖恩工位',.24);
     beam([tx-2.22,1.36,tz-1.65],[tx-2.22,2.15,tz-1.65],.14,.16,C.dark);

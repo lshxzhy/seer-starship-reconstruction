@@ -13,7 +13,8 @@ const KLOSE_WORLD = (() => {
     ['sanctuary','神宠之境',132,62,'从草原支线进入的封神之地']
   ];
   const sites = locations.map(([id,name,x,z,description]) => ({
-    id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude)),description
+    id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude)),description,
+    ...(id==='swamp'?{lookAt:[x,z-13],lookPitch:.08}:{})
   }));
   const routes = [['grassland','swamp'],['swamp','forest'],['swamp','vineway'],['vineway','core'],
     ['grassland','wetland'],['grassland','flame'],['grassland','sanctuary'],['wetland','flame']];
@@ -69,7 +70,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     return nearest;
   }
   const pools = [
-    ['swamp',-15,-16,12,7],['swamp',18,20,10,5],['swamp',-21,17,8,6],
+    ['swamp',12,-16,8.7,5.4],['swamp',18,13,12,6],['swamp',-18,14,10,6],
     ['wetland',-21,-13,18,10],['wetland',18,17,10,9],['wetland',14,-23,13,6],
     ['core',-6,-14,10,5]
   ].map(([id,dx,dz,rx,rz])=>({id,dx,dz,rx,rz,x:byId.get(id).x+dx,z:byId.get(id).z+dz}));

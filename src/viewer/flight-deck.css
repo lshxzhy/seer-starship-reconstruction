@@ -11,7 +11,7 @@
 .planet-atlas svg text{font:600 12px "Microsoft YaHei",sans-serif;fill:#eff9ee;paint-order:stroke;stroke:#122c30;stroke-width:3px;stroke-linejoin:round}
 .atlas-controls{padding:12px 14px;font-size:14px}.atlas-controls p{color:#c3d7cf}.atlas-controls label{display:block;color:#b0cfc7}
 .atlas-controls select{display:block;width:100%;margin-top:5px;border:1px solid #6a9190;background:#203e45;color:#eff9ee;padding:6px;border-radius:5px}
-.atlas-actions{display:flex;gap:5px;flex-wrap:wrap}.atlas-controls [data-browse-ship]{margin-top:10px}
+.atlas-actions{display:flex;gap:5px;flex-wrap:wrap}.map-field-tools{align-items:center;border-top:1px solid #284958;padding-top:8px;margin-top:8px}.map-field-tools select{font:inherit;color:inherit;background:#203e45}
 @container(max-width:540px){.planet-atlas .atlas-body{grid-template-columns:1fr}.planet-atlas svg{max-height:220px}.atlas-controls{padding:7px 11px}.atlas-controls p{margin:4px 0}}
 #seer-starship-3d [hidden]{display:none!important}
 .seer-stage {width:100%;height:clamp(390px,70vw,650px);position:relative;isolation:isolate;overflow:hidden;background:#101923;container-type:inline-size}
@@ -31,6 +31,7 @@
 .ship-dock button {display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(#314d59,#203642);border:1px solid #526d78;border-radius:8px;font-weight:650;white-space:nowrap}
 .ship-dock button:hover,.ship-systems button:hover,.ship-key:hover,.seer-motion button:hover,.ship-dismiss:hover {background:#345665;border-color:#94c5c7}
 .ship-dock kbd {font:11px Consolas,monospace;color:#add0cf;border:1px solid #627e82;padding:1px 3px;border-radius:3px}
+.ship-actions [data-primary-action]::before{content:'E';display:inline-block;margin-right:6px;border:1px solid #8fb5b9;border-radius:3px;padding:0 4px;color:#c3edef;font:12px/1.3 Consolas,monospace}
 .ship-dock i {display:block;width:20px;height:20px;position:relative;flex:none}
 .dock-radar {border:2px solid #7cdbcb;border-radius:50%;background:conic-gradient(from 28deg,#86dcca95,transparent 33%,transparent);box-shadow:inset 0 0 0 2px #244649}
 .dock-radar:after {content:"";position:absolute;left:7px;bottom:7px;height:8px;border-left:1px solid #b8ffea;transform:rotate(32deg);transform-origin:bottom}

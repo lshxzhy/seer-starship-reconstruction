@@ -168,7 +168,7 @@ function createOceanEcology(T,parent,definition,surface){
   });
   const sites=Object.keys(OCEAN_HABITATS),interval=75,rareWindow=45;
   let lastVisitor=null;
-  function wetDistance(a,b){return kloseDisplacement(a,b,definition.radius).distance;}
+  function wetDistance(a,b){return surfaceDisplacement(a,b,definition.radius).distance;}
   function update(lat,lon,dt,walking=true){
     lastVisitor={lat,lon};
     const now=Date.now(),cycle=now/1000,rareSite=sites[Math.floor(cycle/interval)%sites.length];

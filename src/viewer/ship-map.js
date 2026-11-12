@@ -1,6 +1,6 @@
   // The radar plots the installed metric layout. Passage endpoints, doors and
   // lift stops are shared with the walking controller and cabin builders.
-  function createShipMap({container,getState,onTravel,onPlanetTravel,parkedRamp,drawSystemChart}) {
+  function createShipMap({container,getState,onTravel,onPlanetTravel,parkedRamp,drawSystemChart,surfaceNavigation,onGuide}) {
     const plan=habitat.plan;
     const decks=new Map(plan.levels.map(deck=>[deck.id,deck]));
     const targets=new Map();
@@ -56,12 +56,14 @@
         <div class="sm-chart"><svg role="img" aria-label="舰内平面图"></svg></div>
         <div class="sm-keys"><span><i class="sm-crew-dot"></i>当前位置</span><span><i class="sm-stop-dot"></i>升降站</span><span><i class="sm-route-dash"></i>步行路线</span></div>
         <div class="sm-choices" role="group" aria-label="本层舱室与升降站"></div>
-        <div class="sm-controls"><strong class="sm-target"></strong><button type="button" class="btn btn-primary" data-sm-travel hidden>传送至舱室</button></div>
+        <div class="sm-controls"><strong class="sm-target"></strong><span><button type="button" class="ship-key" data-sm-walk hidden>步行引导</button> <button type="button" class="ship-key" data-sm-travel hidden>传送到此</button></span></div>
         <p class="sm-route" aria-live="polite"></p>
       </section>`;
     const panel=container.querySelector('.sm-radar'),chart=panel.querySelector('svg');
     const picker=panel.querySelector('[data-sm-deck]'),choices=panel.querySelector('.sm-choices');
     const travel=panel.querySelector('[data-sm-travel]'),text=panel.querySelector('.sm-route');
+    const guide=panel.querySelector('[data-sm-walk]'),fieldTools=root.querySelector('[data-field-tools]');
+    const horizon=fieldTools.querySelector('[data-twin-horizon]');
     const areaPicker=panel.querySelector('[data-sm-area]'),sitePicker=panel.querySelector('[data-sm-site]');
     const {regions}=PANO_NAVIGATION;
     const planets=Object.values(regions).map(region=>region.definition);
@@ -74,7 +76,9 @@
         sitePicker.value=systemDestination;
       }else if(regions[area]){
         appendSurfaceOptions(sitePicker,regions[area],rampOnPlanet(parkedRamp(),area));
-        if(target)sitePicker.value=target;
+        const visitor=surfaceNavigation();
+        if(!target&&visitor?.planetId===area)target=visitor.targetId||visitor.nearestId;
+        if(target&&[...sitePicker.options].some(o=>o.value===target))sitePicker.value=target;
       }
       lastView='';refresh();
     }
@@ -188,7 +192,7 @@
     function refresh(){
       if(!opened)return;
       const state=getState(),pose=state.active?state.pose:null;
-      const remote=stage.dataset.domain==='planet',area=areaPicker.value,planet=area!=='ship';
+      const visitor=surfaceNavigation(),remote=Boolean(visitor),area=areaPicker.value,planet=area!=='ship';
       const view=[area,remote,sitePicker.value,level,selected,pose?.level,pose?.x.toFixed(1),pose?.z.toFixed(1),
         chart.clientWidth,chart.clientHeight].join('|');
       if(view===lastView)return;
@@ -196,6 +200,8 @@
       panel.querySelector('[data-sm-deck-label]').hidden=planet;
       panel.querySelector('[data-sm-site-label]').hidden=!planet;
       panel.querySelector('.sm-keys').hidden=choices.hidden=planet;
+      guide.hidden=true;fieldTools.hidden=!visitor||area!==visitor.planetId;
+      horizon.hidden=!visitor?.canLookNorth;
       if(planet){
         if(area==='system'){
           systemDestination=sitePicker.value;
@@ -208,11 +214,17 @@
         }
         const region=regions[area],ramp=rampOnPlanet(parkedRamp(),area);
         const site=sitePicker.value==='shuttle-ramp'?ramp:region.byId.get(sitePicker.value);
-        panel.querySelector('[data-sm-position]').textContent='帕诺星系';
+        const local=visitor?.planetId===area;
+        panel.querySelector('[data-sm-position]').textContent=visitor?'当前 · '+visitor.location:'帕诺星系';
         panel.querySelector('.sm-target').textContent=site?.name||'';
-        text.textContent=site?.description||'';
+        const route=local&&site?visitor.routeTo(site.id):[];
+        const distance=local&&site?surfaceDisplacement(visitor.position,site,region.definition.radius).distance:null;
+        text.textContent=site?(site.description||'')+(local?'　／　距你 '+formatNavDistance(distance):''):'';
+        if(local&&route.length>1)text.textContent+='　／　经 '+route.slice(0,-1).map(id=>region.byId.get(id)?.name).filter(Boolean).join(' → ');
+        guide.hidden=!local||!route.length||(distance<surfaceArrivalRadius(site.id)&&visitor.targetId!==site?.id);
+        guide.textContent=site&&visitor?.targetId===site.id?'取消引导':'步行引导';
         chart.setAttribute('aria-label',region.definition.name+'地点图，可使用目的地列表选择');
-        drawKloseMap(chart,{region,selected:sitePicker.value,ramp,
+        drawSurfaceMap(chart,{region,selected:sitePicker.value,ramp,observer:local?visitor.position:null,route,
           onSelect:id=>{sitePicker.value=id;refresh();}});
         travel.hidden=!site;travel.textContent='传送到此';return;
       }
@@ -234,7 +246,7 @@
       }
       for(const button of choices.children)button.setAttribute('aria-pressed',String(button.dataset.smTarget===selected));
       panel.querySelector('.sm-target').textContent=target?target.name:'选择舱室或升降站';
-      travel.hidden=!target||Boolean(route?.arrived);
+      travel.hidden=!target||target.level!==level||Boolean(route?.arrived);
       if(!travel.hidden)travel.textContent=(pose||remote)?'传送到此':'在此登舰';
       if(!target)text.textContent='';
       else if(!pose)text.textContent=target.kind==='lift'
@@ -258,6 +270,10 @@
     }
     areaPicker.addEventListener('change',()=>selectArea(areaPicker.value));sitePicker.addEventListener('change',refresh);
     picker.addEventListener('change',()=>{level=picker.value;refresh();});
+    guide.addEventListener('click',()=>{
+      const visitor=surfaceNavigation();if(visitor?.planetId!==areaPicker.value||guide.hidden)return;
+      onGuide(visitor.targetId===sitePicker.value?null:sitePicker.value);
+    });
     panel.addEventListener('click',select);
     travel.addEventListener('click',()=>{
       if(areaPicker.value==='system'){selectArea(systemDestination);return;}
@@ -277,9 +293,10 @@
     observer.observe(chart);
     return {
       open(id){
-        const away=parkedRamp();
-        selectArea(id==='shuttle-ramp'&&away?(away.planetId||'klose'):'ship',id);
-        const s=getState(),target=targets.get(id);
+        const away=parkedRamp(),visitor=surfaceNavigation();
+        const area=id==='shuttle-ramp'&&away?(away.planetId||'klose'):visitor?.planetId||'ship';
+        selectArea(area,id||visitor?.targetId||visitor?.nearestId);
+        const s=getState(),target=targets.get(id||(s.active&&s.pose&&habitat.location(s.pose).roomId));
         level=target?.level||(s.active&&s.pose?.level)||level;
         if(target)selected=target.id;
         if(!target)selected=null;

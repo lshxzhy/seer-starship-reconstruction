@@ -36,6 +36,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   let selection=null,starter=1,query='',offset=0,dexId=1,stageJob=null,generation=0;
   const period=20;
   let huntTimer=0,atFieldGate=false;
+  let sightWrites=Promise.resolve();
   function el(parent,tag,cls='',text=''){
     const item=document.createElement(tag);if(cls)item.className=cls;if(text!=='')item.textContent=text;parent.append(item);return item;
   }
@@ -352,18 +353,18 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     try{const stored=await records.read();if(ticket===generation&&!busy&&!active){game.restore(stored?.data);applyFollower(stored?.data);}}
     catch{/* Opening the terminal reports storage failures in context. */}
   }
-  async function observe(wild){
+  function observe(wild){
     if(!wild||active||busy)return;
-    busy=true;
-    try{
+    // Keep a subsequent contact behind its sighting write without dropping
+    // the player's click or blocking the opening of the field terminal.
+    sightWrites=sightWrites.then(async()=>{
       const record=await records.read();game.restore(record.data);
       if(!game.view().seen.includes(wild.speciesId)){
         game.act({type:'observe',speciesId:wild.speciesId});
         const result=await records.commit(record.revision,game.snapshot());
         if(!result.ok&&result.record)game.restore(result.record.data);
       }
-    }catch{/* Observation is still possible when storage is unavailable. */}
-    finally{busy=false;}
+    }).catch(()=>{/* Looking at the animal remains available offline. */});
   }
   function render(){
     if(!active)return;
@@ -414,6 +415,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     overlay.hidden=false;stage.dataset.consoleOpen='spirits';recordReady=false;
     tabs.replaceChildren();content.replaceChildren();report('正在读取精灵背包…');dismiss.focus({preventScroll:true});
     try{
+      await sightWrites;if(turn!==generation)return;
       const record=await records.read();
       if(turn!==generation)return;
       game.restore(record?.data);applyFollower(record?.data);
@@ -430,17 +432,13 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(!active||busy)return;
     active=false;generation++;clearTimeout(huntTimer);overlay.hidden=true;studio.hide();encounter=null;
     if(stage.dataset.consoleOpen==='spirits')delete stage.dataset.consoleOpen;
-    if(focus)(opener?.isConnected?opener:canvas).focus({preventScroll:true});requestFrame();
+    if(focus)(opener?.getClientRects().length?opener:canvas).focus({preventScroll:true});requestFrame();
   }
   dismiss.addEventListener('click',()=>close());
   overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
   panel.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();return;}
-    if(e.key!=='Tab')return;
-    const controls=[...panel.querySelectorAll('button:enabled,select:enabled,input:enabled,summary')].filter(b=>b.getClientRects().length);
-    if(controls.length&&((e.shiftKey&&document.activeElement===controls[0])||(!e.shiftKey&&document.activeElement===controls.at(-1)))){
-      e.preventDefault();(e.shiftKey?controls.at(-1):controls[0]).focus();
-    }
+    if(e.key==='Escape'&&!e.isComposing){e.preventDefault();e.stopPropagation();close();return;}
+    cycleDialogFocus(e,panel);
   });
   return {open,close,observe,refreshFollower,get active(){return active;},dispose(){clearTimeout(huntTimer);studio.dispose();}};
 }

@@ -168,6 +168,72 @@ function createKloseScenery(T, parent, surface) {
     return meshData(p,colors,idx);
   }
   shape('plume',curledBlade(),colored);
+  {
+    const route=new T.CatmullRomCurve3([[-3.65,-.62,.11],[-3.38,.95,-.23],[-3.46,2.02,.08],
+      [-2.61,3.46,.35],[-1.05,4.08,.15],[-.37,4.82,-.09],[1.05,4.20,-.25],
+      [2.13,3.76,-.10],[3.27,2.47,.19],[3.46,1.41,.39],[4.03,-.55,.25]].map(a=>new T.Vector3(...a)));
+    const p=[],c=[],ix=[],rows=68,sides=16;
+    for(let j=0;j<=rows;j++){
+      const t=j/rows,at=route.getPoint(t),dir=route.getTangent(t),len=Math.hypot(dir.x,dir.y);
+      const swell=.42+.22*(2*t-1)**2+.23*Math.sin(3.7*Math.PI*t+.6)**8;
+      for(let i=0;i<sides;i++){
+        const a=i*tau/sides,flute=Math.cos(4*a+5.2*t+.23*Math.sin(13*t));
+        const w=swell*(1+.16*flute+.06*Math.sin(2*a-.9*t)),radial=Math.cos(a)*w;
+        p.push(at.x+dir.y/len*radial,at.y-dir.x/len*radial,at.z+Math.sin(a)*w*.90);
+        const value=.74+.16*flute+.075*Math.cos(2*a);c.push(value,value*.96,value*.80);
+        if(j){const n=j*sides+i,b=j*sides+(i+1)%sides;ix.push(n-sides,n,b-sides,b-sides,n,b);}
+      }
+    }
+    shape('swampVault',meshData(p,c,ix),colored);
+  }
+  // The body, turned-back lip and dark recess of the ochre pod in map 11.
+  {
+    const rings=[[.02,-.88,'#57432d'],[.64,-.84,'#846439'],[.92,-.50,'#a88446'],
+      [1,.08,'#c69e5d'],[1,.45,'#cba66c'],[.92,.51,'#e9c587'],[.82,.44,'#b57c47'],
+      [.77,.37,'#efd2a6'],[.72,.28,'#80afa2'],[.70,.12,'#527c75'],[.55,-.33,'#203a40'],[.01,-.54,'#19272b']];
+    const p=[],c=[],ix=[],segs=80;
+    for(const [j,[r,z,tint]] of rings.entries()){
+      const shade=color(tint);
+      for(let i=0;i<segs;i++){
+        const a=i*tau/segs,fold=1+.075*Math.cos(3*a+.4)+.034*Math.cos(5*a);
+        const groove=.85+.15*Math.cos(7*a-.65*z);
+        p.push(r*fold*Math.cos(a),r*Math.sin(a)*fold-.12*Math.cos(a)*r,z+.14*r*Math.sin(3*a));
+        c.push(shade.r*groove,shade.g*groove,shade.b*groove);
+        if(j){const n=j*segs+i,b=j*segs+(i+1)%segs;ix.push(n-segs,b-segs,n,n,b-segs,b);}
+      }
+    }
+    shape('swampPod',meshData(p,c,ix),colored);
+  }
+  {
+    const p=[],c=[],ix=[],rings=352,sides=12;
+    for(let j=0;j<=rings;j++){
+      const t=j/rings,angle=t*tau*2.45-.45;
+      const ca=Math.cos(angle),sa=Math.sin(angle),spread=.91+.34*t;
+      const rib=.5+.5*Math.cos(t*tau*69);
+      const width=(.39+.09*Math.sin(angle+.6))*(.86+.14*rib)*Math.min(1,.30+30*Math.min(t,1-t));
+      const y=.26+.58*t+.97*Math.max(0,-sa)+.43*Math.sin(angle-1.1)**4;
+      for(let i=0;i<sides;i++){
+        const a=i*tau/sides,edge=Math.cos(a)*width;
+        p.push(ca*(3.25*spread+edge),y+width*Math.sin(a),sa*(2.34*spread+edge));
+        const value=.64+.27*rib+.09*Math.sin(a);c.push(value,value,value*.88);
+        if(j){const n=j*sides+i,b=j*sides+(i+1)%sides;ix.push(n-sides,b-sides,n,n,b-sides,b);}
+      }
+    }
+    shape('swampCoil',meshData(p,c,ix),colored);
+  }
+  // Each tilted rib grows from a fluted foot to a keeled, inward-facing tip.
+  {
+    const p=[],c=[],ix=[],steps=16,section=[[-.58,-.22],[.15,-.42],[1,0],[.12,.42],[-.58,.22]];
+    for(let j=0;j<=steps;j++){
+      const t=j/steps,thick=(1-.985*t)**.65;
+      for(const [i,[dx,dz]] of section.entries()){
+        p.push(.72*t*t+.12*Math.sin(3.5*t)+dx*.31*thick,t,dz*.80*thick);
+        const hue=.64+.25*(i===2?.98:.58)+.13*t;c.push(hue,hue*.95,hue*.72);
+        if(j){const n=j*5+i,b=j*5+(i+1)%5;ix.push(n-5,n,b-5,b-5,n,b);}
+      }
+    }
+    shape('swampRib',meshData(p,c,ix),colored);
+  }
   function sodGeometry() {
     const n=38,p=[0,.19,0],rgb=[.84,1,.97],idx=[];
     for(let j=1;j<=5;j++)for(let i=0;i<n;i++) {
@@ -269,7 +335,8 @@ function createKloseScenery(T, parent, surface) {
       }
     }
     function blocked(x,z,pad=0) {
-      return Math.hypot(x,z)<8+pad || padClear(site.x+x,site.z+z,pad) || trail(site.x+x,site.z+z)<3+pad ||
+      const pod=site.id==='swamp'&&Math.hypot((x+3.6)/(5.4+pad),(z+13)/(3.4+pad))<1;
+      return pod || Math.hypot(x,z)<8+pad || padClear(site.x+x,site.z+z,pad) || trail(site.x+x,site.z+z)<3+pad ||
         pools.some(p=>Math.hypot((site.x+x-p.x)/(p.rx+pad),(site.z+z-p.z)/(p.rz+pad))<1.09);
     }
     function leafFan(x,y,z,s,colors,n=9) {
@@ -438,11 +505,37 @@ function createKloseScenery(T, parent, surface) {
       }
     }
     if(site.id==='swamp') {
-      // Root buttresses arch over the branch leading down to the vine passage.
-      for(const [x,z,r] of [[5,14,1],[-6,24,.8],[-7,-23,.9]]) {
-        const g=yAt(x,z),pts=[v(x-5*r,g,z),v(x-3.8*r,g+2.8*r,z-.4),v(x-.9*r,g+4.3*r,z-.3),v(x+2.6*r,g+3.5*r,z),v(x+5*r,g,z+.4)];
-        tendril(pts,.69*r,'#a58c53',true);
-        obstacle(x-5*r,z,.6*r);obstacle(x+5*r,z,.5*r);
+      const x=-3.6,z=-13,g=yAt(x,z);
+      stamp('swampPod',x,g+1.28,z,3.75,1.75,2.25,'#ffffff',-.16,-.16,-.07);
+      stamp('swampCoil',x,g,z,1,1,1,'#9b9a54');
+      for(let i=0;i<14;i++){const a=i*tau/14;obstacle(x+3.47*Math.cos(a),z+2.59*Math.sin(a),.72);}
+      obstacle(x,z,2.0);
+      for(const side of [-1,1])for(let j=0;j<7;j++){
+        const f=j/6,xx=12+(f-.5)*7.1,zz=-16+side*1.46+.38*Math.sin(f*Math.PI);
+        const y=yAt(xx,zz)+.62,scale=1.5+1.65*Math.sin(f*Math.PI)+.30*f;
+        stamp('swampRib',xx,y,zz,1.55,scale,1.35,'#c4a25b',0,side*Math.PI/2-.12,-.11);
+        stamp('round',xx,y,zz,1.0,.50,.65,'#8c874c');obstacle(xx,zz,.53);
+      }
+      // The rooted opening sits across the bearing of the trail to map 12.
+      const rx=-17,rz=-13,ux=.62,uz=-.78,fx=.78,fz=.62;
+      for(let k=0;k<3;k++){
+        const along=k*1.1,foot=3.4+.46*k;
+        const coord=(u,h,offset=0)=>{const xx=rx+u*ux+(along+offset)*fx,zz=rz+u*uz+(along+offset)*fz;
+          return v(xx,yAt(xx,zz)+h,zz);};
+        const a=coord(-foot,0),b=coord(foot+.42,0);
+        const origin=coord(0,0);
+        stamp('swampVault',origin.x,origin.y,origin.z,foot/3.61,1-.045*k,1,k===0?'#997945':'#bda06b',
+          .035*k,.90+.03*k,.047*k);
+        obstacle(a.x,a.z,.66);obstacle(b.x,b.z,.66);
+        for(const side of [-1,1]){
+          const knee=coord(side*(foot-.19),1.68,.14);
+          stamp('round',knee.x,knee.y,knee.z,.62,.57,.58,'#98783c');
+          for(const toe of [-1,1]){
+            const tip=coord(side*(foot+1.06),.02,toe*.94);
+            tendril([knee,coord(side*(foot+.21),.66,toe*.38),tip],.34,'#ac8d55',true);
+            obstacle(tip.x,tip.z,.29);
+          }
+        }
       }
     }
     if(site.id==='forest') {

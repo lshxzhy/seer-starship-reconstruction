@@ -1,4 +1,4 @@
-  function createFlightDeck(boarding,onTravel,requestFrame,onPlanetTravel,parkedRamp,drawSystemChart){
+  function createFlightDeck(boarding,onTravel,requestFrame,onPlanetTravel,parkedRamp,drawSystemChart,surfaceNavigation,onGuide,onLookNorth){
     const overlay=root.querySelector('[data-overlay]'),dialog=overlay.querySelector('[role="dialog"]');
     const title=overlay.querySelector('[data-panel-title]'),dismiss=overlay.querySelector('[data-dismiss]');
     const dock=root.querySelector('.ship-dock'),triggers=[...dock.querySelectorAll('[data-console]')];
@@ -24,9 +24,13 @@
     stage.addEventListener('seer-visit-crew',visitCrew);
     dutyChat.addEventListener('click',()=>{const id=dutyChat.dataset.characterId;close(false);boarding.openDutyChat(id);});
     root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
-    const map=createShipMap({container:pages.get('map'),getState,parkedRamp,drawSystemChart,
+    const map=createShipMap({container:pages.get('map').querySelector('[data-navigation-map]'),getState,parkedRamp,drawSystemChart,surfaceNavigation,
+      onGuide:id=>{close(false);onGuide(id);canvas.focus({preventScroll:true});},
       onTravel:(id,pose)=>{close(false);onTravel(id,pose);canvas.focus({preventScroll:true});},
       onPlanetTravel:(id,planetId)=>{close(false);onPlanetTravel(id,false,planetId);canvas.focus({preventScroll:true});}});
+    root.querySelector('[data-twin-horizon]').addEventListener('click',()=>{
+      close(false);onLookNorth();canvas.focus({preventScroll:true});
+    });
     const inventory=createPilotInventory({container:pages.get('bag'),getState,onUse:id=>{
       if(id==='map'||id==='locateDrill'){open('map',id==='locateDrill'?'machine':null);return;}
       boarding.useItem(id);
@@ -52,7 +56,7 @@
       current=key;stage.dataset.consoleOpen=key;
       for(const [id,page] of pages)page.hidden=key!==id;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded',String(trigger.dataset.console===key));
-      overlay.hidden=false;title.textContent=fromSurface?'舰载导航图':labels[key];
+      overlay.hidden=false;title.textContent=key==='map'?'导航图':labels[key];
       if(key==='map')map.open(target);
       if(key==='bag')inventory.open();
       if(key==='exchange')exchange.open();
@@ -80,19 +84,14 @@
       const el=e.target;
       if(el!==window&&el!==document&&el!==document.body&&el!==document.documentElement&&!root.contains(el))return;
       if(current&&e.key==='Tab'){
-        const controls=[...dialog.querySelectorAll('button:not(:disabled),select:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]')].filter(c=>c.getClientRects().length);
-        const first=controls[0],last=controls[controls.length-1];
-        if(first&&((e.shiftKey&&document.activeElement===first)||(!e.shiftKey&&document.activeElement===last))){
-          e.preventDefault();(e.shiftKey?last:first).focus();
-        }
-        return;
+        cycleDialogFocus(e,dialog);return;
       }
-      if((e.key==='Escape'||(current==='map'&&e.code==='KeyM'))&&current){
-        e.preventDefault();e.stopImmediatePropagation();close();return;
+      const editing=el.isContentEditable||el.closest?.('input,select,textarea,[role=textbox]');
+      if((e.key==='Escape'||(!editing&&current==='map'&&seerControlCode(e)==='KeyM'))&&current){
+        e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)close();return;
       }
-      if(el.isContentEditable||el.closest?.('input,select,textarea,[role=textbox]'))return;
-      const code=e.code||e.key.toUpperCase();
-      const key=code==='KeyM'||code==='M'?'map':code==='KeyB'||code==='B'?'bag':null;
+      if(editing)return;
+      const code=seerControlCode(e),key=code==='KeyM'?'map':code==='KeyB'?'bag':null;
       if(key){e.preventDefault();e.stopPropagation();if(!e.repeat)open(key);}
     }
     window.addEventListener('keydown',onKey,true);

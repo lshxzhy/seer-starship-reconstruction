@@ -6,6 +6,15 @@ function seerControlCode(event){
   if(event.key==='Shift')return event.location===2?'ShiftRight':'ShiftLeft';
   return /^[a-z]$/i.test(event.key)?'Key'+event.key.toUpperCase():event.key;
 }
+function cycleDialogFocus(event,panel){
+  if(event.key!=='Tab')return;
+  const controls=[...panel.querySelectorAll('button:enabled,select:enabled,input:enabled,textarea:enabled,a[href],summary,[tabindex="0"]')]
+    .filter(el=>el.getClientRects().length);
+  const first=controls[0],last=controls.at(-1);
+  if(first&&document.activeElement===(event.shiftKey?first:last)){
+    event.preventDefault();(event.shiftKey?last:first).focus({preventScroll:true});
+  }
+}
 function walkDirection(forward,side,yaw){
   const length=Math.hypot(forward,side);
   if(!length)return {x:0,z:0};

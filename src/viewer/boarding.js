@@ -46,6 +46,15 @@
     }
     dutyButton.addEventListener('click',()=>meet(nearbyDuty()));
     const exchangeButton=root.querySelector('[data-exchange]');
+    const actions=[embarkButton,benchButton,exchangeButton,callButton,dutyButton];
+    let primaryAction=null;
+    function updatePrimaryAction(){
+      const next=active&&!lifts.riding&&!flight.mounted?actions.find(button=>!button.hidden&&!button.disabled):null;
+      if(next===primaryAction)return;
+      if(primaryAction){primaryAction.removeAttribute('data-primary-action');primaryAction.removeAttribute('aria-keyshortcuts');}
+      primaryAction=next;
+      if(next){next.setAttribute('data-primary-action','');next.setAttribute('aria-keyshortcuts','E');}
+    }
     const pickRay=new T.Raycaster(),pickPoint=new T.Vector2();
     const routeButton=root.querySelector('[data-delivery-track]');
     const jobRecord=root.querySelector('[data-delivery-record]');
@@ -357,9 +366,10 @@
       mount.disabled=flight.landing;
       climb.hidden=descend.hidden=!active||!flight.mounted;
       benchButton.hidden=!atBench();
-      benchButton.textContent=!drillOwned?'领取挖矿钻头':mined()>=3?'矿样已采完':!drillEquipped?'装备钻头':'钻取训练矿样';
+      benchButton.textContent=!drillOwned?'领取挖矿钻头':mined()>=trainingTerms.capacity?'矿样已采完':!drillEquipped?'装备钻头':'钻取训练矿样';
       benchButton.disabled=mined()>=trainingTerms.capacity;
       exchangeButton.hidden=!atExchange();
+      updatePrimaryAction();
       routeButton.hidden=delivered()===trainingTerms.capacity;
       routeButton.textContent=goal()?'暂停路标':samples?'引导至动力室':'引导至机械室矿架';
       let record=(delivered()===trainingTerms.capacity?'任务已完成 · ':'')+'背包 '+samples+
@@ -448,6 +458,7 @@
     function showLift(s){
       const cabin=cabinFor(s),carried=lifts.riding;
       callButton.hidden=!s?.canCall||flight.mounted;
+      updatePrimaryAction();
       liftControl.hidden=!s?.canDepart||!cabin||carried;
       if(!liftControl.hidden){
         const key=s.lineId+'/'+s.level;
@@ -699,11 +710,13 @@
         !root.contains(target))return;
       if(target.isContentEditable || target.closest?.('input,select,textarea,[role="textbox"]'))return;
       const code=seerControlCode(e);
-      if(code==='KeyE'&&currentBerth()){
-        e.preventDefault();if(!e.repeat)embarkButton.click();return;
-      }
-      if(code==='KeyE'&&nearbyDuty()){
-        e.preventDefault();if(!e.repeat)meet(nearbyDuty());return;
+      if(code==='KeyE'){
+        if(e.repeat){e.preventDefault();return;}
+        // Moving into or out of a workstation between two HUD refreshes must
+        // resolve against the current pose, just as the button handler does.
+        flightControls();showLift(lifts.status(pose));
+        if(primaryAction){e.preventDefault();primaryAction.click();}
+        return;
       }
       if(code==='KeyF'||code==='KeyV'){
         e.preventDefault();

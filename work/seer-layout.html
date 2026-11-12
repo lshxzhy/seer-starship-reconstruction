@@ -43,12 +43,10 @@
     </nav>
     <div class="ship-overlay" data-planet-atlas hidden>
       <section class="ship-window planet-atlas" role="dialog" aria-modal="true" aria-labelledby="planet-chart-title">
-        <header class="console-head"><div><small>帕诺星系</small><h2 id="planet-chart-title">地表导航图</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭地图">×</button></header>
+        <header class="console-head"><div><small>帕诺星系 ／ L-01</small><h2 id="planet-chart-title">登陆艇航线</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭航线">×</button></header>
         <div class="atlas-body"><svg data-site-map role="img" aria-label="行星导航图"></svg>
         <section class="atlas-controls"><label>目的地 <select data-site-select></select></label><p data-site-summary></p>
-          <div class="atlas-actions"><button class="ship-key" type="button" data-track-site>步行引导</button><button class="ship-key" type="button" data-twin-horizon hidden>望向双星</button><button class="ship-key" type="button" data-site-transport hidden>传送到此</button><button class="ship-key" type="button" data-target-only hidden>设为手动航点</button><button class="ship-key" type="button" data-unseat hidden>离开驾驶席</button></div>
-          <label data-surface-expression hidden>面屏表情 <select data-face-expression="planet"></select></label>
-          <button class="ship-key" type="button" data-browse-ship hidden>赛尔号舰内图</button></section></div>
+          <div class="atlas-actions"><button class="ship-key" type="button" data-track-site>自动飞往此处</button><button class="ship-key" type="button" data-target-only>设为手动航点</button><button class="ship-key" type="button" data-unseat hidden>离开驾驶席</button></div></section></div>
       </section>
     </div>
     <div class="shuttle-hand" data-shuttle-hand hidden aria-label="登陆艇飞行操纵">
@@ -67,7 +65,12 @@
     <div class="ship-overlay" data-overlay hidden>
       <section class="ship-window" role="dialog" aria-modal="true" aria-labelledby="ship-panel-title">
         <header class="console-head"><div><small>SE–A015</small><h2 id="ship-panel-title" data-panel-title></h2></div><button type="button" class="ship-dismiss" data-dismiss aria-label="关闭窗口">×</button></header>
-        <div data-page="map" hidden></div>
+        <div data-page="map" hidden><div data-navigation-map></div>
+          <div class="ship-row map-field-tools" data-field-tools hidden>
+            <button class="ship-key" type="button" data-twin-horizon hidden>望向双星</button>
+            <label>面屏表情 <select data-face-expression="planet"></select></label>
+          </div>
+        </div>
         <div data-page="bag" hidden></div>
         <div data-page="exchange" hidden></div>
         <section data-page="crew" class="ship-systems" hidden>

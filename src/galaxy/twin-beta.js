@@ -7,8 +7,8 @@ const BETA_WORLD=defineTwinWorld({
     {id:'beta-plain',name:'双子贝塔星',x:0,z:0,mapId:47,lookAt:[4,-32],lookPitch:.22,description:'红褐色巨型掘进机。单目绿灯下方是红色进气口，两条节臂垂下三枚锥钻。'},
     {id:'beta-waste',name:'贝塔星荒原',x:-105,z:-60,mapId:49,lookAt:[-109,-83],lookPitch:.24,description:'青光裂谷贯穿六角电能石层。隔岸可以看见成组的玻璃罩勘察站；左侧圆台通往双子阿尔法星海盗能源站。'},
     {id:'beta-ruins',name:'海盗要塞废墟',x:102,z:-9,mapId:48,lookAt:[108,-31],description:'赭黄装甲塌入灰岩，横断的管束、格栅地沟和破裂的舱壁从断层中露出。'},
-    {id:'beta-training',name:'海盗训练场',x:-185,z:-76,mapId:501,lookAt:[-184,-89],description:'分层校准台前立着四座紫色机柱，侧墙保存青色光栅和断开的检修平台。'},
-    {id:'beta-hall',name:'精灵召唤场',x:-255,z:-139,mapId:502,lookAt:[-255,-149],description:'古藤从三座拱廊爬向能源通道，中央圆盘与红、绿、蓝三个站位仍相连。'}
+    {id:'beta-training',name:'海盗训练场',x:-187.5,z:-73,mapId:501,lookAt:[-184.6,-90],lookPitch:-.055,description:'四座校准柱嵌在紫色维护墙前，浅色断层楼板下垂着线缆。右侧保留四道青光栅。'},
+    {id:'beta-hall',name:'精灵召唤场',x:-258,z:-134.8,mapId:502,lookAt:[-254.3,-153.0],lookPitch:-.14,description:'从入口坡道可见中央黄盘、左蓝右红与后方绿座。穿过嵌有倒三角的中门，即可走进检修通道。'}
   ],
   routes:[['beta-plain','beta-waste'],['beta-plain','beta-ruins'],['beta-waste','beta-training'],['beta-training','beta-hall']],
   landingSites:[{id:'beta-landing',name:'重机坪',x:1,z:39,description:'巨型掘进机南面的平坦泊点。'}],
@@ -25,6 +25,10 @@ const BETA_WORLD=defineTwinWorld({
       const t=Math.max(0,Math.min(1,(Math.hypot(x-cx,z-cz)-r)/8));
       h=level+(h-level)*t*t*(3-2*t);
     }
+    // The foreground panels in 502 overlook the coloured sockets. A shallow
+    // entry ramp carries that view down to the level floor, including on foot.
+    if(Math.abs(x+255)<21&&z>-144.7&&z<-119)
+      h+=3.1*T.MathUtils.smoothstep(z,-144.7,-133)*(1-T.MathUtils.smoothstep(z,-128,-119))*(1-T.MathUtils.smoothstep(Math.abs(x+255),12,21));
     return h;
   },
   groundTone(x,z,h){
@@ -103,15 +107,29 @@ function buildBetaLandmarks(kit){
   // Low surface panels follow actual terrain at every corner, including its
   // spherical correction. Each shape has its own bevel, seams and fasteners.
   const deck=new Map();
-  function inlay(x,z,outline,c,lift=.055){
+  function inlay(x,z,outline,c,lift=.055,spacing=Infinity){
     let data=deck.get(c);if(!data){data={v:[],i:[]};deck.set(c,data);}
-    const start=data.v.length/3;
-    for(const [dx,dz] of outline)data.v.push(x+dx,ground(x+dx,z+dz)+lift,z+dz);
-    for(let k=1;k<outline.length-1;k++)data.i.push(start,start+k+1,start+k);
+    const area=outline.reduce((sum,[x,z],k)=>{const [nx,nz]=outline[(k+1)%outline.length];return sum+x*nz-z*nx;},0);
+    for(let k=1;k<outline.length-1;k++){
+      const a=outline[0],b=outline[area>0?k+1:k],c=outline[area>0?k:k+1];
+      const count=Math.max(1,Math.ceil(Math.max(Math.hypot(a[0]-b[0],a[1]-b[1]),Math.hypot(a[0]-c[0],a[1]-c[1]),Math.hypot(b[0]-c[0],b[1]-c[1]))/spacing));
+      for(let row=0;row<=count;row++){
+        const start=data.v.length/3;
+        for(let j=0;j<=count-row;j++){
+          const dx=x+a[0]+(b[0]-a[0])*j/count+(c[0]-a[0])*row/count;
+          const dz=z+a[1]+(b[1]-a[1])*j/count+(c[1]-a[1])*row/count;
+          data.v.push(dx,ground(dx,dz)+lift,dz);
+          if(row<count&&j<count-row){
+            const i=start+j,n=i+count-row+1;data.i.push(i,i+1,n);
+            if(j+1<count-row)data.i.push(i+1,n+1,n);
+          }
+        }
+      }
+    }
   }
-  function floorPanel(x,z,w,d,tone){
+  function floorPanel(x,z,w,d,tone,spacing=Infinity){
     const a=w/2,b=d/2,k=Math.min(a,b)*.25;
-    inlay(x,z,[[-a+k,-b],[a-k,-b],[a,-b+k],[a,b-k],[a-k,b],[-a,b],[-a,-b+k]],tone);
+    inlay(x,z,[[-a+k,-b],[a-k,-b],[a,-b+k],[a,b-k],[a-k,b],[-a,b],[-a,-b+k]],tone,.062,spacing);
     inlay(x,z,[[-a+k,-b+.11],[a-k,-b+.11],[a-k-.20,-b+.19],[-a+k,-b+.19]],edge,.075);
     for(const dx of [-a+.38,a-.38])for(const dz of [-b+.39,b-.39])
       add(hex,gun,x+dx,ground(x+dx,z+dz)+.073,z+dz,.073,.024,.073);
@@ -517,75 +535,211 @@ function buildBetaLandmarks(kit){
       for(let j=0;j<4;j++)add(box,j%2?gold:light,dx-2.3+j*1.4,y+hh-.40,dz+1.87,.57,.25,.10,0,0,-.24);
       if(k%2===0)rock(dx,dz-3.8,4.5,6.9+k*.22,k);
     }
-  }
-  function summoningHall(){
-    const cx=-255,cz=-150,y=ground(cx,cz),arcG=new T.TorusGeometry(1,.13,10,38,Math.PI);
-    // The opening through the centre arch is visible from the arrival point.
-    for(let j=-1;j<=1;j++){
-      const x=cx+j*8.2,z=cz-7+(j===0?-1.65:0),r=j===0?4.4:3.45;
+    const face=metal(0x625278),casing=metal(0xa3aba0),navy=metal(0x3b424d);
+    // Behind the four heads the resource shows a purple maintenance wall,
+    // broken green-grey plate lips and a loose bundle of downward cable loops.
+    for(let j=0;j<6;j++){
+      const dx=x-11.36+j*4.49,dz=z-3.15,height=5.26+.28*Math.sin(j*1.57);
+      add(box,face,dx,y+2.5,dz,4.42,5.05,1.12);block(dx,dz,1.72,5.35);
+      for(const s of [-1,1])add(box,navy,dx+s*1.94,y+2.56,dz+.59,.14,4.8,.12);
+      add(box,casing,dx,y+height,dz+.24,4.75,.49,2.7,0,0,.07*Math.cos(j));
+      add(box,deckDune,dx,y+height+.30,dz+.29,4.48,.12,2.58,0,0,.07*Math.cos(j));
+      if(j===2||j===3)for(let k=0;k<3;k++){
+        const a=dx-1.37+k*.90;pipe([p(a,y+height-.06,dz+.98),p(a+.15,y+height-1.03-.19*(k%2),dz+1.18),
+          p(a+.72,y+height-1.13-.14*k,dz+1.10),p(a+1.1,y+height-.10,dz+1.05)],.095,gun,12);
+      }
+      if(j===0||j===5){
+        add(box,navy,dx,y+2.90,dz+.70,2.20,2.02,.13);
+        for(let k=0;k<6;k++)add(box,edge,dx-.82+.32*k,y+2.85,dz+.81,.13,1.19,.09,0,0,-.12);
+      }
+    }
+    for(let j=0;j<4;j++){
+      const dx=x-5.5+j*3.7;
       for(const side of [-1,1]){
-        const px=x+side*r;
-        add(box,plum,px,y+2.3,z,1.04,4.6,2.0);block(px,z,.78,8.0);
-        add(box,iron,px,y+.41,z,1.46,.82,2.34);
+        add(chamfer,ochre,dx+side*.92,y+.47,z+.50,.62,.96,.63,0,0,-side*.24);
+        rod(p(dx+side*.75,y+3.06,z+.89),p(dx+side*.99,y+4.08,z+.72),.075,gold,hex);
       }
-      add(arcG,plum,x,y+4.6,z,r,r,2.8);
-      add(arcG,metal(0xa69a62),x,y+4.6,z+.58,r*.86,r*.86,1.08);
-      for(let k=0;k<=10;k++){
-        const a=Math.PI*k/10;
-        add(chamfer,k%2?purple:plum,x+r*Math.cos(a),y+4.6+r*Math.sin(a),z,r*.20,r*.33,1.25,0,0,a-Math.PI/2);
-        if(k%2===0)add(ball,gold,x+r*Math.cos(a),y+4.6+r*Math.sin(a),z+1.06,.16,.16,.10);
-      }
-      if(j===0){
-        const doorRear=z-4.1;
-        for(const s of [-1,1])add(box,iron,x+s*(r-.3),y+2.1,doorRear,1.25,4.2,6.0);
-        add(arcG,iron,x,y+4.55,doorRear,r-.35,r-.35,3.7);
-        add(chamfer,chartreuse,x,y+4.65+r-.63,z+.79,.48,.69,.30,0,0,Math.PI);
-      }
-      if(j!==0){
-        add(box,grime,x,y+2.50,z-.55,5.7,5.0,1.0);
-        add(ball,grime,x,y+5.40,z-.45,2.84,2.45,.56);block(x,z-.55,2.55,7.75);
-        ring(x,y+4.1,z+.17,.91,gun,axisZ);add(ball,green,x,y+4.08,z+.29,.54,.69,.18);
-      }
+      add(drum,navy,dx,y+2.51,z+.96,.47,.17,.47,Math.PI/2);
+      add(ball,green,dx,y+2.51,z+1.09,.205,.24,.09);
     }
-    add(drum,gun,cx,y+.03,cz+1.4,3.5,.09,3.5);
-    ring(cx,y+.13,cz+1.4,3.1,grime);
-    add(drum,chartreuse,cx,y+.13,cz+1.4,2.78,.095,2.78);
-    for(const [dx,dz,m] of [[-4.7,3.5,blue],[4.7,3.5,red],[0,-4.0,green]]){
-      ring(cx+dx,y+.12,cz+1.4+dz,.94,edge);add(drum,m,cx+dx,y+.12,cz+1.4+dz,.71,.08,.71);
+    for(let k=0;k<4;k++){
+      const h=y+.98+k*.87;
+      rod(p(xx-2.72,h,z+.51),p(xx+2.72,h-.14,z+.51),.22,aqua);
+      rod(p(xx-2.72,h+.05,z+.70),p(xx+2.72,h-.09,z+.70),.075,material(0xd4ffff,{emissive:0x85ffff,emissiveIntensity:.72}));
     }
-    for(const s of [-1,1])for(let j=0;j<5;j++){
-      const x=cx+s*(10.5+j*.8),z=cz-5.8+j*1.5;
-      const vine=pipe([p(x,y+7.9-.5*j,z),p(x-s*.72,y+6.2,z+.8),p(x+s*.61,y+3.2,z-.25),p(x-s*.48,y+.57,z+.39),p(x+s*.17,y+.16,z+2.75)],.15+.025*j,grime,22);
-      for(let n=1;n<5;n++){
-        const u=vine.getPointAt(n/6);
-        add(ball,grime,u.x+s*.22,u.y+.12,u.z+.11,.38,.12,.23,0,0,s*.58);
-      }
+    for(const [sx,sz,h] of [[-9.4,-.9,5.57],[2.35,-2.37,5.74]]){
+      const dx=x+sx,dz=z+sz;
+      add(box,navy,dx,y+h,dz,1.22,1.87,.87,0,-.24,-.36);
+      add(box,purple,dx-.10,y+h+.20,dz+.44,1.07,1.49,.12,0,-.24,-.36);
+      add(ball,gun,dx+.30,y+h-.48,dz+.62,.48,.52,.35);add(ball,green,dx+.27,y+h-.43,dz+.89,.28,.35,.11);
     }
     for(let k=0;k<3;k++){
-      const z=cz+5+k*2.65;add(box,gun,cx+9,y+.019,z,2.52,.05,2.45);
-      add(box,aqua,cx+9,y+.065,z,.16,.05,2.35);
+      const dx=x+11.6,dz=z-7.5;
+      add(box,navy,dx,y+7.18+k*.72,dz,3.2,.70,1.3,.12,-.30,.08);
+      add(box,green,dx,y+7.18+k*.72,dz+.65,1.85-.38*k,.17,.09,0,-.31,.11);
     }
-    const ochreVine=material(0x6c753a,{roughness:.83}),leafVine=material(0x788745,{roughness:.77});
-    for(const s of [-1,1])for(let k=0;k<3;k++){
-      const x=cx+s*(14.1+k*1.3),z=cz-7.3+3*k;
-      const runners=pipe([p(x+s*.85,y+8.8,z-1.2),p(x-s*1.8,y+7.2,z-.3),p(x+s*.43,y+4.9,z+.68),
-        p(x-s*.97,y+3.4,z+.33),p(x+s*.8,y+.71,z+1.5),p(x-s*2.8,y+.30,z+4),p(x-s*3.2,y+.12,z+6.6)],.33+k*.10,ochreVine,32);
-      for(let j=1;j<=8;j++){
-        const at=runners.getPointAt(j/10);
-        add(chamfer,leafVine,at.x+s*.40,at.y+.24,at.z,.70,.18,.31,.35,j*.94,s*.45);
+  }
+  function summoningHall(){
+    const cx=-255,cz=-150,y=ground(cx,cz),shell=metal(0x34313c),wall=metal(0x534452);
+    const plating=metal(0x645774),fascia=metal(0x76528a),lichen=metal(0x868751);
+    const limeLine=emit(0xacc742,.33),cyanLine=emit(0x2bc7e2,.46),olive=material(0x5b622b,{roughness:.9});
+    const inset=metal(0x28323f),grille=metal(0x657684),canvasStone=metal(0x8f8878);
+    const arc=new T.TorusGeometry(1,.15,12,52,Math.PI),trim=new T.TorusGeometry(1,.045,8,52,Math.PI);
+    const panel=(x,z,w,h,d,m,gap=.025)=>add(box,m,cx+x,y+h/2+gap,cz+z,w,h,d);
+    const at=(x,h,z)=>p(cx+x,y+h,cz+z);
+    function rib(x1,h1,z1,x2,h2,z2,r,m){rod(at(x1,h1,z1),at(x2,h2,z2),r,m,hex);}
+    function barrier(x1,z1,x2,z2,h,d,m){
+      const dx=x2-x1,dz=z2-z1,len=Math.hypot(dx,dz),steps=Math.ceil(len/(d*.9)),yaw=Math.atan2(dx,dz);
+      add(box,m,cx+(x1+x2)/2,y+h/2,cz+(z1+z2)/2,d,h,len,0,yaw);
+      for(let k=0;k<=steps;k++){
+        const x=cx+x1+dx*k/steps,z=cz+z1+dz*k/steps;block(x,z,d*.58,Math.max(.6,y+h-ground(x,z)));
       }
     }
-    for(let row=0;row<3;row++)for(let k=-2;k<=2;k++){
-      const x=cx+k*4.3,z=cz+7.43+row*3.72;floorPanel(x,z,4.17,3.58,k%2?deckBlue:deckDune);
-      if(k===-2||k===1)inlay(x,z,[[-1.91,-1.42],[-1.74,-1.42],[-1.74,1.55],[-1.91,1.55]],aqua,.081);
+    // Interlocking roof bands form a solid vault, open at the entrance and
+    // around the bent rear passage. The central front of the hall stays clear.
+    const sections=[[-16,6.1],[-14.1,9],[-9.2,11.4],[-3.9,12.9],[3.9,12.9],[9.2,11.4],[14.1,9],[16,6.1]];
+    for(let i=0;i<sections.length-1;i++){
+      const [a,h0]=sections[i],[b,h1]=sections[i+1],h=(h0+h1)/2;
+      const length=Math.hypot(b-a,h1-h0),tilt=Math.atan2(h1-h0,b-a);
+      add(box,i%2?wall:shell,cx+(a+b)/2,y+h,cz+.5,length+.11,.52,31.8,0,0,tilt);
+      kit.cover(cx+(a+b)/2,cz+.5,(b-a)/2,15.9,Math.min(h0,h1)-.32,Math.max(h0,h1)+.35);
+      for(const z of [-13,-7.2,.1,7.8,15.6])rib(a,h0-.31,z,b,h1-.31,z,.17,purple);
     }
-    for(const [dx,dz,lightMat] of [[-4.7,3.5,blue],[4.7,3.5,red],[0,-4,green]]){
-      const vec=p(dx,0,dz).normalize();
-      for(const width of [.21,.082]){
-        const a=p(cx,y+(width>.1?.11:.17),cz+1.4).addScaledVector(vec,3.4);
-        const b=p(cx+dx,y+(width>.1?.11:.17),cz+1.4+dz).addScaledVector(vec,-.84);
-        rod(a,b,width,width>.1?gun:lightMat,hex);
+    for(const s of [-1,1]){
+      barrier(s*16,-15.0,s*16,15.6,6.4,1.35,wall);
+      for(let n=0;n<5;n++){
+        const z=-12+5.4*n;
+        panel(s*15.5,z,.8,6.1,1.4,fascia);
+        for(const h of [3.5,4.2,4.77])rib(s*15.22,h,z-2.5,s*15.22,h,z+2.4,.12,h>4.5?gold:patina);
+        rib(s*15,5.5,z,s*13.7,8.7,z,.20,gun);
       }
+    }
+    // Behind the key: the original central aperture shows successive blue
+    // reveals and a graded threshold. Offset the far exit to keep the front
+    // view enclosed while leaving a real route through the room.
+    barrier(-14.8,-14.5,-5.2,-14.5,9.2,1.65,shell);
+    barrier(5.2,-14.5,14.8,-14.5,9.2,1.65,shell);
+    // Close the whole north gable up to the pitched shell. The passage remains
+    // a physical cut-out through its lower centre, open from both directions.
+    const gable=new T.Shape();gable.moveTo(-16.15,-.2);gable.lineTo(-3.6,-.2);
+    gable.lineTo(-3.6,5.0);gable.lineTo(-2.7,6.83);gable.lineTo(2.7,6.83);gable.lineTo(3.6,5);gable.lineTo(3.6,-.2);gable.lineTo(16.15,-.2);
+    for(const [x,h] of [...sections].reverse())gable.lineTo(x,h+.33);
+    gable.closePath();add(new T.ExtrudeGeometry(gable,{depth:.47,bevelEnabled:false}),wall,cx,y,cz-14.9);
+    kit.cover(cx,cz-14.6,3.6,.4,6.72,13.32);
+    for(const s of [-1,1])for(const z of [-14.37,-14.16]){
+      rib(s*14,8.8,z,s*8.9,10.95,z,.19,gun);rib(s*8.9,10.95,z,s*3.6,12.42,z,.19,gun);
+    }
+    barrier(-4.1,-11.2,-4.1,-23,7.6,1.1,inset);
+    barrier(4.1,-11.2,4.1,-17.8,7.6,1.1,inset);
+    barrier(-4.1,-23,4.1,-23,7.5,1.1,inset);
+    add(box,shell,cx,y+7.55,cz-17.1,8.8,.47,12.2);
+    kit.cover(cx,cz-17.1,4.4,6.1,7.2,7.9);
+    for(let n=0;n<4;n++){
+      const z=-12-n*2.55;
+      for(const s of [-1,1]){
+        if(s===1&&z<-17.8)continue;
+        add(box,plating,cx+s*3.45,y+2.5,cz+z,.62,5,1.03,0,0,-s*.055);
+        rib(s*3.40,4.83,z,s*2.48,6.42,z,.39,plating);
+      }
+      add(box,grille,cx,y+.045,cz+z,5.9,.08,1.14);
+    }
+    // Armoured door faces follow the irregular stepped feet of the resource.
+    const leaf=new T.Shape();leaf.moveTo(-2.75,.12);leaf.lineTo(-2.72,3.85);
+    leaf.bezierCurveTo(-2.64,6.14,-1.30,7.37,.18,7.28);leaf.bezierCurveTo(1.93,7.06,2.78,5.41,2.74,3.68);
+    for(const [x,h] of [[2.65,.41],[1.82,.37],[1.55,1.13],[1.08,.99],[.83,.22],[-.32,.24],[-.64,1.06],[-1.13,1.17],[-1.45,.18]])leaf.lineTo(x,h);
+    leaf.closePath();
+    const door=new T.ExtrudeGeometry(leaf,{depth:.53,bevelEnabled:true,bevelSize:.09,bevelThickness:.10,bevelSegments:2,curveSegments:18});
+    for(let j=-1;j<=1;j++){
+      const x=j*8.68,z=j===0?-10.1:-8.2,r=j===0?4.05:3.46,shoulder=4.1;
+      for(const s of [-1,1]){
+        panel(x+s*r,z,1.05,shoulder,1.95,fascia);block(cx+x+s*r,cz+z,.76,shoulder+r+.67);
+        panel(x+s*r,z+.13,1.40,.43,2.35,gun);
+        add(box,limeLine,cx+x+s*r,y+2.2,cz+z+.97,.075,3.55,.074);
+      }
+      add(arc,fascia,cx+x,y+shoulder,cz+z,r,r,4.6);
+      add(trim,limeLine,cx+x,y+shoulder,cz+z+.76,r*.92,r*.92,1.0);
+      add(trim,gun,cx+x,y+shoulder,cz+z+.56,r*1.11,r*1.11,2.1);
+      if(j){
+        add(door,lichen,cx+x,y,cz+z-.3);block(cx+x,cz+z-.27,2.65,7.48);
+        const ex=x-.18*j,eh=4.05;
+        add(drum,gun,cx+ex,y+eh,cz+z+.38,.99,.31,.99,Math.PI/2);
+        ring(cx+ex,y+eh,cz+z+.62,.83,olive,axisZ);
+        add(ball,grime,cx+ex,y+eh,cz+z+.63,.65,.77,.18);
+        add(ball,limeLine,cx+ex-.08,y+eh+.02,cz+z+.79,.25,.47,.09,0,0,-.40);
+        for(const [a,b] of [[[-2.57,2.32],[-1.52,2.71]],[[-1.52,2.71],[-1.81,1.25]],[[1.02,3.12],[1.90,1.04]],[[0,3.08],[.15,1.82]]])
+          rib(x+a[0],a[1],z+.37,x+b[0],b[1],z+.37,.088,gun);
+      }else{
+        const key=new T.Shape();key.moveTo(-1.14,.69);key.lineTo(1.14,.69);key.lineTo(.67,-.77);key.lineTo(-.67,-.77);key.closePath();
+        add(new T.ExtrudeGeometry(key,{depth:.55,bevelEnabled:true,bevelSize:.07,bevelThickness:.09,bevelSegments:1}),lichen,cx,y+7.15,cz+z+.21);
+        const sign=new T.Shape();sign.moveTo(-.58,.41);sign.lineTo(.58,.41);sign.lineTo(0,-.45);sign.closePath();
+        add(new T.ShapeGeometry(sign),green,cx,y+7.16,cz+z+.88);
+      }
+    }
+    // Plan view of 502: sockets are not a symmetric four-way cross. The green
+    // lens is behind the dais, the red is to the right, and the blue is nearer.
+    const deckBase=metal(0x4a4257),neonBlue=emit(0x55adf5,.30),neonRed=emit(0xf46573,.31),neonGreen=emit(0x72be59,.29);
+    inlay(cx,cz,[[-12.8,-7.5],[12.4,-7.5],[13.5,-3.7],[12.1,5.5],[6.2,7.7],[-9.4,7.7],[-12.9,4.9]],deckBase,.064,.78);
+    add(drum,gun,cx,y+.14,cz+.1,3.36,.20,3.36);
+    add(drum,olive,cx,y+.26,cz+.1,3.11,.18,3.11);
+    ring(cx,y+.36,cz+.1,2.76,limeLine);
+    add(drum,emit(0xd3dc4f,.24),cx,y+.38,cz+.1,2.62,.08,2.62);
+    add(drum,emit(0xe5e868,.18),cx,y+.43,cz+.1,2.21,.05,2.21);
+    for(const [x,z,m] of [[-4.66,1.66,neonBlue],[5.07,.34,neonRed],[-.18,-4.67,neonGreen]]){
+      const r=1.11;
+      add(drum,inset,cx+x,y+.12,cz+z,r,.18,r);ring(cx+x,y+.20,cz+z,.92,grille);
+      add(drum,m,cx+x,y+.243,cz+z,.77,.093,.77);add(drum,material(0xcdd5c5,{transparent:true,opacity:.22,roughness:.21}),cx+x,y+.30,cz+z,.53,.025,.53);
+    }
+    // Route the glow as planar inlays. Each strip follows the real entry ramp;
+    // the V-shaped sockets, maintenance openings and rivets stay underfoot.
+    function strip(path,width,m,lift){
+      for(let j=1;j<path.length;j++){
+        const [x,z]=path[j-1],[u,v]=path[j],l=Math.hypot(u-x,v-z),a=(v-z)/l*width/2,b=(x-u)/l*width/2;
+        const count=Math.ceil(l/1.1);
+        for(let k=0;k<count;k++){
+          const sx=x+(u-x)*k/count,sz=z+(v-z)*k/count,tx=x+(u-x)*(k+1)/count,tz=z+(v-z)*(k+1)/count;
+          inlay(cx,cz,[[sx-a,sz-b],[tx-a,tz-b],[tx+a,tz+b],[sx+a,sz+b]],m,lift);
+        }
+      }
+    }
+    function seam(path,m){
+      strip(path,.29,gun,.155);strip(path,.105,m,.18);
+    }
+    // Wide blue service channel left of the arena, inset into its slanted rim.
+    const trough=[[-13.0,7.5],[-10.5,8.4],[-6.1,-2.49],[-8.55,-3.48]];
+    inlay(cx,cz,trough,inset,.10,.76);strip([[-11.73,7.91],[-7.28,-2.97]],1.74,emit(0x268eb9,.17),.139);
+    seam([[-12.9,7.56],[-8.54,-3.37],[-6.19,-2.43]],limeLine);
+    for(let k=0;k<4;k++)seam([[-11.3+k*.74,6.31-k*1.78],[-11.06+k*.74,5.63-k*1.78],[-10.53+k*.74,5.83-k*1.78]],cyanLine);
+    for(const s of [-1,1])seam([[s*13,-6.56],[s*6.32,-6.55],[s*4.83,-8.78],[s*3.81,-9.08]],limeLine);
+    for(const [x,z,points] of [[-4.66,1.66,[[-3.67,1.4],[-3.12,1.21]]],[5.07,.34,[[3.99,.34],[3.42,.17]]],[-.18,-4.67,[[-.18,-3.61],[.18,-3.17]]]]){
+      seam([[x,z],...points],limeLine);
+    }
+    for(let row=0;row<5;row++)for(let col=-3;col<=3;col++){
+      const x=4.0*col+(row%2?.68:0),z=7.4+row*2.08;
+      floorPanel(cx+x,cz+z,3.91,2.04,(row+col)%3?canvasStone:deckDune,.85);
+    }
+    for(const track of [
+      [[-13,15],[-8,15],[-8,12.6],[-4,12.6],[-3.15,11.3],[.68,11.3],[1.56,9.91],[1.56,7.91]],
+      [[12.1,8.2],[8.42,8.2],[7.1,9.48],[4.15,9.48],[3.29,10.62],[1.58,10.62]],
+      [[-10.5,7.01],[-8.0,7.01],[-7.37,7.95],[-5.32,7.95],[-5.32,9.12],[-2.00,9.12]],
+      [[-1.58,15.3],[-1.58,13.4],[2.55,13.4],[3.07,12.79],[8.51,12.79]]
+    ])seam(track,track[0][0]>0||track[0][0]===-10.5?limeLine:cyanLine);
+    // Dense climbing roots hug the flanks, cross just above the right eye and
+    // loop through the conduits without closing the central walking line.
+    const shoots=fieldSurfaceFinish(material(0x646f30,{roughness:.87}),'stem'),vines=material(0x4c5124,{roughness:.88});
+    for(const s of [-1,1])for(let n=0;n<5;n++){
+      const x=s*(13.2+.47*n),z=-11+3.9*n;
+      const vine=pipe([at(x+s*.9,9.5,z-1.8),at(x-s*1.3,7.8,z-1),at(x+s*.45,6.0,z+.35),
+        at(x-s*1.13,3.7,z+.79),at(x+s*.40,1.25,z+.16),at(x-s*1.75,.53,z+1.9),at(x-s*3.25,.42,z+3.1)],.24+.062*(n%3),n%2?shoots:vines,30);
+      for(let k=1;k<6;k++){
+        const u=vine.getPointAt(k/7);
+        add(chamfer,shoots,u.x+s*.15,u.y+.20,u.z+.23,.24,.45,.15,.40,n*.79,s*.43);
+      }
+    }
+    for(const [x,h,z,a,b] of [[8.6,4.6,-7.33,1.2,1.33],[9.34,6.6,-6.9,1.25,.72],[-9.52,8.2,-7.08,.79,1.19],[13.36,3.44,-1.80,1.63,1.10]]){
+      const pts=[];for(let k=0;k<=20;k++){
+        const t=k/20*Math.PI*2.15;pts.push(at(x+Math.cos(t)*a,h+Math.sin(t)*b,z+.28*Math.sin(t*2)));
+      }
+      pipe(pts,.12,shoots,30);
     }
   }
 }

@@ -71,7 +71,7 @@ function createTwinSurface(T,world,definition){
     const r=radius+height(lat,lon)+above,c=Math.cos(lat);
     return v(r*c*Math.cos(lon),r*Math.sin(lat),-r*c*Math.sin(lon));
   }
-  const blocks=[],portals=[],animations=[],materials=new Map();
+  const blocks=[],overheads=[],portals=[],animations=[],materials=new Map();
   let built=false;
   function build(){
     if(built)return;
@@ -90,6 +90,7 @@ function createTwinSurface(T,world,definition){
     }
     definition.buildLandmarks({T,root:district,ground,material,stamp,
       block:(x,z,r,h)=>blocks.push({x,z,r,top:heightAt(x,z)+h}),
+      cover:(x,z,halfX,halfZ,bottom,top)=>overheads.push({x,z,halfX,halfZ,bottom:heightAt(x,z)+bottom,top:heightAt(x,z)+top}),
       animate:fn=>animations.push(fn),portal:(x,z,planet,site,r=3.5)=>portals.push({x,z,planet,site,r})});
     for(const {geo,mat,poses} of batches.values()){
       const mesh=new T.InstancedMesh(geo,mat,poses.length);
@@ -101,6 +102,10 @@ function createTwinSurface(T,world,definition){
   function portalAt(lat,lon){
     const p=chart(lat,lon);
     return portals.find(g=>Math.hypot(g.x-p.x,g.z-p.z)<g.r);
+  }
+  function isSheltered(lat,lon,eyeHeight){
+    const p=chart(lat,lon),eye=heightAt(p.x,p.z)+eyeHeight;
+    return overheads.some(b=>eye<b.bottom&&Math.abs(p.x-b.x)<b.halfX&&Math.abs(p.z-b.z)<b.halfZ);
   }
   function siteAt(lat,lon){
     const p=chart(lat,lon);
@@ -135,6 +140,7 @@ function createTwinSurface(T,world,definition){
     }
     let obstruction=false;
     for(const b of blocks)if(Math.hypot(b.x-p.x,b.z-p.z)<b.r+r){high=Math.max(high,b.top);obstruction=true;}
+    for(const b of overheads)if(Math.abs(b.x-p.x)<b.halfX+r&&Math.abs(b.z-p.z)<b.halfZ+r){high=Math.max(high,b.top);obstruction=true;}
     return {height:floor,top:high,ok:!obstruction&&(!!pad||high-low<step*.30),
       reason:obstruction?'机翼范围内有设施或岩体':'请在平缓处或标注的着陆坪降落'};
   }
@@ -145,7 +151,8 @@ function createTwinSurface(T,world,definition){
       sample.copy(aim).addScaledVector(ray,i/steps);
       const lat=Math.atan2(sample.y,Math.hypot(sample.x,sample.z)),lon=Math.atan2(-sample.z,sample.x),p=chart(lat,lon);
       const altitude=sample.length()-radius;
-      if(altitude<heightAt(p.x,p.z)+.16||blocks.some(b=>altitude<b.top+.16&&Math.hypot(b.x-p.x,b.z-p.z)<b.r+.10)){
+      const underRoof=overheads.some(b=>altitude>b.bottom-.12&&altitude<b.top+.16&&Math.abs(p.x-b.x)<b.halfX+.10&&Math.abs(p.z-b.z)<b.halfZ+.10);
+      if(underRoof||altitude<heightAt(p.x,p.z)+.16||blocks.some(b=>altitude<b.top+.16&&Math.hypot(b.x-p.x,b.z-p.z)<b.r+.10)){
         eye.copy(aim).addScaledVector(ray,Math.max(.01,(i-1)/steps));return;
       }
     }
@@ -224,7 +231,7 @@ function createTwinSurface(T,world,definition){
     }
   }
   const nothing=()=>null;
-  return {root,globe,radius,sites,landingSites,siteAt,frame,point,move,chart,height,walk,portalAt,
+  return {root,globe,radius,sites,landingSites,siteAt,frame,point,move,chart,height,walk,portalAt,isSheltered,
     landingSite:id=>landingSites.find(s=>s.id===id),groundCorrection:()=>0,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),clipCamera,
     flightHeight:(lat,lon,r=0)=>footprint(lat,lon,r).top,landingInfo:footprint,

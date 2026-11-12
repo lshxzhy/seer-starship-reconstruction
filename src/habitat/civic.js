@@ -146,7 +146,7 @@ cabinBuilders.honors = function(kit) {
   const {box,cyl,ball,beam,pipe,torus,panel,text,block}=kit;
   const PI=Math.PI,white=0xd8e5e9,shell=0x91aab6,dark=0x293e4c;
   const cyan=0x68deea,blue=0x226b88,gold=0xf8bd55;
-  kit.root.userData.civicReference='G06; full badge, backside supports and ceremony workflow inferred';
+  kit.root.userData.civicReference='G06 and the 2012-04-18 full room (4399 article 154657); scale and hidden construction inferred';
   const arc=(r,z,y,a,b,n)=>Array.from({length:n+1},(_,i)=>{
     const q=a+(b-a)*i/n;
     return [Math.cos(q)*r,y,z-Math.sin(q)*r*.83];
@@ -167,76 +167,105 @@ cabinBuilders.honors = function(kit) {
     box(x,.025,8.6,.13,.025,8.1,0xa6c5d1);
     box(x,.045,5,.13,.035,1.3,cyan,{glow:.25});
   }
-  // A complete medal and its layered casing anchor the view from the entrance.
-  box(0,.29,-11.3,6.3,.58,2.8,dark);
-  box(0,.63,-11.3,5.6,.12,2.45,white);
-  for(const x of [-1.5,1.5]) {
-    box(x,2.48,-11.64,.68,3.7,.76,shell);
-    beam([x,.7,-12.1],[x,4.6,-11.65],.22,.3,dark);
+  // The April 2012 full-room game view (4399, article 154657) resolves
+  // G06's cropped centre: the dais is low, radial and backed by a ranking
+  // display. A pair of challenge terminals flanks it. Feet and backs are inferred.
+  const zDais=-9.15,T=kit.T;
+  cyl(0,.25,zDais,4.62,4.94,.48,dark);
+  cyl(0,1.15,zDais,3.30,4.50,1.42,shell);
+  cyl(0,2.25,zDais,2.44,3.34,1.25,dark);
+  cyl(0,2.98,zDais,2.42,2.62,.39,white);
+  torus(0,3.19,zDais,1.97,.115,gold,{rx:PI/2,glow:.36});
+  cyl(0,3.16,zDais,1.84,1.94,.16,0xe29236,{glow:.18});
+  torus(0,3.25,zDais,1.53,.030,white,{rx:PI/2});
+  function castingGeometry(key,sections){
+    return cabinAsset(cabinAssets.geometries,'honors/dais/'+key,()=>{
+      const vertices=[],triangles=[];
+      for(const [radius,bottom,top,half,bevel] of sections){
+        vertices.push(-half,bottom+bevel,radius,-half+bevel,bottom,radius,
+          half-bevel,bottom,radius,half,bottom+bevel,radius,half,top-bevel,radius,
+          half-bevel,top,radius,-half+bevel,top,radius,-half,top-bevel,radius);
+      }
+      const last=8*(sections.length-1);
+      for(let i=1;i<7;i++)triangles.push(0,i+1,i,last,last+i,last+i+1);
+      for(let at=0;at<last;at+=8)for(let i=0;i<8;i++){
+        const a=at+i,b=at+(i+1)%8;triangles.push(a,b,b+8,a,b+8,a+8);
+      }
+      const g=new T.BufferGeometry();
+      g.setAttribute('position',new T.Float32BufferAttribute(vertices,3));g.setIndex(triangles);
+      const faces=g.toNonIndexed();g.dispose();faces.computeVertexNormals();return faces;
+    });
   }
-  cyl(0,4.02,-11.46,2.58,2.58,.6,dark,{rx:PI/2});
-  const badgeRim=cyl(0,4.02,-11.10,2.43,2.43,.17,gold,{rx:PI/2});
-  cyl(0,4.02,-10.985,2.13,2.13,.08,0xa17a43,{rx:PI/2});
-  torus(0,4.02,-10.91,2.13,.12,0xffdb7c,{glow:.25});
-  const star=[];
-  for(let i=0;i<11;i++) {
-    const a=PI/2+i*PI/5,r=i%2?.74:1.7;
-    star.push([Math.cos(a)*r,4.02+Math.sin(a)*r,-10.85]);
+  const foot=castingGeometry('foundation',[[1.45,.74,2.89,.66,.17],[2.76,.32,2.86,.98,.22],
+    [3.28,.24,2.55,1.02,.21],[4.78,.15,1.10,1.04,.19],[5.10,.18,.72,.91,.13]]);
+  const upper=castingGeometry('upper',[[1.57,2.72,3.18,.62,.13],[1.96,2.76,3.30,.86,.14],
+    [2.66,2.64,3.20,.93,.16],[2.92,2.54,2.93,.89,.12]]);
+  const skirt=castingGeometry('skirt',[[2.96,2.32,2.83,.80,.12],[3.20,2.19,2.82,.85,.13],
+    [4.46,.93,1.56,.92,.16],[4.85,.62,1.13,.83,.11]]);
+  for(let i=0;i<6;i++){
+    const angle=(i+.5)*PI/3;
+    civicAssembly(kit,0,zDais,angle,()=>{
+      for(const [geometry,color] of [[foot,dark],[upper,white],[skirt,white]]){
+        const piece=box(0,0,0,1,1,1,color,{structural:true});piece.geometry=geometry;
+      }
+      for(const s of [-1,1]){
+        beam([s*.43,3.24,2.49],[0,3.32,2.08],.13,.045,0x77bfd2);
+        beam([s*.63,2.39,3.38],[s*.67,1.34,4.44],.040,.065,0xb5c4c7);
+      }
+    });
   }
-  const starFace=cabinAsset(cabinAssets.geometries,'honors-medal-relief',()=>{
-    // Ten planes meet at the high boss and catch the light as the visitor moves.
-    const positions=[];
-    for(let i=0;i<10;i++)positions.push(0,4.02,-10.57,...star[i],...star[i+1]);
-    const g=new kit.T.BufferGeometry();
-    g.setAttribute('position',new kit.T.Float32BufferAttribute(positions,3));
-    g.computeVertexNormals();return g;
-  });
-  kit.root.add(new kit.T.Mesh(starFace,badgeRim.material));
-  for(let i=0;i<10;i++)beam(star[i],star[i+1],.09,.09,0xffe6a4);
-  for(let i=0;i<12;i++) {
-    const a=i*PI/6;
-    ball(Math.cos(a)*2.31,4.02+Math.sin(a)*2.31,-10.9,.067,.067,.045,0xffe6aa);
+  // The warm badge port and its toothed barrel are clearly visible from
+  // player eye height between the two forward petals.
+  cyl(0,1.25,zDais+3.15,1.28,1.35,1.45,shell,{rx:PI/2});
+  cyl(0,1.25,zDais+3.95,1.36,1.32,.28,dark,{rx:PI/2});
+  torus(0,1.25,zDais+4.11,1.03,.16,shell);
+  cyl(0,1.25,zDais+4.13,.87,.87,.13,0xd16e28,{rx:PI/2});
+  for(let i=0;i<16;i++){
+    const a=i*PI/8;
+    box(1.15*Math.sin(a),1.25+1.15*Math.cos(a),zDais+4.11,.22,.34,.28,shell,{rz:-a});
+    box(.76*Math.sin(a),1.25+.76*Math.cos(a),zDais+4.22,.12,.28,.08,gold,{rz:-a,glow:.23});
   }
-  // The construction of the gong's reverse is visible from within the room:
-  // a central hub and two radial suspension shoes tie the relief to its stand.
-  cyl(0,4.02,-11.83,.64,.70,.17,shell,{rx:PI/2});
-  for(const side of [-1,1]){
-    beam([side*.32,4.05,-11.95],[side*1.49,5.42,-11.85],.15,.20,dark);
-    cyl(side*1.49,5.42,-11.99,.19,.19,.19,gold,{rx:PI/2,segments:24});
-    // Raised laurel leaves flank the face and leave the central star unobscured.
-    for(let i=0;i<6;i++){
-      const a=.30+i*.22;
-      const leaf=ball(side*1.90*Math.cos(a),4.02-1.90*Math.sin(a),-10.854,
-        .070,.184,.048,0xffdd84,{rz:side*(a-.59)});
-      leaf.castShadow=false;
-    }
+  ball(0,1.25,zDais+4.23,.59,.59,.14,0xffb039,{glow:.48});
+  // Three strips approximate the circular obstruction without closing its
+  // front flanks. The ceremonial forecourt remains on the normal walking deck.
+  block(0,zDais,10.05,4.0);
+  for(const s of [-1,1])block(0,zDais+s*3.30,8.35,2.65);
+  box(0,4.59,zDais-3.25,4.12,3.42,.70,dark,{rx:-.25});
+  box(0,4.82,zDais-2.91,3.82,2.92,.30,gold,{rx:-.25});
+  box(0,4.85,zDais-2.68,3.41,2.38,.16,0xdadac5,{rx:-.25});
+  text(0,4.85,zDais-2.53,'成就排行榜',2.74,.52,dark,{rx:-.25});
+  for(const s of [-1,1]){
+    const baseX=s*12.6,baseZ=-9.25;
+    civicAssembly(kit,baseX,baseZ,-s*.20,()=>{
+      cyl(0,.32,0,2.79,3.09,.60,shell);
+      cyl(0,.68,0,2.57,2.78,.20,dark);
+      torus(0,.80,0,2.45,.082,gold,{rx:PI/2,glow:.23});
+      // A backward rake in depth opens the cyan face to the forecourt.
+      ball(0,3.14,-.18,2.12,2.89,1.19,white,{rx:-.47});
+      ball(0,3.07,.81,1.67,2.46,.28,blue,{rx:-.47});
+      const rim=torus(0,3.12,.95,1.60,.088,cyan,{rx:-.47,glow:.26});
+      rim.scale.y*=1.49;
+      for(const side of [-1,1])beam([side*.67,1.02,-1.40],[side*.89,4.93,-1.13],.30,.38,shell);
+      beam([-.33,2.96,1.23],[.31,3.87,.78],.35,.14,white);
+      box(.16,3.80,.89,.70,.24,.14,white,{rx:-.47,rz:-.23});
+      text(0,2.40,1.52,s<0?'高阶挑战':'低阶挑战',2.12,.33,white,{rx:-.47});
+      if(s<0)text(0,2.07,1.65,'SENIOR',1.31,.16,cyan,{rx:-.47});
+      cyl(-s*2.0,4.54,-.21,.86,.88,.52,dark,{rz:PI/2});
+      torus(-s*1.77,4.54,.38,.69,.17,gold,{glow:.28});
+      ball(-s*1.77,4.54,.43,.49,.49,.24,white);
+      box(0,5.77,-1.16,4.92,2.17,2.25,dark,{rx:-.17});
+      box(0,6.10,-.85,4.75,1.48,2.10,shell,{rx:-.17});
+      for(const side of [-1,1]){
+        box(side*1.78,5.89,.16,.60,1.18,.38,white,{rx:-.24});
+        box(side*1.77,5.86,.39,.21,.46,.095,0xc49cad,{rx:-.24});
+      }
+    });
+    block(baseX,baseZ,6.36,6.22);
+    beam([s*10.7,5.12,baseZ-.95],[s*3.28,2.64,zDais-2.70],.62,.81,dark);
+    beam([s*10.7,5.51,baseZ-.95],[s*3.28,3.03,zDais-2.70],.15,.20,gold);
   }
-  for(const s of [-1,1]) {
-    box(s*1.08,6.07,-11.8,.72,2,.18,blue,{rz:s*.29});
-    box(s*1.08,6.07,-11.69,.11,1.98,.06,cyan,{rz:s*.29});
-  }
-  text(0,1.13,-9.87,'使命 · 勇气 · 荣誉',5.3,.42,white);
-  block(0,-11.3,6.4,3.15);
-  // G06's oblique cyan memorial face, with two solid rear support ribs.
-  box(-15.3,.32,-6.7,5.2,.64,3.5,dark);
-  box(-15.3,3.7,-7.05,4.45,6.65,1.5,shell,{rz:-.17});
-  box(-15.12,3.75,-6.2,3.6,5.65,.25,white,{rz:-.17});
-  ball(-15.1,3.72,-6.01,1.57,2.42,.15,blue);
-  const memorialRing=torus(-15.1,3.7,-5.83,1.33,.075,cyan,{glow:.35});memorialRing.scale.y*=1.43;
-  beam([-15.42,3.09,-5.79],[-14.78,4.53,-5.79],.57,.11,white);
-  box(-14.96,4.35,-5.71,.83,.39,.08,white,{rz:-.27});
-  box(-15.18,2.83,-5.79,1.45,.08,.08,cyan);
-  text(-15.18,2.57,-5.75,'SENIOR',1.80,.32,white);
-  // G06's round amber pivot and pale cap flank the memorial's teal face.
-  cyl(-13.15,5.15,-6.45,.84,.90,.50,dark,{rx:PI/2,segments:40});
-  torus(-13.15,5.15,-6.14,.66,.15,gold,{glow:.18,metalness:.39});
-  cyl(-13.15,5.15,-6.14,.43,.55,.24,white,{rx:PI/2,segments:32});
-  box(-13.15,5.15,-5.995,.13,.31,.041,shell,{rz:-.32});
-  box(-16.7,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
-  box(-13.8,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
-  block(-15.3,-6.8,5.7,4.2);
   // Two archive plinths have real rears, tops and three-dimensional small awards.
-  for(const [x,z,num] of [[15.5,-8.6,'01'],[16.6,-1.5,'02']]) {
+  for(const [x,z,num] of [[18.3,-1.8,'01'],[18.3,3.7,'02']]) {
     box(x,.42,z,3.6,.84,2.4,dark);
     box(x,1.17,z,3.4,.65,2.18,white);
     box(x,2.78,z-.72,3.35,2.5,.45,shell);

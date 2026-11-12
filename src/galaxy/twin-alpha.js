@@ -6,7 +6,7 @@ const ALPHA_WORLD=defineTwinWorld({
     {id:'alpha-springs',name:'双子阿尔法星 · 温泉群',mapId:105,x:0,z:0,lookAt:[-4,-23],lookPitch:.24,description:'矿物环托住碧色温泉，蒸汽从金色菌台与孔树之间升起。'},
     {id:'alpha-rock',name:'阿尔法星岩地',mapId:106,x:65,z:-103,lookAt:[106,-190],lookPitch:.18,description:'紫色盘根穿过开裂的银灰板岩；巨型豆豆果树与能源高塔分立岩地两侧。'},
     {id:'alpha-station',name:'海盗能源站',mapId:46,x:103,z:-163,lookAt:[104,-186],lookPitch:.20,description:'滚筒输送带通往能源塔，右翼橙色传送盘接通贝塔星荒原。'},
-    {id:'alpha-forest',name:'黑白森林',mapId:407,x:-88,z:-45,lookAt:[-94,-63],horizon:0x9bc797,zenith:0x557d70,haze:0x7d9479,description:'巨根拱起林廊，树间漏下青绿色天光，赭色石径通向暖光树洞。'}
+    {id:'alpha-forest',name:'黑白森林',mapId:407,x:-88,z:-45,lookAt:[-92,-73],lookPitch:.025,horizon:0x9bc797,zenith:0x557d70,haze:0x7d9479,description:'赭色石径通向林间亮处，左侧石标与右侧暖光树洞分守道路两边。'}
   ],
   routes:[['alpha-springs','alpha-rock'],['alpha-springs','alpha-forest'],['alpha-rock','alpha-station']],
   landingSites:[{id:'alpha-landing',name:'温泉东侧高台',x:29,z:36,description:'温泉盆地东南侧为 L-01 留出的平坦着陆高地。'}],
@@ -346,7 +346,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     }
     if(i%2===0)stamp(vine,beamGreen,x,y+h*.83,z,18,6,12,0,a*.07,-.08);
   }
-  const hollowX=-98,hollowZ=-78,hollowY=ground(hollowX,hollowZ);
+  const hollowX=-81.6,hollowZ=-78,hollowY=ground(hollowX,hollowZ);
   // Model the opening through the rootstock, so the threshold, curled lip
   // and warm inner bark remain separated as the visitor moves to one side.
   const bole=new T.Shape();bole.moveTo(-5.1,-.2);
@@ -369,13 +369,51 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     block(hollowX+side*2.7,hollowZ,1.6,10.5);
   }
   block(hollowX,hollowZ-2,.88,5.8);
-  const pathStone=fieldSurfaceFinish(material(0xc19769,{vertexColors:true,roughness:.94}),'stone');
-  for(let i=0;i<31;i++){
-    const x=-90-6.5*i/30+2.95*Math.sin(i*1.74),z=-39-i*1.26;
-    stamp(rock,pathStone,x,ground(x,z)-.15,z,1.53,.55,1.33,0,i,0);
-    if(i%3===0){
-      const px=x+(i%2?-1:1)*4.2,pz=z+.6;stamp(forestFern,foliage,px,ground(px,pz)-.06,pz,1.35,.9,1.2,0,i,0);
+  const markerTone=fieldSurfaceFinish(material(0xb36b50,{roughness:.94,vertexColors:true}),'stone');
+  const marker=revolve([[.77,-.1,0xc2a891],[1.0,.08,0x956b57],[.79,.19,0xc6ac8a],
+    [.67,.37,0x8b6657],[.80,.42,0xbb9280],[.82,.46,0xdbad87],[.59,.49,0x986b56],
+    [.53,.77,0xb6977c],[.61,.82,0xccac90],[.44,.86,0xa98773],[.21,.98,0xcdac92],[.02,1,0xb6927a]],
+    16,a=>.85+.16*Math.cos(3*a),a=>.05*Math.cos(4*a+.5));
+  const sx=-100.8,sz=-61.3;stamp(marker,markerTone,sx,ground(sx,sz)-.10,sz,1.42,4.6,1.12,0,.35,-.02);
+  block(sx,sz,1.05,4.58);
+  // On 407 the ochre network surrounds darker islands of worn stone. Seat the
+  // contours in the real slope so both the main path and the fork meet the hollow.
+  const paved=[],pavedRGB=[],pavedIdx=[],tint=new T.Color();
+  function paving(x,z,w,d,angle,index){
+    const n=12,start=paved.length/3;
+    const levels=[[1.05,.016,0x96542f],[.95,.073,0xa66b38],[.83,.109,0x74633c],[.59,.131,0x756741],[.012,.135,0x74603e]];
+    for(const [j,[r,h,col]] of levels.entries())for(let k=0;k<n;k++){
+      const a=tau*k/n,rand=1+.11*Math.sin(3*a+index*.44)+.06*Math.cos(5*a-index);
+      const dx=w*r*rand*Math.cos(a),dz=d*r*rand*Math.sin(a),xx=x+dx*Math.cos(angle)+dz*Math.sin(angle),zz=z+dz*Math.cos(angle)-dx*Math.sin(angle);
+      paved.push(xx,ground(xx,zz)+h,zz);tint.setHex(col).convertSRGBToLinear().multiplyScalar(.80+.21*Math.sin(a*2+index)**2);
+      pavedRGB.push(tint.r,tint.g,tint.b);
+      if(j<levels.length-1){const from=start+j*n+k,to=start+j*n+(k+1)%n;pavedIdx.push(from,from+n,to,to,from+n,to+n);}
     }
+  }
+  for(let i=0;i<14;i++){
+    const x=-89.6-3.6*i/13,z=-40-i*2.85;
+    for(const side of [-1,1])paving(x+side*(1.53+.24*Math.sin(i*1.3)),z+side*.42,1.93+.35*Math.cos(i*.9),1.64,side*.24,i+side);
+    if(i>7)paving(x+2.7+(i-7)*1.47,z-.75,1.68,1.26,-.64,i*2);
+  }
+  const path=new T.BufferGeometry();path.setAttribute('position',new T.Float32BufferAttribute(paved,3));path.setAttribute('color',new T.Float32BufferAttribute(pavedRGB,3));path.setIndex(pavedIdx);path.computeVertexNormals();stamp(path,stone,0,0,0);
+  const groveLeaf=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.86}),'moss');
+  const leafbank=revolve([[.25,-.24,0x213b31],[.78,-.10,0x2c513a],[1,.16,0x3b6346],
+    [.93,.38,0x577e53],[.72,.57,0x648757],[.38,.73,0x82a06a],[.02,.79,0x96ae7d]],32,
+    (a,h)=>.78+.19*Math.sin(5*a+h*2)**2+.12*Math.cos(a*3), (a,h)=>.17*Math.cos(5*a+h)+.10*Math.cos(8*a+2*h));
+  for(let i=0;i<12;i++){
+    const x=-119+i*4.55,z=-92-5.3*Math.sin(i*1.5),y=ground(x,z),h=12.0+4.2*Math.sin(i*1.21)**2,a=i*2.39996;
+    stamp(forestTrunk,moss,x,y,z,4.2,h,4.2,0,a,.12*Math.sin(a));block(x,z,1.3,h);
+    for(let k=-1;k<=1;k++){
+      const dx=x+k*2.3,dz=z+Math.sin(a+k)*2.3;
+      stamp(leafbank,groveLeaf,dx,y+h*(.82+.10*k),dz,4.15,4.3,3.47,0,a+k,-.11*k);
+      stamp(forestFern,foliage,dx,y+h*(.87+.10*k),dz,4.5,2.7,4.2,0,a+k,0);
+    }
+    if(i%2===0)stamp(forestFern,foliage,x,y-.02,z+1,3.8,2.4,3.1,0,a,0);
+    const bx=x+1.25*Math.cos(a),bz=z-14.5,by=ground(bx,bz);
+    const bh=4.1+4.6*Math.sin(i*.87+.23)**2;
+    stamp(leafbank,groveLeaf,bx,by+.9,bz,5.2,bh,4.4,0,a,0);
+    stamp(forestFern,foliage,bx-1.1,by+bh*.53,bz+1.5,3.5,2.65,3.1,0,a+1.2,0);
+    block(bx,bz,3.36,bh*.82+.94);
   }
   // The original 106 vista terminates at a tall grey cylinder with lime slots.
   // At its feet map 46 uses two ochre grilles, blue decks and a pink warp disc.

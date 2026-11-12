@@ -584,13 +584,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   host.addEventListener('keydown',event=>{
     event.stopPropagation();
     if(event.key==='Escape'&&!event.isComposing&&!panel.hidden){event.preventDefault();closePanel();}
-    if(spirit&&event.key==='Tab'){
-      const controls=[...panel.querySelectorAll('button:enabled,select:enabled,textarea:enabled,a[href],summary,[tabindex="0"]')]
-        .filter(node=>node.getClientRects().length);
-      const first=controls[0],last=controls.at(-1);
-      if(first&&event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
-      else if(last&&!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
-    }
+    if(spirit)cycleDialogFocus(event,panel);
   });
   host.addEventListener('keyup',event=>event.stopPropagation());
   updateControls();renderHistory();

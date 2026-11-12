@@ -8,7 +8,8 @@ const OCEAN_WORLD=(()=>{
     at('ocean-shallows','海洋星浅水区',0,0,'粉色管珊瑚、贝尔与甲烷气泡泉',20),
     at('ocean-depths','海洋星深水区',-108,47,'白色岩台、黄晶矿与利牙鱼口腔护理站',21),
     at('ocean-floor','海洋星海底',-203,105,'海沟石阶与钢牙鲨的岩洞',22),
-    at('ocean-sanctum','深海禁地',-149,193,'后期水下遗址 · 青光石柱与深海拱门',737)
+    {...at('ocean-sanctum','深海禁地',-149,193,'青光共柱撑起两道深海岩窗，左侧有半埋的辐轮残件',737),
+      lookAt:[-148,171],lookPitch:.22}
   ];
   const routes=sites.slice(1).map((site,i)=>[sites[i].id,site.id]);
   const landingSites=[at('ocean-shallows','浅海登陆平台',24,-37,'海洋星水面上的 L-01 人工泊台',null)];
@@ -197,6 +198,39 @@ function createOceanSurface(T,world){
   shape('box',new T.BoxGeometry(1,1,1));
   shape('disk',new T.CylinderGeometry(1,1,1,48));
   shape('ring',new T.TorusGeometry(1,.11,7,22));
+  {
+    // One continuous span, surveyed in metres. Rotate the second span around
+    // the shared pier; the two openings are independently passable.
+    const struts=[[0,-.75,0],[.05,2.7,-.12],[.50,6,-.02],[1.40,9.25,-.32],
+      [4.35,12.42,-.85],[7.08,12.94,-1.13],[11.55,11.50,-1.73],[14.23,8.88,-2.08],
+      [15.37,5.25,-1.56],[16.28,2.0,-1.13],[16.85,-.83,-.84]].map(a=>v(...a));
+    const line=new T.CurvePath();
+    for(let j=1;j<struts.length;j++)line.add(new T.LineCurve3(struts[j-1],struts[j]));
+    const g=ringMesh(8,65,(j,i,a)=>{
+      const t=j/64,at=line.getPoint(t),dir=line.getTangent(t),n=Math.hypot(dir.x,dir.y);
+      const fault=.23*Math.pow(Math.max(0,Math.cos(t*52+i*.14)),7);
+      const w=(1.39+.97*(2*t-1)**2)*(1+.17*Math.cos(t*26+i*.43)+.15*Math.sin(3*a+.72)-fault);
+      const side=Math.cos(a)*w;
+      return [at.x+dir.y/n*side,at.y-dir.x/n*side,at.z+Math.sin(a)*w*1.31,
+        .61+.32*(.5+.5*Math.cos(a-1.9))+.13*Math.sin(21*t+2*a)-fault*.64];
+    });
+    shape('sanctumSpan',g,limestone);
+    const jagged=[[0,.85],[.12,1],[.38,.74],[.60,.68],[.74,.47],[.89,.32],[1,.035]];
+    shape('sanctumSpur',ringMesh(6,jagged.length,(j,i,a)=>{
+      const [t,r]=jagged[j],w=r*(1+.16*Math.cos(2*a+.65));
+      return [.61*t*t+w*Math.cos(a),t+.034*r*Math.cos(3*a),w*.72*Math.sin(a),
+        .63+.23*(.5+.5*Math.cos(2*a+.4))+.11*t];
+    }),mineral);
+    const tablet=(outline,depth)=>{
+      const face=new T.Shape(outline.map(([x,y])=>new T.Vector2(x,y)));face.closePath();
+      return new T.ExtrudeGeometry(face,{depth,bevelEnabled:true,bevelSegments:1,bevelSize:.11,bevelThickness:.09});
+    };
+    shape('sanctumTablet',tablet([[-1.64,-.2],[1.23,-.2],[1.77,2.1],[1.31,3.0],[1.74,5.38],
+      [1.08,7.88],[-.28,8.38],[-.92,6.63],[-.87,4.25],[-1.48,3.03]],1.27),painted);
+    const jade=new T.MeshStandardMaterial({roughness:.36,metalness:.10,
+      emissive:color(0x69c6b6),emissiveIntensity:.63});
+    shape('jadePlate',tablet([[-.93,-.27],[.34,-.44],[.97,-.12],[.82,.25],[-.46,.38],[-.86,.18]],.10),jade);
+  }
   const spongeRim=[[0,.53,.67],[.31,.66,.76],[.67,.88,.84],[.81,.90,.87],
     [.9,1.02,.97],[.99,.98,1.22],[1,.79,1.12],[.90,.68,.57],[.68,.49,.22],[.55,0,.13]];
   shape('tube',ringMesh(24,spongeRim.length,(j,i,a)=>{
@@ -343,18 +377,16 @@ function createOceanSurface(T,world){
     }
     blockers.push({x,z,r:1.10*s,top:base+2.04*s});
   }
-  function grotto(x,z,scale,dark,open=false){
+  function grotto(x,z,scale,dark){
     const base=groundY(x,z);
     for(let i=0;i<9;i++){
       const a=Math.PI*(i/8),xx=x+6.2*scale*Math.cos(a),yy=base+7.5*scale*Math.sin(a);
       stamp('rock',xx,yy,z,2.45*scale,2.75*scale,2.4*scale,i%2?dark:0x51657a,-.17,.17,a-.8);
       if(i<2||i>6)blockers.push({x:xx,z,r:1.65*scale,top:yy+2.5*scale});
     }
-    if(!open){
-      stamp('lobe',x,base+2.1*scale,z-2.9*scale,5.6*scale,4.4*scale,1.5*scale,0x1b3244);
-      for(let j=-2;j<=2;j++)blockers.push({x:x+j*1.95*scale,z:z-3*scale,r:1.5*scale,top:base+4.5*scale});
-      for(let j=0;j<3;j++)boulder(x+(j-1)*5.8*scale,z-5*scale,3.6*scale,4*scale,3.8*scale,dark);
-    }
+    stamp('lobe',x,base+2.1*scale,z-2.9*scale,5.6*scale,4.4*scale,1.5*scale,0x1b3244);
+    for(let j=-2;j<=2;j++)blockers.push({x:x+j*1.95*scale,z:z-3*scale,r:1.5*scale,top:base+4.5*scale});
+    for(let j=0;j<3;j++)boulder(x+(j-1)*5.8*scale,z-5*scale,3.6*scale,4*scale,3.8*scale,dark);
   }
   const corridors=[[pad,origin],...sites.slice(1).map((s,i)=>[sites[i],s])];
   function corridorGap(x,z){
@@ -372,6 +404,7 @@ function createOceanSurface(T,world){
     for(let j=0;j<63;j++){
       const a=(j+random())*2.4,r=14+random()*57,x=site.x+Math.cos(a)*r,z=site.z+Math.sin(a)*r;
       if(Math.hypot(x-pad.x,z-pad.z)<pierRadius+4||Math.hypot(x,z)<11)continue;
+      if(site.id==='ocean-sanctum'&&Math.abs(x-site.x)<22&&z>site.z-35&&z<site.z+2)continue;
       const t=random();
       if(t<.23){
         const w=2+random()*4,h=1.5+random()*4.1,d=2+random()*3;
@@ -438,16 +471,47 @@ function createOceanSurface(T,world){
     stamp('rock',x,y+.54,z-.38,1.87,.24,2.03,0x789891,0,.6*side);
     shell(x+side*2.4,z+2.8,1.65);
   }
-  grotto(end.x-26,end.z-7,1.29,0x264c69,true);grotto(end.x+17,end.z-23,1.16,0x2b526b,true);
-  for(let j=0;j<4;j++){
-    const x=end.x+10,z=end.z-10,y=groundY(x,z);
-    stamp('rock',x,y+1.25+j*1.47,z,2-j*.18,1.35,1.64-j*.12,j%2?0x286578:0x437c8b,.02,j*.39);
-    stamp('rock',x+.06*j,y+1.15+j*1.47,z+1.06-j*.055,1.27-j*.13,.89,.48,0x75d7c5,.04,j*.21);
+  {
+    const x=end.x+1,z=end.z-21,y=groundY(x,z);
+    for(const side of [-1,1]){
+      const s=side===1?1.08:.93,az=side===1?-.045:Math.PI-.14;
+      stamp('sanctumSpan',x,y,z,s,s,s,side===1?0x40799b:0x3b7396,0,az);
+      const xx=x+s*(16.85*Math.cos(az)-.84*Math.sin(az)),zz=z+s*(-16.85*Math.sin(az)-.84*Math.cos(az));
+      const base=groundY(xx,zz);
+      stamp('sanctumSpur',xx,base-.26,zz,2.65,6.4,2.82,0x315674,0,az);
+      stamp('sanctumSpur',xx-side*1.40,base-.25,zz+1.68,1.64,8.05,2.04,0x417991,0,az-.65,side*.24);
+      blockers.push({x:xx,z:zz,r:2.49,top:base+7.4});
+      // Deep-blue blades recede beyond the windows, leaving both sills clear.
+      for(let j=0;j<7;j++){
+        const bx=x+side*(5.3+3.1*j),bz=z-15.7-3.63*Math.sin(j*1.37+side);
+        const g=groundY(bx,bz),h=4.3+3.6*(.5+.5*Math.sin(2.15*j+.41));
+        stamp('sanctumSpur',bx,g-.24,bz,2.45,h,2.36,j%2?0x396b86:0x385b80,0,az,side*(.20+.11*Math.sin(j)));
+        blockers.push({x:bx,z:bz,r:1.47,top:g+h});
+      }
+    }
+    stamp('sanctumSpur',x,y-.21,z,2.50,8.75,2.48,0x467074,0,.37);
+    stamp('sanctumTablet',x,y,z+1.31,1,1,1,0x397677);
+    for(let j=0;j<5;j++){
+      stamp('jadePlate',x+.13*j-.28,y+2.17+1.09*j,z+2.65,1.32-.078*j,1.14,1,0x9bdfc9,0,0,-.18+.048*j);
+    }
+    blockers.push({x,z,r:2.48,top:y+13.5},{x,z:z+1.45,r:1.53,top:y+8.45});
+    // Left foreground of map 737: a partly buried spoked rim against the broken, green-lit casing.
+    const wx=end.x-9.1,wz=end.z-5.6,base=groundY(wx,wz),wy=base+1.38;
+    stamp('sanctumSpur',wx-.98,base-.21,wz-2.04,2.40,3.90,1.63,0x2a5362,0,-.45,.13);
+    stamp('ring',wx,wy,wz,2.14,2.14,.89,0x527c82,-.30,.19,.06);
+    const wheel=new T.Object3D();wheel.position.set(wx,wy,wz);wheel.rotation.set(-.30,.19,.06);wheel.updateMatrix();
+    const center=v(0,0,0).applyMatrix4(wheel.matrix);
+    for(let i=0;i<7;i++){
+      const a=i*tau/7,end=v(2.07*Math.cos(a),2.07*Math.sin(a),0).applyMatrix4(wheel.matrix);
+      rod(center.x,center.y,center.z,end.x,end.y,end.z,.13,0x49717a);
+    }
+    stamp('lobe',wx,wy,wz,.39,.39,.24,0x5d8586);
+    for(let j=0;j<4;j++)stamp('crystal',wx-.76+j*.32,base+2.25+.13*Math.sin(j),wz-1.02,.22,.48+.25*(j%2),.29,0x90ca82,0,0,.24*j-.26);
+    blockers.push({x:wx-.35,z:wz-.65,r:2.17,top:wy+2.35});
   }
-  blockers.push({x:end.x+10,z:end.z-10,r:2.05,top:groundY(end.x+10,end.z-10)+7});
   for(const sign of [-1,1]){
-    const x=end.x+sign*10,z=end.z+7;
-    sponge(x,z,2.10,sign<0?0xb96f83:0x7999a7);
+    const x=end.x+sign*10,z=end.z-5.2;
+    if(sign>0)sponge(x,z,2.10,0xbb7284);
     for(let j=0;j<4;j++)stamp('tube',x+sign*(2.7+j*.38),groundY(x,z),z+j*.30,.32,.78+j*.23,.34,j%2?0x8ed568:0xa8e28e);
   }
   // An over-water platform, landing stripe and descending access ramp share the support function.

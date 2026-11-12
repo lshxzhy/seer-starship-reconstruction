@@ -1,14 +1,15 @@
 // Survey coordinates in metres, projected from the same spherical world as walking and flight.
-function kloseDisplacement(a,b,radius=KLOSE_WORLD.radius){
+function surfaceDisplacement(a,b,radius){
   const delta=b.lon-a.lon,east=Math.cos(b.lat)*Math.sin(delta);
   const north=Math.cos(a.lat)*Math.sin(b.lat)-Math.sin(a.lat)*Math.cos(b.lat)*Math.cos(delta);
   const dot=Math.sin(a.lat)*Math.sin(b.lat)+Math.cos(a.lat)*Math.cos(b.lat)*Math.cos(delta);
   const bearing=Math.atan2(east,north),distance=radius*Math.atan2(Math.hypot(east,north),dot);
   return {east:distance*Math.sin(bearing),north:distance*Math.cos(bearing),distance,bearing};
 }
-function kloseDistanceText(m){
+function formatNavDistance(m){
   return m>=1000?(m/1000).toFixed(m>=10000?0:1)+' km':Math.round(m)+' m';
 }
+function surfaceArrivalRadius(id){return id==='shuttle-ramp'?1.65:9;}
 function createPlanetNavigation(definitions){
   const regions={},flights=new Map([['dock',{id:'dock',planetId:'klose',name:'赛尔号泊位'}]]);
   const outlands={ridge:'山脊之间的鞍部',delta:'能俯瞰河口水道的高岸',grove:'绯叶山林边缘的台地'};
@@ -46,47 +47,54 @@ function appendSurfaceOptions(select,region,ramp){
   }
   if(ramp)select.add(new Option('L-01 · 登陆艇尾坡',ramp.id));
 }
-function drawKloseMap(chart,{region,selected,ramp,observer,onSelect}){
+function drawSurfaceMap(chart,{region,selected,ramp,observer,route=[],onSelect}){
   const {definition,places:sites}=region;
   const home=definition.sites[0],places=ramp?[...sites,ramp]:sites;
-  const offset=p=>kloseDisplacement(home,p,definition.radius);
+  const offset=p=>surfaceDisplacement(home,p,definition.radius);
   const points=new Map(places.map(p=>[p.id,offset(p)]));
   const regional=points.get(selected)?.distance>800;
   const entries=places.filter(p=>{
-    if(p.id===selected||p.id===home.id)return true;
+    if(p.id===selected||p.id===home.id||route.includes(p.id))return true;
     const d=points.get(p.id).distance;
     if(p.id==='shuttle-ramp')return regional||d<=800;
     return regional?d>800:!p.area;
   });
-  const east=entries.map(p=>points.get(p.id).east),north=entries.map(p=>points.get(p.id).north);
+  const bounds=entries.map(p=>points.get(p.id));
+  if(observer)bounds.push(offset(observer));
+  const east=bounds.map(p=>p.east),north=bounds.map(p=>p.north);
   const minE=Math.min(...east),maxE=Math.max(...east),minN=Math.min(...north),maxN=Math.max(...north);
-  const scale=Math.min(365/Math.max(1,maxE-minE),190/Math.max(1,maxN-minN));
-  const xy=p=>[240+(p.east-(minE+maxE)/2)*scale,133-(p.north-(minN+maxN)/2)*scale];
+  const width=chart.clientWidth||480,height=chart.clientHeight||284;
+  const scale=Math.min(Math.max(1,width-96)/Math.max(1,maxE-minE),Math.max(1,height-65)/Math.max(1,maxN-minN));
+  const xy=p=>[width/2+(p.east-(minE+maxE)/2)*scale,height/2-3-(p.north-(minN+maxN)/2)*scale];
   function mark(tag,attrs,label=''){
     const el=document.createElementNS('http://www.w3.org/2000/svg',tag);
     for(const [key,value] of Object.entries(attrs))el.setAttribute(key,value);
     el.textContent=label;chart.append(el);return el;
   }
-  chart.setAttribute('viewBox','0 0 480 284');chart.replaceChildren();
-  for(let x=24;x<480;x+=32)mark('path',{d:'M'+x+',12v252',stroke:'#254349'});
-  for(let y=20;y<270;y+=32)mark('path',{d:'M14,'+y+'h450',stroke:'#254349'});
+  chart.setAttribute('viewBox',`0 0 ${width} ${height}`);chart.replaceChildren();
   if(!regional)for(const [a,b] of definition.routes){
     const [x1,y1]=xy(points.get(a)),[x2,y2]=xy(points.get(b));
     mark('line',{x1,y1,x2,y2,stroke:'#69a69e','stroke-width':2,'stroke-dasharray':a==='vineway'||b==='vineway'?'4 3':'none'});
   }
+  if(observer&&route.length){
+    const preview=[offset(observer),...route.map(id=>points.get(id)).filter(Boolean)];
+    mark('polyline',{points:preview.map(p=>xy(p).join(',')).join(' '),fill:'none',stroke:'#ffc973',
+      'stroke-width':2.6,'stroke-dasharray':'5 3','pointer-events':'none'});
+  }
   for(const site of entries){
     const [x,y]=xy(points.get(site.id)),chosen=selected===site.id;
-    const dot=mark('circle',{cx:x,cy:y,r:chosen?6:4.3,fill:chosen?'#ffc973':'#92e5cb',stroke:'#102c31','stroke-width':2});
+    mark('circle',{cx:x,cy:y,r:chosen?6:4.3,fill:chosen?'#ffc973':'#92e5cb',stroke:'#102c31','stroke-width':2});
+    const hit=mark('circle',{cx:x,cy:y,r:10,fill:'transparent'});
     const name=site.name.startsWith(definition.name)?site.name.slice(definition.name.length).replace(/^的/,''):site.name;
     const label=mark('text',{x,y:y+(site.id===home.id||site.id==='shuttle-ramp'?18:-9),'text-anchor':'middle'},name||site.name);
-    for(const el of [dot,label]){
+    for(const el of [hit,label]){
       el.setAttribute('data-klose-site',site.id);el.onclick=()=>onSelect(site.id);
     }
   }
   if(observer){
     const [cx,cy]=xy(offset(observer));
-    if(cx>7&&cx<473&&cy>7&&cy<277)mark('circle',{cx,cy,r:8,fill:'none',stroke:'#ffad69','stroke-width':2,'pointer-events':'none'});
+    mark('circle',{cx,cy,r:8,fill:'none',stroke:'#71ffbf','stroke-width':2.4,'pointer-events':'none'});
   }
-  mark('text',{x:15,y:18},'↑ 北');mark('text',{x:14,y:274},'地面投影　／　'+kloseDistanceText(50/scale));
-  mark('path',{d:'M16,250v5h50v-5',fill:'none',stroke:'#b7dace'});
+  mark('text',{x:12,y:17},'↑ 北');mark('text',{x:12,y:height-8},formatNavDistance(50/scale));
+  mark('path',{d:`M12,${height-26}v4h50v-4`,fill:'none',stroke:'#b7dace'});
 }

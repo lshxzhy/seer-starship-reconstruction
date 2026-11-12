@@ -56,6 +56,7 @@
     frameSelection();syncScene();save();
   }
   function travelToPlanet(id,approachMushroom=false,planetId='klose'){
+    if(expedition.visitSurface(planetId,id,approachMushroom))return;
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
     stagedExpedition={format:3,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
@@ -66,7 +67,8 @@
   }
   const cockpit=createFlightDeck(boarding,travelToShip,requestDraw,travelToPlanet,
     ()=>expedition.active?expedition.parkedRamp():parkedLanding?.ramp,
-    (svg,selected,onSelect)=>expedition.drawSystemChart(svg,selected,onSelect,parkedLanding?.vehicle||dockedVehicle));
+    (svg,selected,onSelect)=>expedition.drawSystemChart(svg,selected,onSelect,parkedLanding?.vehicle||dockedVehicle),
+    ()=>expedition.surfaceNavigation(),id=>expedition.guideTo(id),()=>expedition.lookNorth());
   const expedition=createPlanetExpedition(requestDraw,save,origin=>{
     dockedVehicle=expedition.snapshot().vehicle;
     const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
@@ -77,9 +79,10 @@
     parkedLanding=null;
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
     syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
-  },()=>cockpit.openMap(null,true));
+  },()=>cockpit.openMap(null,true),bird=>spiritTerminal.observe(bird));
   root.querySelector('[data-face-expression="planet"]').addEventListener('change',event=>{
     boarding.setExpression(event.currentTarget.value);
+    cockpit.close(false);canvas.focus({preventScroll:true});
     expedition.previewExpression();
   });
   const spiritRecords=window.openai?.setWidgetState?
@@ -121,7 +124,6 @@
     if(!expedition.canOpenSpirits||stage.dataset.consoleOpen||boarding.commsOpen)return;
     expedition.clearInputs();spiritTerminal.open(null,canvas,e.detail);
   });
-  root.querySelector('[data-see-pipi]').addEventListener('click',()=>spiritTerminal.observe(expedition.nearbySpirit()));
   root.querySelector('[data-embark]').addEventListener('click',()=>{
     const berth=boarding.station();
     if(!berth||boarding.commsOpen||cockpit.isOpen)return;
