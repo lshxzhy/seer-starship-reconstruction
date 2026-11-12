@@ -2,8 +2,12 @@
 // https://seer.61.com/main/spirit/4.html
 // https://seerh5.61.com/resource/assets/pet/head/4.png
 // Original full battle artwork preserved at https://wiki.biligame.com/seer/精灵:4
-// The hooked crest, forehead marks, rising white face, fingered fin arms and
-// folded membranes follow that image. Hidden back/tail thickness is a 3D adaptation.
+// Cross-checked against the original battle animation, not a portrait crop:
+// https://seer.61.com/resource/fightResource/pet/swf/4.swf
+// attack sprite 19/frame 16, counterattack sprite 78/frame 23, hit sprite 85/frame 3.
+// A preserved turnaround on the Baidu 尤里安 entry additionally shows a broad
+// blue rear cranium; its original publication date is unverified. The cheek lobes,
+// hooked crown and rising white face follow these views; hidden depth is adapted.
 // Local forward is +Z; the neutral feet rest on y=0. Evolution #005/#006 is separate.
 function createIyooFigure(T,id){
   if(Number(id)!==4)return null;
@@ -86,24 +90,57 @@ function createIyooFigure(T,id){
     }
     mesh(geometry(positions,indices),white,body,'cuticle');
   }
-  // Wide cranium, flattened lower jaw and a gently receding rear profile. The
-  // face is a conforming colour region, not a second sphere masking the head.
-  const headRows=[
-    [.602,.006,.009,.155],[.637,.165,.150,.132],[.692,.282,.238,.106],
-    [.818,.350,.281,.073],[.993,.373,.300,.043],[1.180,.331,.276,.008],
-    [1.316,.220,.196,-.026],[1.385,.054,.068,-.050],[1.396,.004,.006,-.055]
-  ];
-  skin(headRows,head,blue);
-  function headPoint(a,y,lift=0){
-    const [rx,rz,cz]=profileAt(headRows,y);return v((rx+lift)*Math.sin(a),y,cz+(rz+lift)*Math.cos(a));
+  // One continuous shell joins the low, wide cranium, the thick upswept rear
+  // cheeks and the little hooked crown. Independent eased horizontal sections
+  // used to stop their slope at every row and made the head look like stacked lids.
+  // Latitude is an angle here, so colour patches follow the same deformation.
+  function headSurface(a,latitude){
+    const c=Math.cos(latitude),sy=Math.sin(latitude),sx=c*Math.sin(a),sz=c*Math.cos(a);
+    const sideAngle=Math.acos(Math.cos(a));
+    const cheek=Math.exp(-(((sideAngle-1.79)/.47)**2)-(((latitude-.19)/.53)**2));
+    const crown=Math.exp(-((sx/.22)**2)-(((sz+.235)/.29)**2))
+      *T.MathUtils.clamp((sy-.57)/.43,0,1);
+    // Cheeks grow out of the sides and extend upwards/backwards, rather than
+    // becoming thin ears pasted onto a spherical head. The muzzle stays short.
+    return v(.373*sx+.108*Math.sin(a)*cheek,
+      .950+.306*sy+.133*cheek+.164*crown,
+      .048-.025*sy+.282*sz-.033*cheek+.205*crown*crown);
+  }
+  function headNormal(a,latitude){
+    const delta=.0005;
+    return headSurface(a+delta,latitude).sub(headSurface(a-delta,latitude))
+      .cross(headSurface(a,latitude+delta).sub(headSurface(a,latitude-delta))).normalize();
+  }
+  function headPoint(a,latitude,lift=0){
+    const p=headSurface(a,latitude);
+    return lift?p.addScaledVector(headNormal(a,latitude),lift):p;
   }
   {
-    const positions=[],indices=[],rows=30,sectors=72;
+    const positions=[],indices=[],rings=88,sectors=112;
+    for(let j=0;j<=rings;j++){
+      // Tiny polar rings avoid the undefined normal of many coincident poles.
+      const latitude=-Math.PI/2+.0001+(Math.PI-.0002)*j/rings;
+      for(let k=0;k<sectors;k++){
+        const p=headPoint(k*tau/sectors,latitude);positions.push(p.x,p.y,p.z);
+        if(j<rings){const n=j*sectors+k,next=j*sectors+(k+1)%sectors;
+          indices.push(n,next,n+sectors,next,next+sectors,n+sectors);}
+      }
+    }
+    mesh(geometry(positions,indices),blue,head,'cuticle');
+  }
+  {
+    const positions=[],indices=[],rows=44,sectors=104,low=-Math.PI/2+.001;
     for(let k=0;k<=sectors;k++){
-      const a=-1.48+2.96*k/sectors;
-      const top=.792+.302*Math.exp(-((a/.245)**2))+.198*Math.exp(-(((Math.abs(a)-1.07)/.33)**2));
+      const a=-2.16+4.32*k/sectors;
+      // A rounded central blaze separates the large eyes; white continues under
+      // each cheek lobe. It ends before the blue rear surface shown in the turn.
+      let top=-.57+1.08*Math.exp(-((a/.31)**2))
+        +.75*Math.exp(-(((Math.abs(a)-1.69)/.50)**4));
+      const edge=T.MathUtils.clamp((Math.abs(a)-1.83)/.33,0,1);
+      top=T.MathUtils.lerp(top,low+.0001,edge*edge*(3-2*edge));
       for(let j=0;j<=rows;j++){
-        const t=j/rows,y=.615+(top-.615)*t,p=headPoint(a,y,.0023);positions.push(p.x,p.y,p.z);
+        const latitude=T.MathUtils.lerp(low,top,j/rows),p=headPoint(a,latitude,.0025);
+        positions.push(p.x,p.y,p.z);
         if(k<sectors&&j<rows){const n=k*(rows+1)+j;indices.push(n,n+rows+1,n+1,n+1,n+rows+1,n+rows+2);}
       }
     }
@@ -111,29 +148,29 @@ function createIyooFigure(T,id){
   }
   const mouth=[];
   for(let k=0;k<=32;k++){
-    const a=-.86+1.72*k/32,y=.662+.038*(Math.abs(a)/.86)**1.7;
-    mouth.push(headPoint(a,y,.005));
+    const a=-.87+1.74*k/32,latitude=-1.09+.13*(Math.abs(a)/.87)**1.7;
+    mouth.push(headPoint(a,latitude,.005));
   }
   stroke(0x6590a0,mouth,.0055,head);
   const eyes=[];
   for(const side of [-1,1]){
-    const eye=new T.Group(),at=headPoint(side*.595,.868,.004);eye.position.copy(at);
-    eye.rotation.set(0,side*.41,-side*.11);head.add(eye);eyes.push(eye);
-    oval(deepBlue,0,0,0,.081,.121,.024,eye);
-    oval(0x102633,0,0,.017,.070,.109,.022,eye);
-    finishSpiritPart(oval(0xbe4c92,side*.004,-.017,.037,.052,.078,.013,eye),'iris',materials);
-    oval(0x101c2a,-side*.010,.010,.047,.040,.073,.012,eye);
-    oval(0xffffff,-.016,.042,.059,.024,.034,.006,eye);
+    const eye=new T.Group(),angle=side*.555,latitude=-.135;
+    eye.position.copy(headPoint(angle,latitude,.031));
+    eye.quaternion.setFromUnitVectors(v(0,0,1),headNormal(angle,latitude));
+    eye.rotateZ(-side*.14);head.add(eye);eyes.push(eye);
+    oval(deepBlue,0,0,0,.100,.144,.025,eye);
+    oval(0x102633,0,0,.017,.090,.132,.023,eye);
+    finishSpiritPart(oval(0xbe4c92,side*.005,-.021,.039,.069,.097,.014,eye),'iris',materials);
+    oval(0x101c2a,-side*.010,.015,.050,.053,.090,.013,eye);
+    oval(0xffffff,-.019,.050,.064,.029,.041,.007,eye);
     // Two small turquoise marks belong on the forehead, separate from the eyes.
-    const mark=new T.Group(),a=side*.47,y=1.214,p=headPoint(a,y,.003);
-    mark.position.copy(p);mark.rotation.set(-.38,side*.42,side*.14);head.add(mark);
+    const mark=new T.Group(),a=side*.43,markLatitude=.71;
+    mark.position.copy(headPoint(a,markLatitude,.010));
+    mark.quaternion.setFromUnitVectors(v(0,0,1),headNormal(a,markLatitude));
+    mark.rotateZ(side*.10);head.add(mark);
     oval(0x176b8b,0,0,0,.027,.049,.009,mark);
     oval(0x9ce4e7,0,0,.008,.019,.040,.007,mark);
   }
-  // Broad hooked dorsal crest with a concave front. Its changing cross-section
-  // makes the crest legible from both the front and the profile view.
-  sweep(blue,[[0,1.245,-.045],[0,1.435,-.118],[0,1.558,-.005],[0,1.505,.126]],
-    [.090,.079,.056,.002],[.047,.042,.029,.001],head,'cuticle',true);
   function membrane(points,colour,parent){
     let [a,b,c]=points.map(p=>v(...p)),normal=b.clone().sub(a).cross(c.clone().sub(a)).normalize();
     if(normal.z<0){[b,c]=[c,b];normal.negate();}

@@ -173,37 +173,40 @@ function createStarterWaterFigure(T,id){
     skin(torso);
     // The chest's two lower lobes follow the body, with blue rising between them.
     facePatch(torso,a=>.30+.10*Math.exp(-((a/.22)**2)),.951,.70,white);
-    // The narrow end is the forward (+Z) muzzle; the blue cranium expands
-    // behind the eyes. Do not turn the front into a broad plate and taper the
-    // back into a swept spike. Upper sections retain width and depth until a
-    // short rounded cap, while horizontal sections narrow toward the face.
+    // The old 004/005/006 turn-around shows a narrow forward (+Z) face and
+    // a wide rounded-triangular rear. The side cheeks flare upward, while the
+    // central crest sits over the skull rather than ending in a rear spike.
+    // See docs/SOURCES.md for independent front/side/back reference frames.
     const headRows=[
-      [.815,.006,.008,.160],[.855,.170,.210,.120],[.940,.310,.430,.120],
-      [1.065,.445,.520,.000],[1.230,.500,.450,-.080],[1.410,.470,.365,-.155],
-      [1.570,.400,.300,-.200],[1.710,.285,.240,-.205],[1.785,.160,.145,-.200],
-      [1.815,.075,.075,-.190],[1.825,.002,.003,-.190]
+      [.815,.006,.008,.160],[.865,.195,.245,.125],[.965,.355,.445,.100],
+      [1.100,.535,.505,-.015],[1.240,.545,.425,-.075],[1.430,.430,.335,-.095],
+      [1.620,.300,.245,-.080],[1.780,.170,.150,-.060],[1.870,.072,.072,-.040],
+      [1.905,.002,.003,-.030]
     ];
     headPivot=new T.Group();headPivot.position.set(0,.92,.02);body.add(headPivot);
     const head=new T.Group();head.position.set(0,-.92,-.02);headPivot.add(head);
     function headPoint(a,y,lift=0){
       const [rx,rz,cz]=profile(headRows,y),sin=Math.sin(a),cos=Math.cos(a);
-      return v((rx+lift)*sin*(1-.27*cos),y,cz+(rz+lift)*cos);
+      const sideAngle=Math.abs(Math.atan2(sin,cos));
+      const cheek=Math.exp(-(((sideAngle-1.83)/.38)**2)-(((y-1.185)/.225)**2));
+      return v(((rx+lift)*(1-.36*cos)+.115*cheek)*sin,
+        y+.175*cheek,cz+(rz+lift)*cos-.035*cheek);
     }
     {
       const positions=[],indices=[],rows=100,sides=80;
       for(let j=0;j<=rows;j++)for(let k=0;k<sides;k++){
-        const p=headPoint(tau*k/sides,T.MathUtils.lerp(.815,1.825,j/rows));positions.push(p.x,p.y,p.z);
+        const p=headPoint(tau*k/sides,T.MathUtils.lerp(.815,1.905,j/rows));positions.push(p.x,p.y,p.z);
         if(j<rows){const n=j*sides+k,next=j*sides+(k+1)%sides;indices.push(n,next,n+sides,next,next+sides,n+sides);}
       }
       mesh(geometry(positions,indices),blue,head);
     }
     // White cheeks and the central blaze are sampled from the same surface.
-    // The blaze stays broad up the forehead and wraps the rounded crown; it is
-    // no longer a thin triangle terminating at the tip of a cone.
+    // The narrow blaze climbs the front crest; blue remains on both flanks.
+    // White cheeks reach up under the side lobes, following the same shell.
     {
       const positions=[],indices=[],rows=34,sides=76;
       for(let k=0;k<=sides;k++){
-        const a=(k/sides*2-1)*1.69,top=1.047+.095*Math.exp(-(((Math.abs(a)-1.26)/.32)**2));
+        const a=(k/sides*2-1)*1.91,top=1.040+.115*Math.exp(-(((Math.abs(a)-1.67)/.40)**2));
         for(let j=0;j<=rows;j++){
           const p=headPoint(a,T.MathUtils.lerp(.829,top,j/rows),.0035);positions.push(p.x,p.y,p.z);
           if(k<sides&&j<rows){const n=k*(rows+1)+j;indices.push(n,n+rows+1,n+1,n+1,n+rows+1,n+rows+2);}
@@ -214,8 +217,8 @@ function createStarterWaterFigure(T,id){
     {
       const positions=[],indices=[],rows=74,sides=34;
       for(let j=0;j<=rows;j++){
-        const y=T.MathUtils.lerp(1.036,1.825,j/rows);
-        const width=.29+.20*T.MathUtils.smoothstep(y,1.08,1.68)+.62*T.MathUtils.smoothstep(y,1.70,1.825);
+        const y=T.MathUtils.lerp(1.036,1.905,j/rows);
+        const width=.235+.13*T.MathUtils.smoothstep(y,1.08,1.70)+.55*T.MathUtils.smoothstep(y,1.80,1.905);
         for(let k=0;k<=sides;k++){
           const p=headPoint((k/sides*2-1)*width,y,.0040);positions.push(p.x,p.y,p.z);
           if(j<rows&&k<sides){const n=j*(sides+1)+k;indices.push(n,n+1,n+sides+1,n+1,n+sides+2,n+sides+1);}
@@ -226,7 +229,7 @@ function createStarterWaterFigure(T,id){
     const mouth=[];for(let k=0;k<=30;k++)mouth.push(headPoint(-1.03+2.06*k/30,.881+.013*Math.cos(k/30*Math.PI*2),.006));
     stroke(0x658a9d,mouth,.0045,head);
     for(const side of [-1,1]){
-      const a=side*.665,y=1.123,eyeGroup=eye(head,headPoint(a,y,.010),side,.108);
+      const a=side*.755,y=1.105,eyeSize=.126,eyeGroup=eye(head,headPoint(a,y,.010),side,eyeSize);
       const angular=headPoint(a+.003,y).sub(headPoint(a-.003,y));
       const upright=headPoint(a,y+.003).sub(headPoint(a,y-.003));
       const normal=angular.cross(upright).normalize(),facing=normal.clone();
@@ -234,7 +237,7 @@ function createStarterWaterFigure(T,id){
       // tilt and lift its rim along the true surface normal to avoid embedding.
       facing.y=Math.min(facing.y,Math.hypot(facing.x,facing.z)*Math.tan(.32));facing.normalize();
       const alignment=T.MathUtils.clamp(normal.dot(facing),-1,1);
-      const clearance=.010+.108*1.10*Math.sqrt(Math.max(0,1-alignment*alignment));
+      const clearance=.010+eyeSize*1.10*Math.sqrt(Math.max(0,1-alignment*alignment));
       eyeGroup.position.copy(headPoint(a,y)).addScaledVector(normal,clearance);
       eyeGroup.quaternion.setFromUnitVectors(v(0,0,1),facing);
       eyeGroup.rotateZ(-side*.16);
@@ -242,9 +245,6 @@ function createStarterWaterFigure(T,id){
       const spot=[];
       for(const [a,y] of [[.70,1.330],[.53,1.445],[.59,1.541],[.76,1.571],[.98,1.525],[.94,1.409]])spot.push(headPoint(side*a,y,.008));
       panel(spot,mint,head,.004);stroke(shade,[...spot,spot[0]],.007,head);
-      const temple=headPoint(side*1.36,1.175);
-      sweep(blue,[[temple.x,temple.y,temple.z],[temple.x+side*.022,1.270,temple.z-.010],
-        [temple.x+side*.012,1.294,temple.z-.034]],[.034,.030,.008],[.028,.025,.007],head);
       const arm=new T.Group();arm.position.set(side*.155,.79,-.01);body.add(arm);arms.push(arm);
       sweep(blue,[[0,0,0],[side*.117,-.084,.028],[side*.155,-.181,.123],[side*.120,-.182,.185]],
         [.088,.096,.078,.055],[.074,.081,.066,.054],arm);
