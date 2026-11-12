@@ -73,12 +73,28 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     ['wetland',-21,-13,18,10],['wetland',18,17,10,9],['wetland',14,-23,13,6],
     ['core',-6,-14,10,5]
   ].map(([id,dx,dz,rx,rz])=>({id,dx,dz,rx,rz,x:byId.get(id).x+dx,z:byId.get(id).z+dz}));
+  // Ochre headlands behind the blue sod of map 10. The same field supplies
+  // the walking surface, the flight altimeter and the far mesh silhouette.
+  const heads=[[-62,-105,44,27,15],[68,-141,47,25,20],[-105,-198,55,30,23],
+    [-30,-262,58,30,25],[89,-277,71,38,31],[158,-236,53,27,19]];
+  function sandstone(x,z){
+    if(z>-65||z< -345||x< -193||x>235)return 0;
+    let rise=0;
+    for(const [cx,cz,w,d,h] of heads){
+      const u=(x-cx)/w,v=(z-cz)/d;
+      if(Math.abs(u)>1.38||Math.abs(v)>1.38)continue;
+      const r=Math.hypot(u+.10*Math.sin(v*4),v+.12*Math.sin(u*5.4))+.055*Math.cos(11*u+5*v);
+      rise=Math.max(rise,h*(.56*(1-smooth(.49,1.30,r))+.33*(1-smooth(.54,.85,r))+.11*(1-smooth(.22,.46,r))));
+    }
+    if(!rise)return 0;
+    return rise*smooth(5.5,18,trail(x,z));
+  }
   // Make the lake floors depressions in the same field that supports the avatar.
   // The concentric contours and water elevation therefore also meet on the banks.
   function landscape(x,z) {
     const waves=1.7*Math.sin(x*.027+.3)*Math.cos(z*.022)+.95*Math.sin(z*.043-x*.012);
     const outside=smooth(24,85,Math.hypot(x,z));
-    let h=120+waves*(.28+.72*outside)+Math.sin(x*.071+z*.052)*.16;
+    let h=120+waves*(.28+.72*outside)+Math.sin(x*.071+z*.052)*.16+sandstone(x,z);
     for (const pool of pools) {
       const d=Math.hypot((x-pool.x)/pool.rx,(z-pool.z)/pool.rz);
       if (d<1.22) h-=(1-smooth(.7,1.22,d))*(pool.id==='core'?1.6:1.25);
@@ -201,13 +217,13 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   }
 
   return {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
-    closestPad,sample,heightSample,height,point,siteAt};
+    closestPad,sample,heightSample,height,point,siteAt,sandstone};
 }
 
 function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createKloseTerrain(T,definition)) {
   const {radius,landingSites}=definition;
   const {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
-    closestPad,sample,heightSample,height,point,siteAt}=ground;
+    closestPad,sample,heightSample,height,point,siteAt,sandstone}=ground;
   const root = new T.Group(), orbital = new T.Group(), local = new T.Group();
   root.name = '帕诺星系 · 克洛斯星'; root.add(orbital,local); world.add(root);
   let mode = 'hidden';
@@ -331,6 +347,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   const groundColor=new T.Color(),regionColor=new T.Color(),sodColor=new T.Color(),beltColor=new T.Color();
   const plains=color('#ba8170'),forestColor=color('#34698a'),stoneColor=color('#85687f');
   const goldWater=color('#c49950'),deepWater=color('#476684');
+  const lowerBed=color('#b67866'),sunlitBed=color('#edaf84');
   function grassClearing(x,z,variation,trailCoverage) {
     // North is behind the blue-topped rock ledge. Only the northeastern shelf
     // is yellow-green in map 10; the sunny foreground stays coral.
@@ -361,6 +378,12 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       if (site.id==='grassland') grassClearing(dx,dz,variation,trailCoverage);
       regionColor.lerp(path,.66*trailCoverage);
       groundColor.lerp(regionColor,weight);
+    }
+    const bluff=sandstone(x,z);
+    if(bluff>.02){
+      const ledge=.46+.27*Math.sin(bluff*1.1)+.16*Math.sin(bluff*2.6+x*.08)+.10*variation;
+      regionColor.copy(lowerBed).lerp(sunlitBed,ledge);
+      groundColor.lerp(regionColor,smooth(.02,4.6,bluff));
     }
     return groundColor.multiplyScalar(daylight).lerp(beltColor,1-detail);
   }
@@ -468,6 +491,32 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   function tileRow(lat){return clamp(Math.floor((lat/Math.PI+.5)*tileRows),0,tileRows-1);}
   function tileCols(row){return Math.max(1,Math.round(tau*radius*Math.cos(((row+.5)/tileRows-.5)*Math.PI)/240));}
   function tileCol(lon,n){return ((Math.floor((unwrap(lon)/tau+.5)*n)%n)+n)%n;}
+  function vegetation(lat,lon,land,size,tree,reach,h,yaw,paint){
+    const c=Math.cos(lat),up=new T.Vector3(c*Math.cos(lon),Math.sin(lat),-c*Math.sin(lon));
+    return {lat,lon,up,at:up.clone().multiplyScalar(radius+land.height),size,h,reach,yaw,paint,tree,top:land.height+h};
+  }
+  // The classic grazing grounds are intentionally clear. Put the middle
+  // distance in pockets along the banks instead of peppering the whole plain.
+  // Their geodetic cell owns both their instances and the collision record.
+  const stands=new Map(),standPaint=[0x34677e,0x49859a,0x507b82,0x557965,0x778849];
+  let standCount=0;
+  for(const [zone,[cx,cz,spread,density,tint]] of [
+    [-72,-101,18,11,0],[-37,-111,12,8,0],[-85,-142,21,14,0],[-55,-145,14,8,2],
+    [39,-108,18,12,3],[81,-118,15,10,4],[70,-151,16,12,3],[-104,-188,22,14,2],
+    [101,-202,24,14,2],[-42,-244,26,15,0],[58,-256,18,12,2]
+  ].entries()){
+    for(let i=0;i<density;i++){
+      const phase=i*2.39996+zone*.91,ring=spread*Math.sqrt(i/density),x=cx+ring*Math.cos(phase),z=cz+ring*.49*Math.sin(phase);
+      const size=3.4+(1-ring/spread)*3.0+1.55*Math.sin(i*2.37+zone*.41)**2,reach=size*(.73+.13*Math.cos(i));
+      if(trail(x,z)<reach+4||closestPad(x,z,30+reach)||sites.some(s=>Math.hypot(x-s.x,z-s.z)<40+reach))continue;
+      const lat=origin.lat-z/radius,lon=origin.lon+x/(radius*Math.cos(origin.lat)),land=sample(lat,lon,x,z,{});
+      const row=tileRow(lat),col=tileCol(lon,tileCols(row)),key=row+'/'+col;
+      const item=vegetation(lat,lon,land,size,true,reach,size*(1.42+.47*Math.sin(phase)**2),phase,
+        standPaint[Math.min(standPaint.length-1,tint+(i%3===0?1:0))]);
+      if(!stands.has(key))stands.set(key,[]);
+      stands.get(key).push(item);standCount++;
+    }
+  }
   function tile(row,col,n){
     const key=row+'/'+col;
     if(cache.has(key))return cache.get(key);
@@ -484,11 +533,10 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       if(!tree && chance>.08+land.forest*.86+land.rock*.29)continue;
       const size=(tree?4.2:1.25)*(1+.9*random()+.55*random());
       const reach=size*(tree?.75:1.1),h=size*(tree?1.85:.76);
-      const c=Math.cos(lat),up=new T.Vector3(c*Math.cos(lon),Math.sin(lat),-c*Math.sin(lon));
-      const at=up.clone().multiplyScalar(radius+land.height);
-      const yaw=random()*tau,paint=tree?(z>700&&x>2500?0x975879:0x477c89):(land.rock>.4?0x816276:0xc18e70);
-      items.push({lat,lon,up,at,size,h,reach,yaw,paint,tree,top:land.height+h});
+      const yaw=random()*tau,paint=tree?(z>700&&x>2500?0x975879:standPaint[Math.floor(yaw/tau*3)]):(land.rock>.4?0x816276:0xc18e70);
+      items.push(vegetation(lat,lon,land,size,tree,reach,h,yaw,paint));
     }
+    if(stands.has(key))items.push(...stands.get(key));
     if(cache.size>=192)cache.delete(cache.keys().next().value);
     cache.set(key,items);return items;
   }
@@ -515,6 +563,34 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   const groves=new T.Group();groves.name='巡航林冠与山地露岩';local.add(groves);
   let forestRow=-1,forestCol=-1,treeTrunks,treeCrowns,rocks;
+  // Six overlapping, wind-bent sprays form a single silhouette. Each spray is
+  // fluted on top and undercut along the skirt, with local pigment and shadow
+  // baked into its vertices. All trees still use one instanced crown draw.
+  function layeredCrown(){
+    const v=[],rgb=[],idx=[],sides=16;
+    const profile=[[-.77,.05],[-.52,.59],[-.26,.93],[-.12,1],[.26,.82],[.59,.45],[.68,.01]];
+    for(const [j,[x,y,z,w,h,d,turn]] of [
+      [-.10,.38,-.06,.56,.82,.55,.39],[-.42,.02,.09,.50,.65,.44,1.35],
+      [.42,.16,-.17,.49,.75,.45,2.55],[.13,-.15,.43,.48,.60,.46,.70],
+      [.04,.02,-.46,.44,.65,.48,1.84],[-.36,-.42,-.33,.36,.51,.38,.26]
+    ].entries()){
+      const start=v.length/3;
+      for(const [row,[height,r]] of profile.entries())for(let k=0;k<sides;k++){
+        const a=tau*k/sides,fold=Math.cos(a*5+turn+height*.76),grain=.90+.13*fold+.055*Math.sin(a*3+turn);
+        const rx=w*Math.cos(a)*r*grain,rz=d*Math.sin(a)*r*grain;
+        v.push(x+rx*Math.cos(turn)+rz*Math.sin(turn)+height*.09,
+          y+h*(height+(.13*fold+.09*Math.cos(a*2+turn))*r),z-rx*Math.sin(turn)+rz*Math.cos(turn));
+        const light=.65+.29*(height+.77)/1.45+.10*fold*r+.14*(j===0?1:0);
+        rgb.push(light*(.93+.04*Math.cos(a)),light,light*(1.06-.11*(height+.77)));
+        if(row<profile.length-1){
+          const b=start+row*sides+k,c=start+row*sides+(k+1)%sides;
+          idx.push(b,b+sides,c,c,b+sides,c+sides);
+        }
+      }
+    }
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));
+    g.setAttribute('color',new T.Float32BufferAttribute(rgb,3));g.setIndex(idx);g.computeVertexNormals();return g;
+  }
   function updateGroves(lat,lon,altitude){
     groves.visible=altitude<3100;
     if(!groves.visible)return;
@@ -524,7 +600,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     if(!treeTrunks){
       const batch=(geometry,paint,tinted)=>{
         const material=new T.MeshStandardMaterial({color:paint,roughness:.94,vertexColors:geometry.hasAttribute('color')});
-        const meshes=new T.InstancedMesh(geometry,material,34*49);
+        const meshes=new T.InstancedMesh(geometry,material,34*49+standCount);
         if(tinted)meshes.instanceColor=new T.InstancedBufferAttribute(new Float32Array(meshes.count*3),3);
         meshes.frustumCulled=false;meshes.receiveShadow=true;groves.add(meshes);return meshes;
       };
@@ -551,7 +627,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       trunk.setAttribute('position',new T.Float32BufferAttribute(bark,3));trunk.setAttribute('color',new T.Float32BufferAttribute(barkTint,3));
       trunk.setIndex(tri);trunk.computeVertexNormals();
       treeTrunks=batch(trunk,0x735548,false);
-      treeCrowns=batch(kloseCanopyGeometry(T,false),0xffffff,true);
+      treeCrowns=batch(layeredCrown(),0xffffff,true);
       rocks=batch(new T.DodecahedronGeometry(1),0xffffff,true);
     }
     const anchor=point(lat,lon);groves.position.copy(anchor);
@@ -562,11 +638,11 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
         transform.quaternion.setFromUnitVectors(axisY,it.up);transform.rotateY(it.yaw);
         transform.position.copy(it.at).sub(anchor);
         if(it.tree){
-          transform.position.addScaledVector(it.up,it.size*.58);
-          transform.scale.set(it.size*.16,it.size*1.16,it.size*.16);transform.updateMatrix();
+          transform.position.addScaledVector(it.up,it.h*.34);
+          transform.scale.set(it.size*.16,it.h*.68,it.size*.16);transform.updateMatrix();
           treeTrunks.setMatrixAt(trees,transform.matrix);
-          transform.position.addScaledVector(it.up,it.size*.71);
-          transform.scale.set(it.reach,it.size*.56,it.reach*.87);transform.updateMatrix();
+          transform.position.addScaledVector(it.up,it.h*.33);
+          transform.scale.set(it.reach,it.h*.34,it.reach*.94);transform.updateMatrix();
           treeCrowns.setMatrixAt(trees,transform.matrix);treeCrowns.setColorAt(trees++,paint.setHex(it.paint).convertSRGBToLinear());
         }else{
           transform.position.addScaledVector(it.up,it.h*.42);

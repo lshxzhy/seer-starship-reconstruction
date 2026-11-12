@@ -427,8 +427,7 @@
     function floorPlates(group,x,y,z,width,depth,finish,tone=paint.floor){
       const surf=cabinAsset(cabinAssets.materials,'passage/'+finish+'/'+tone.uuid,()=>{
         const m=tone.clone(),maps=cabinFinish(finish);
-        m.map=maps.map;m.bumpMap=maps.bumpMap;m.roughnessMap=maps.roughnessMap;
-        m.bumpScale=maps.bumpScale/metresPerRenderUnit;m.roughness=.77;return m;
+        Object.assign(m,maps);m.roughness=.77;return m;
       });
       const g=cabinAsset(cabinAssets.geometries,'passage-plane/'+width+'/'+depth,()=>
         cabinMetricUV(new T.PlaneGeometry(width,depth),1,1,1));

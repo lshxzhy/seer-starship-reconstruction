@@ -3,10 +3,10 @@
 const ALPHA_WORLD=defineTwinWorld({
   id:'alpha',name:'双子阿尔法星',radius:38000,lat:.29,lon:-.95,
   sites:[
-    {id:'alpha-springs',name:'双子阿尔法星 · 温泉群',mapId:105,x:0,z:0,lookAt:[-5,-15],lookPitch:.10,description:'矿物环托住碧色温泉，蒸汽从金色菌台与孔树之间升起。'},
+    {id:'alpha-springs',name:'双子阿尔法星 · 温泉群',mapId:105,x:0,z:0,lookAt:[-4,-23],lookPitch:.24,description:'矿物环托住碧色温泉，蒸汽从金色菌台与孔树之间升起。'},
     {id:'alpha-rock',name:'阿尔法星岩地',mapId:106,x:65,z:-103,lookAt:[106,-190],lookPitch:.18,description:'紫色盘根穿过开裂的银灰板岩；巨型豆豆果树与能源高塔分立岩地两侧。'},
     {id:'alpha-station',name:'海盗能源站',mapId:46,x:103,z:-163,lookAt:[104,-186],lookPitch:.20,description:'滚筒输送带通往能源塔，右翼橙色传送盘接通贝塔星荒原。'},
-    {id:'alpha-forest',name:'黑白森林',mapId:407,x:-88,z:-45,lookAt:[-94,-63],description:'巨根拱起林廊，树间漏下青绿色天光，赭色石径通向暖光树洞。'}
+    {id:'alpha-forest',name:'黑白森林',mapId:407,x:-88,z:-45,lookAt:[-94,-63],horizon:0x9bc797,zenith:0x557d70,haze:0x7d9479,description:'巨根拱起林廊，树间漏下青绿色天光，赭色石径通向暖光树洞。'}
   ],
   routes:[['alpha-springs','alpha-rock'],['alpha-springs','alpha-forest'],['alpha-rock','alpha-station']],
   landingSites:[{id:'alpha-landing',name:'温泉东侧高台',x:29,z:36,description:'温泉盆地东南侧为 L-01 留出的平坦着陆高地。'}],
@@ -48,11 +48,16 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   const rod=new T.CylinderGeometry(1,1,1,16),disc=new T.CylinderGeometry(1,1,1,52);
   const hoop=new T.TorusGeometry(1,.045,8,64);
   const stone=material(0xffffff,{vertexColors:true,roughness:.87}),skin=material(0xffffff,{vertexColors:true,roughness:.67});
+  fieldSurfaceFinish(stone,'stone');
+  const fungusBark=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.86}),'stem');
+  const scales=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.58}),'nacre');
   const metal=material(0x454d58,{metalness:.52,roughness:.46}),slate=material(0x8299a6,{metalness:.38,roughness:.54});
   const purple=material(0x654277,{metalness:.40,roughness:.41}),hazard=material(0xe8a340,{metalness:.3});
   const lime=material(0xc0f945,{emissive:0x64931d,emissiveIntensity:.60}),ivory=material(0xdbefce);
   const lilac=material(0x824d78),leaf=material(0x39786f),amber=material(0xeac843);
   const teal=material(0x477e83),moss=material(0x334b38),bark=material(0x253e37);
+  for(const m of [slate,metal,purple,hazard])fieldSurfaceFinish(m,'metal');
+  fieldSurfaceFinish(bark,'stem');fieldSurfaceFinish(moss,'moss');
   const vEuler=new T.Euler(),q=new T.Quaternion(),up=V(0,1,0);
   function link(g,m,a,b,r,depth=r){
     const dir=b.clone().sub(a),length=dir.length();
@@ -93,22 +98,64 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     a=>.05*Math.sin(3*a+.6)+.035*Math.cos(7*a));
   const curled=curve([[0,0,0],[-.12,-.43,.05],[.047,-.83,.13],[.22,-.96,.08],[.38,-.81,-.01],[.31,-.65,.02],[.19,-.72,.06]],.048);
   const twist=curve([[0,0,0],[.30,.07,.03],[.53,.18,.09],[.66,.45,.14],[.83,.72,.18],[1,1,0]],.075);
+  // Full lamina, central midrib and rolled edges show from above and beneath.
+  // Each whorl is one reusable mesh. Stems and leaves meet at a single base.
+  function fronds(palette,n){
+    const v=[],colors=[],idx=[],tone=new T.Color(),bands=9;
+    for(let j=0;j<n;j++){
+      const a=j*2.39996,s=Math.sin(a),c=Math.cos(a),length=.62+.32*Math.sin(j*1.72+.3)**2;
+      for(let k=0;k<=bands;k++){
+        const t=k/bands,w=.135*Math.pow(Math.max(.0001,Math.sin(t*Math.PI)),.74)*(.95+.14*Math.sin(k*.9+j));
+        const dir=.1*t*t*Math.cos(a*2),r=length*t,y=.22+.78*Math.sin(t*1.73)-.39*t*t+.17*t*Math.cos(a);
+        for(let l=-1;l<=1;l++){
+          const lateral=l*w+dir,color=palette[l===0?1:((j+l+1)%3===0?2:0)];
+          v.push(c*r-s*lateral,y+(l===0?.045:-.025)*Math.sin(t*Math.PI)-.22,s*r+c*lateral);
+          tone.setHex(color).convertSRGBToLinear().multiplyScalar(.63+.38*t);colors.push(tone.r,tone.g,tone.b);
+        }
+        if(k<bands){const i=j*(bands+1)*3+k*3;idx.push(i,i+3,i+1,i+1,i+3,i+4,i+1,i+4,i+2,i+2,i+4,i+5);}
+      }
+    }
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));
+    g.setIndex(idx);g.computeVertexNormals();return g;
+  }
+  const foliage=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,side:T.DoubleSide,roughness:.78}),'blade');
+  const springFern=fronds([0x437c7e,0x9bc4a4,0x619896],8),forestFern=fronds([0x295d4a,0x8cae69,0x507a50],11);
+  const cavity=material(0x302c3e,{roughness:.89}),goldPith=material(0xebbe42,{emissive:0x8e6c11,emissiveIntensity:.34});
+  const socket=new T.TorusGeometry(1,.17,10,42);
+  const capGill=curve([[0,.11,0],[.24,.11,0],[.55,.17,.025],[.80,.26,.042],[.94,.34,.05]],.021,10);
+  const gillTone=material(0xc0a185,{roughness:.83});
+  function capRibs(x,y,z,w,h,d,turn,count){
+    for(let k=0;k<count;k++){
+      const a=k*tau/count,rx=Math.cos(a)*w,rz=Math.sin(a)*d;
+      const sx=Math.hypot(rx,rz),axis=turn-Math.atan2(rz,rx);
+      stamp(capGill,gillTone,x,y-.045*h,z,sx*.955,h,sx,0,axis,0);
+    }
+  }
   function nativeTree(x,z,size,turn=0){
     const y=ground(x,z);
-    stamp(trunk,skin,x,y-.15,z,size*.65,size*4.2,size*.69,0,turn,0);
+    stamp(trunk,fungusBark,x,y-.15,z,size*.65,size*4.2,size*.69,0,turn,0);
     block(x,z,size*.84,size*4.45);
     for(let j=0;j<5;j++){
       const a=turn+j*tau/5,h=(.52+.72*j)*size,c=Math.cos(a),s=Math.sin(a),width=(j===4?1.78:.89+.19*(j%2))*size;
       const tx=x+c*.64*size,tz=z+s*.64*size;
-      stamp(cap,skin,tx,y+h,tz,width,.78*size,width*.91,0,a,0);
+      stamp(cap,scales,tx,y+h,tz,width,.78*size,width*.91,0,a,0);
       const budR=(.19+.055*(j%2))*size;
       const ex=x+c*.58*size,ez=z+s*.58*size;
-      stamp(sphere,teal,ex,y+h+.52*size,ez,budR*1.15,budR*1.34,budR*.79,0,-a,0);
-      stamp(sphere,lime,ex+c*.08*size,y+h+.54*size,ez+s*.08*size,budR,budR*1.18,budR*.66,0,-a,0);
+      const face=Math.PI/2-a,eyeY=y+h+.57*size;
+      stamp(sphere,cavity,ex,eyeY,ez,budR*1.02,budR*1.45,budR*.34,0,face,0);
+      stamp(socket,teal,ex+.10*budR*c,eyeY,ez+.10*budR*s,budR,budR*1.54,budR*1.11,0,face,0);
+      // Some fissures are empty, others contain the yellow pith. The rim casts
+      // shade on the insert and the hollow reads at grazing angles.
+      if(j!==1&&j!==3){
+        stamp(sphere,goldPith,ex+.25*budR*c,eyeY,ez+.25*budR*s,.64*budR,.99*budR,.22*budR,0,face,0);
+        stamp(sphere,lime,ex+.40*budR*c-.13*budR*s,eyeY+.26*budR,ez+.40*budR*s+.13*budR*c,.32*budR,.48*budR,.09*budR,0,face,0);
+      }
+      if(j===4||j===0)capRibs(tx,y+h,tz,width,.78*size,width*.91,a,15);
       stamp(curled,lilac,tx+s*width*.70,y+h+.15*size,tz+c*width*.70,size*.86,size*.88,size*.86,0,a,0);
     }
     const crownWidth=(1.54+.21*Math.sin(turn*3))*size;
-    stamp(cap,skin,x,y+4.03*size,z,crownWidth,size*1.07,crownWidth*.79,-.08,turn,.08);
+    stamp(cap,scales,x,y+4.03*size,z,crownWidth,size*1.07,crownWidth*.79,0,turn,0);
+    capRibs(x,y+4.03*size,z,crownWidth,1.07*size,crownWidth*.79,turn,22);
     for(let j=0;j<3;j++){
       const a=turn+j*tau/3;
       stamp(twist,teal,x+size*1.65*Math.cos(a),y,z+size*1.65*Math.sin(a),1.67*size,2.30*size,1.2*size,0,Math.PI-a,0);
@@ -128,17 +175,53 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       col=mix(col,vec3(.93,1.,.91),.34*line+.18*(1.-smoothstep(.0,.29,r)));
       gl_FragColor=vec4(col,1.);}`});
   const mistPos=[],mistData=[];
+  // Deposits accumulate in chipped, overlapping plates above the waterline.
+  // Their contour follows each pool and the actual terrain outside the basin.
+  const sinterVertices=[],sinterColors=[],sinterIndices=[],sinterColour=new T.Color();
+  function sinterBand(cx,cz,r,turn,rise,index){
+    const n=21+index%4;
+    for(let k=0;k<n;k++){
+      const mid=tau*(k+.5)/n,edge=.91*Math.PI/n,layer=.5+.5*Math.sin(k*13.9+index*4.2);
+      const outer=1.30+.33*layer;
+      const levels=[[1.02,.43,0xe7e5c3],[1.10,.52,0xd5ccb1],[1.23,.31,0xeae6c2],[outer,.115,0xa0b4ad],[outer+.06,.018,0x778e89]];
+      const start=sinterVertices.length/3;
+      for(const [row,[rad,height,color]] of levels.entries()){
+        for(const f of [-1,0,1]){
+          const a=mid+edge*f,rr=rad*(1+.064*Math.sin(3*a+.8)+.038*Math.sin(7*a));
+          const dx=Math.cos(a)*r*rr,dz=Math.sin(a)*r*rr*.89;
+          const x=cx+dx*Math.cos(turn)+dz*Math.sin(turn),z=cz-dx*Math.sin(turn)+dz*Math.cos(turn);
+          const h=height*rise+(f===0?.042:0)+.035*layer;
+          const local=T.MathUtils.lerp(ground(cx,cz),ground(x,z),Math.max(0,Math.min(1,(rad-1)*2.5)));
+          sinterVertices.push(x,local+h,z);
+          sinterColour.setHex(color).convertSRGBToLinear().multiplyScalar(.86+layer*.18+(f===0?.045:0));sinterColors.push(sinterColour.r,sinterColour.g,sinterColour.b);
+        }
+        if(row<levels.length-1){const i=start+row*3;sinterIndices.push(i,i+1,i+3,i+1,i+4,i+3,i+1,i+2,i+4,i+2,i+5,i+4);}
+      }
+      if(k%3===index%3){
+        const a=mid-turn,dx=Math.cos(a)*r*(outer+.20),dz=Math.sin(a)*r*(outer+.11)*.90,x=cx+dx,z=cz+dz;
+        const scale=r*(.11+.05*layer);stamp(springFern,foliage,x,ground(x,z)-.06,z,scale*3.3,scale*2.65,scale*2.9,0,mid,0);
+        if(k%2===0)for(let j=0;j<3;j++){
+          const xx=x+Math.cos(j*2.2)*scale*.62,zz=z+Math.sin(j*2.2)*scale*.58;
+          stamp(crystal,skin,xx,ground(xx,zz)-.025,zz,scale*.49,scale*(1.2+.35*j),scale*.57,0,mid+j,(j-1)*.23);
+        }
+      }
+    }
+  }
   for(const [i,[x,z,r]] of ventData.entries()){
     const y=ground(x,z);
     const rise=.65+r*.13;
     stamp(rim,stone,x,y,z,r,rise,r*.89,0,i*.71,0);
     stamp(disc,water,x,y+rise*.44,z,.97*r,.06,r*.84,0,i*.71,0);
+    sinterBand(x,z,r,i*.71,rise,i);
     block(x,z,1.07*r,rise*.58);
     for(let j=0;j<6;j++){
       mistPos.push(x,y+.62,z);
       mistData.push((i*.143+j/6)%1, .54*r+.22*(j%2),i*1.7+j*.83,(i===0?3.0:1.6)*r);
     }
   }
+  const sinterMesh=new T.BufferGeometry();sinterMesh.setAttribute('position',new T.Float32BufferAttribute(sinterVertices,3));
+  sinterMesh.setAttribute('color',new T.Float32BufferAttribute(sinterColors,3));sinterMesh.setIndex(sinterIndices);
+  sinterMesh.computeVertexNormals();stamp(sinterMesh,stone,0,0,0);
   const mistGeom=new T.BufferGeometry();mistGeom.setAttribute('position',new T.Float32BufferAttribute(mistPos,3));
   mistGeom.setAttribute('flow',new T.Float32BufferAttribute(mistData,4));
   const mistMat=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{clock:{value:0}},
@@ -217,13 +300,21 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   }
   // Exposed jointed slabs and violet root bundles border the road to the tower.
   const roots=curve([[0,0,0],[.16,.16,.06],[.42,-.02,.12],[.71,.14,.03],[1,.04,0]],.065);
+  const pear=material(0xf4c449,{roughness:.49}),fruitBud=material(0xf7dd68);
   for(let i=0;i<60;i++){
     const side=i%2?-1:1,n=Math.floor(i/2),x=46+n*1.75+side*(10.4+(n*7)%20),z=-76-n*2.1;
     if(Math.hypot(x-65,z+103)<5.5)continue;
     const y=ground(x,z),s=1.6+((i*13)%9)*.39;
     stamp(rock,stone,x,y+.16,z,s,.64*s,s*(.72+(i%3)*.10),-.035,i*.81,.04);
     if(s>3.7)block(x,z,s*.80,.6*s);
-    if(i%3===0)stamp(roots,lilac,x,y+.19,z,3.7*s,.64*s,s,0,i*.72,-.03);
+    if(i%3===0){
+      for(let k=0;k<3;k++)stamp(roots,k===1?purple:lilac,x,y+.19+k*.11,z+.24*k,2.8*s,.64*s,s,0,i*.72+k*.07,-.03);
+      stamp(springFern,foliage,x+.72*s,y+.46*s,z,2.4*s,1.20*s,1.6*s,0,i*.4,0);
+      if(i%2===0)for(let k=0;k<5;k++){
+        const xx=x+s*(.49+.47*Math.sin(k*2.4)),zz=z+s*.35*Math.cos(k*2.4);
+        stamp(sphere,pear,xx,y+.64*s+.31*k,zz,.36,.23,.26,0,i+k,.36);stamp(sphere,fruitBud,xx-.10,y+.64*s+.31*k+.09,zz,.12,.06,.09);
+      }
+    }
   }
   nativeTree(45,-119,3.65,1.4);
   for(let i=0;i<8;i++){
@@ -247,16 +338,44 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       stamp(forestTrunk,j%2?moss:bark,x,y+1,z,3.0,h*1.1,4.0,-.10,angle,.18*side);
     }
     stamp(cap,moss,x,y+h*1.06,z,6.2,1.75,5.7,.16,a,.1);
+    for(let j=0;j<3;j++){
+      const t=a+j*2.1,dx=Math.cos(t),dz=Math.sin(t);
+      stamp(forestFern,foliage,x+dx*3.1,y+h*.95,z+dz*3.4,4.8,3.4,4.35,0,t,.18);
+      const px=x+dx*3.6,pz=z+dz*3.6;stamp(forestFern,foliage,px,ground(px,pz)-.07,pz,2.6+j*.24,2.5-j*.22,2.5,0,t,0);
+      if(j===0)stamp(curled,leaf,x+dx*4.2,y+h,z+dz*4.3,3.5,4.6,3.3,0,a,0);
+    }
     if(i%2===0)stamp(vine,beamGreen,x,y+h*.83,z,18,6,12,0,a*.07,-.08);
   }
   const hollowX=-98,hollowZ=-78,hollowY=ground(hollowX,hollowZ);
-  stamp(trunk,stone,hollowX,hollowY,hollowZ,4.6,10.6,3.5,0,.9,.10);
-  stamp(sphere,bark,hollowX,hollowY+2.9,hollowZ+1.9,2.2,3.8,1.05,0,0,-.07);
-  stamp(sphere,warm,hollowX,hollowY+2.4,hollowZ+2.75,1.46,2.8,.39,0,0,-.06);
-  block(hollowX,hollowZ,3.6,10.8);
-  for(let i=0;i<13;i++){
-    const x=-92+3*Math.sin(i*1.74),z=-40-i*2.9;
-    stamp(rock,stone,x,ground(x,z)-.27,z,1.25,.80,1.60,0,i,0);
+  // Model the opening through the rootstock, so the threshold, curled lip
+  // and warm inner bark remain separated as the visitor moves to one side.
+  const bole=new T.Shape();bole.moveTo(-5.1,-.2);
+  bole.bezierCurveTo(-3.2,1.6,-3.8,5.2,-3.1,7.6);bole.lineTo(-4.3,10.6);bole.lineTo(-3.3,10.1);
+  bole.lineTo(-1.9,8.4);bole.lineTo(-1.19,11.1);bole.lineTo(-.1,9.65);bole.lineTo(1.47,10.55);
+  bole.lineTo(2.08,8.12);bole.lineTo(4.0,9.3);bole.lineTo(3.25,6.57);
+  bole.bezierCurveTo(3.7,4.15,3.31,1.35,5.47,-.2);bole.closePath();
+  const throat=new T.Path();throat.moveTo(-1.45,.15);throat.bezierCurveTo(-2.0,1.7,-1.66,4.12,-.38,5.68);
+  throat.bezierCurveTo(.94,5.22,2.17,2.48,1.36,.15);throat.closePath();bole.holes.push(throat);
+  const hollow=new T.ExtrudeGeometry(bole,{depth:2.3,bevelEnabled:true,bevelSegments:3,bevelSize:.21,bevelThickness:.28,curveSegments:22});
+  stamp(hollow,bark,hollowX,hollowY,hollowZ-1.1);
+  stamp(sphere,warm,hollowX,hollowY+2.54,hollowZ-1.8,1.96,3.01,.40);
+  const furrow=curve([[0,0,0],[-.38,.19,.11],[-.18,.41,.01],[.14,.71,.03],[.08,1,0]],.090);
+  for(const side of [-1,1]){
+    for(let k=0;k<4;k++){
+      stamp(furrow,k%2?moss:dusk,hollowX+side*(1.96+k*.39),hollowY+.38,hollowZ+1.47,2.1,6+.45*k,.98,0,side<0?0:Math.PI,0);
+      stamp(forestFern,foliage,hollowX+side*(2.3+k*.62),hollowY+7.8+.5*(k%2),hollowZ-.31*k,4.4,3.7,4.1,0,k*1.6,0);
+    }
+    stamp(forestRoot,bark,hollowX+side*2.8,hollowY,hollowZ+.1,3.9,7.0,4.0,0,side<0?Math.PI:.21,0);
+    block(hollowX+side*2.7,hollowZ,1.6,10.5);
+  }
+  block(hollowX,hollowZ-2,.88,5.8);
+  const pathStone=fieldSurfaceFinish(material(0xc19769,{vertexColors:true,roughness:.94}),'stone');
+  for(let i=0;i<31;i++){
+    const x=-90-6.5*i/30+2.95*Math.sin(i*1.74),z=-39-i*1.26;
+    stamp(rock,pathStone,x,ground(x,z)-.15,z,1.53,.55,1.33,0,i,0);
+    if(i%3===0){
+      const px=x+(i%2?-1:1)*4.2,pz=z+.6;stamp(forestFern,foliage,px,ground(px,pz)-.06,pz,1.35,.9,1.2,0,i,0);
+    }
   }
   // The original 106 vista terminates at a tall grey cylinder with lime slots.
   // At its feet map 46 uses two ochre grilles, blue decks and a pink warp disc.
@@ -264,7 +383,8 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   const tower=revolve([[1.0,0,0x4f5361],[.96,.09,0x96959b],[.85,.13,0x69676e],
     [.80,.60,0x8c8791],[.76,.70,0x88848d],[.79,.74,0xb2aba7],[.67,.76,0x736b75],
     [.61,.94,0xaaa39d],[.60,1,0xccc1b0],[.02,1,0x89929b]],44,a=>.82+.16*Math.cos(a*2),a=>.012*Math.cos(12*a));
-  stamp(tower,stone,towerX,base,towerZ,9.8,48,9.8);block(towerX,towerZ,9.55,48);
+  const towerFinish=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.49,metalness:.38}),'metal');
+  stamp(tower,towerFinish,towerX,base,towerZ,9.8,48,9.8);block(towerX,towerZ,9.55,48);
   const panel=material(0x626b6e,{roughness:.54,metalness:.39}),edgeMetal=material(0xafaa9e,{metalness:.48});
   for(let band=0;band<3;band++)for(let i=0;i<18;i++){
     const a=tau*(i+(band%2)*.5)/18,c=Math.cos(a),s=Math.sin(a),r=band===0?8.7:band===1?7.8:6.5;
@@ -308,6 +428,28 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       const z2=deckZ+2.25;
       stamp(rod,metal,px,deckY+.21,z2,.40,1.75,.40,Math.PI/2,0,0);
       stamp(rod,lime,px,deckY+.22,z2,.405,.25,.405,Math.PI/2,0,0);
+    }
+    // The two projecting service baskets have a mesh bottom, ochre frames,
+    // roller hinges and oil lines bolted directly to the side of the tower.
+    const trayX=towerX+side*8.1,trayZ=towerZ+10.6,ty=base+3.65;
+    for(const s of [-1,1]){
+      stamp(cube,hazard,trayX+s*2.65,ty,trayZ,.27,.44,4.5);
+      stamp(cube,hazard,trayX,ty,trayZ+s*2.16,5.36,.44,.24);
+      stamp(rod,slate,trayX+s*2.67,ty,trayZ+2.08,.57,.71,.57,0,0,Math.PI/2);
+      stamp(rod,hazard,trayX+s*3.04,ty,trayZ+2.08,.46,.075,.46,0,0,Math.PI/2);
+      stamp(rod,lime,trayX+s*3.09,ty,trayZ+2.08,.29,.07,.29,0,0,Math.PI/2);
+      const ax=trayX+s*2.17;
+      link(rod,metal,V(ax,base+.15,trayZ-1.9),V(ax,ty-.16,trayZ+1.67),.20);
+      block(ax,trayZ-1.9,.38,3.8);
+    }
+    for(let k=-3;k<=3;k++)for(const s of [-1,1]){
+      const dx=k*.84;
+      const lo=Math.max(-1.96,-2.50-s*dx),hi=Math.min(1.96,2.50-s*dx);
+      if(lo<hi)link(rod,metal,V(trayX+dx+s*lo,ty+.03,trayZ+lo),V(trayX+dx+s*hi,ty+.03,trayZ+hi),.073);
+    }
+    const servicePipe=curve([[0,0,0],[.58,0,.35],[1.67,.28,.82],[2.05,1.55,.97],[2.11,2.79,.65],[2.82,3.31,.16]],.15,19);
+    for(let j=0;j<3;j++){
+      stamp(servicePipe,j===1?hazard:edgeMetal,towerX+side*5.72,base+1.07,towerZ+7.6+j*.35,1,1,1,0,side<0?Math.PI:0,0);
     }
   }
   const px=122,pz=-174,py=ground(px,pz);

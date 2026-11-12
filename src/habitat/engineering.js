@@ -496,6 +496,26 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     arm([[bx+2.3,1.5,bz-2.3],[bx+2.8,3.5,bz-2.3],[bx+1.4,4.2,bz-1.4],[bx+.7,3.4,bz-.2]],C.ivory);
     cyl(bx+.7,3.17,bz-.2,.3,.18,.35,C.steel);
     cyl(bx+.7,2.94,bz-.2,.17,.17,.1,C.cyan,{glow:.3});
+    // The carriage rolls along the service side of the bed. The head has
+    // a cable strain relief and three independently seated inspection lenses.
+    const railX=bx+2.5,carZ=bz+.65;
+    for(const y of [1.37,1.61]){
+      pipe([[railX,y,bz-2.80],[railX,y,bz+2.82]],.061,C.edge,{segments:12});
+      for(const dz of [-2.79,-1.3,1.35,2.79])
+        box(railX-.085,y,bz+dz,.20,.16,.12,C.steel);
+    }
+    box(railX+.06,1.51,carZ,.21,.53,.92,C.navy);
+    for(const dz of [-.32,.32])for(const y of [1.34,1.64]){
+      cyl(railX+.17,y,carZ+dz,.102,.102,.11,C.steel,{rz:Math.PI/2,segments:16});
+      cyl(railX+.24,y,carZ+dz,.047,.047,.045,C.edge,{rz:Math.PI/2,segments:6});
+    }
+    pipe([[railX+.04,1.67,carZ],[railX+.21,2.32,carZ-.16],[bx+2.39,3.44,bz-2.13],
+      [bx+1.48,4.27,bz-1.41],[bx+.78,3.47,bz-.19]],.057,0x384d52);
+    for(let i=0;i<3;i++){
+      const a=i*Math.PI*2/3,xx=bx+.7+.28*Math.cos(a),zz=bz-.2+.28*Math.sin(a);
+      cyl(xx,3.01,zz,.10,.12,.14,C.edge,{segments:16});
+      ball(xx,2.927,zz,.079,.025,.079,C.cyan,{glow:.35,roughness:.19});
+    }
     // Fit-out on the repair cradle: a clamping slide with opposing V-blocks
     // and a hand screw. It belongs to the top of the existing lift bed.
     for(const s of [-1,1]){

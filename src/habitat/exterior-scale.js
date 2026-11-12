@@ -48,7 +48,17 @@
         fitting(f,sign*8.2,0,.73,.60,7.1,.70,mats.pearl);
         fitting(f,sign*8.2,2.1,1.12,.66,1.45,.15,mats.ochre);
         fitting(f,sign*5.5,-2.82,1.46,.16,1.18,.16,mats.ochre);
+        // The roller housing spans between two bearing seats. Alternating
+        // raised ribs curve into the return, above the existing lock opening.
+        fitting(f,sign*7.28,3.25,1.15,.58,1.38,1.92,mats.edge);
+        fitting(f,sign*7.28,3.31,2.08,.37,.77,.20,mats.ochre);
+        fitting(f,sign*7.45,-2.42,1.74,.18,1.82,.18,mats.steel);
+        fitting(f,sign*6.5,-1.53,1.74,2.1,.15,.18,mats.ochre);
       }
+      fitting(f,0,3.49,1.17,14.20,.94,1.74,mats.cobalt);
+      fitting(f,0,3.14,2.03,13.94,.20,.19,mats.pearl);
+      fitting(f,0,3.13,2.16,6.3,.11,.13,mats.hot);
+      for(let j=0;j<7;j++)fitting(f,-5.96+j*1.98,3.58,1.41,.17,.86,1.66,mats.steel);
       fitting(f,0,-3.62,1.27,19.8,.38,2.6,mats.cobalt);
       fitting(f,0,-2.23,1.58,11.4,.15,.17,mats.ochre);
       for(let j=0;j<6;j++) fitting(f,9.9,-2.8+j*.54,.84,1.36,.13,.42,mats.steel);

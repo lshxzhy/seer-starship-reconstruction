@@ -116,6 +116,17 @@
       const C=(mat,x,y,z,w,h,d)=>plate(car,mat,x,y,z,w,h,d);
       C(night,0,-.18,0,4.52,.32,5.03);
       C(paint.floor,0,-.025,0,4.36,.05,4.90);
+      // Three removable pans carry real metre-scaled diagonal tread. Sills,
+      // aisle markings and the control target above them stay unobstructed.
+      const tread=cabinAsset(cabinAssets.materials,'lift/car-tread',()=>{
+        const mat=paint.floor.clone();Object.assign(mat,cabinFinish('tread'));return mat;
+      });
+      const pan=cabinAsset(cabinAssets.geometries,'lift/car-pan',()=>
+        cabinMetricUV(new T.PlaneGeometry(1.34,4.58),1,1,1));
+      for(const x of [-1.36,0,1.36]){
+        const panel=new T.Mesh(pan,tread);panel.receiveShadow=true;
+        panel.rotation.x=-Math.PI/2;panel.position.set(x,.001,0);car.add(panel);
+      }
       for(const x of [-1.43,1.43])C(safety,x,.008,0,.055,.014,4.42);
       for(let k=-3;k<=3;k++)C(rail,0,.002,k*.59,3.92,.004,.014);
       C(rail,0,-.023,front,opening+.14,.049,.14);

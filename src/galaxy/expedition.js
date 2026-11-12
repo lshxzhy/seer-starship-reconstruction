@@ -8,6 +8,7 @@
     const spiritBook=nav.querySelector('[data-spirit-book]');
     const select=atlas.querySelector('[data-site-select]'),chart=atlas.querySelector('[data-site-map]');
     const summary=atlas.querySelector('[data-site-summary]'),closeButton=atlas.querySelector('[data-chart-close]');
+    const lookNorth=atlas.querySelector('[data-twin-horizon]');
     const hint=stage.querySelector('[data-route-hint]'),trackButton=atlas.querySelector('[data-track-site]');
     const transportButton=atlas.querySelector('[data-site-transport]'),shipMapButton=atlas.querySelector('[data-browse-ship]');
     const optics=nav.querySelector('[data-flight-view]'),hand=stage.querySelector('[data-shuttle-hand]');
@@ -130,7 +131,7 @@
       body.setSafariState(safariState);
       craft=createLandingShuttle(T);world.add(craft.root);
       local=new T.Group();world.add(local);
-      rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true});
+      rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true,display:true});
       local.add(rig.root);contact=createSoleContacts(1);local.add(contact.mesh);
       flameRig=createFieldFlameTool(T,rig);
       nono=createSuperNono(1,local);drill=createMiningDrill(world);
@@ -159,17 +160,25 @@
         side:T.BackSide,depthWrite:false,depthTest:false,fog:false,
         uniforms:{sun:{value:daylight.clone()},horizon:{value:new T.Color()},zenith:{value:new T.Color()},
           cloudAmount:{value:0},moonStrength:{value:0},airDensity:{value:1},ringPlane:{value:new T.Vector3()},
-          twinSky:{value:0},skyZoom:{value:1},
+          twinSky:{value:0},skyZoom:{value:1},panorama:{value:0},crossingPhase:{value:0},meadowGlow:{value:0},
           ringBounds:{value:new T.Vector2(rings.inner,rings.outer)}},
         vertexShader:'varying vec3 direction;void main(){direction=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
         fragmentShader:`varying vec3 direction;uniform vec3 sun,horizon,zenith,ringPlane;
-          uniform float twinSky,skyZoom;
+          uniform float twinSky,skyZoom,panorama,crossingPhase,meadowGlow;
           uniform vec2 ringBounds;uniform float cloudAmount,moonStrength,airDensity;
           float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
           float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.),f.x),f.y);}
+          ${TWIN_CRUST_GLSL}
+          ${TWIN_PANORAMA_GLSL}
           void main(){vec3 d=normalize(direction);float y=max(d.y,0.);
             vec3 col=mix(horizon,zenith,smoothstep(0.,.69,pow(y,.80)));
             vec2 q=d.xz/max(.06,d.y+.13)*2.5;float f=noise(q)*.57+noise(q*2.)*.27+noise(q*4.)*.12+noise(q*8.)*.04;
+            if(meadowGlow>0. && d.y>=0.){
+              float ribbon=exp(-pow((d.y-.085)*10.,2.));
+              float drift=noise(d.xz*6.+vec2(d.y*2.,d.y*43.));
+              col=mix(col,vec3(1.,.56,.24),ribbon*(.15+.21*drift)*meadowGlow);
+              col=mix(col,vec3(.77,.30,.42),smoothstep(.13,.47,d.y)*.27*meadowGlow);
+            }
             float den=dot(d,ringPlane);
             if(d.y>0. && abs(den)>.0001){
               float t=-ringPlane.y/den;
@@ -191,6 +200,11 @@
               vec2 cell=p*vec2(120.,126.);float seed=hash(floor(cell));
               float spark=1.-smoothstep(.04/skyZoom,.22/skyZoom,length(fract(cell)-vec2(.3+.4*seed,.34+.30*hash(floor(cell)+7.))));
               col+=vec3(.91,.88,1.)*spark*step(.946,seed)*(.14+.37*smoothstep(.03,.7,d.y));
+              if(panorama>0. && d.z<-.70){
+                vec3 scene=twinHorizon(d,col,step(1.5,twinSky),crossingPhase);
+                col=mix(col,scene,panorama);
+                col=mix(col,horizon,.075*veil);
+              }
             }
             float s=max(dot(d,sun),0.);col+=cloudAmount*(vec3(.7,.48,.28)*pow(s,40.)+vec3(.9,.84,.72)*smoothstep(.997,.9995,s));
             gl_FragColor=vec4(mix(vec3(.027,.060,.105),col,airDensity),1.);}`
@@ -220,6 +234,7 @@
           if(site.id==='sanctuary')moon=w;
         }
         u.cloudAmount.value=clouds/weight;u.moonStrength.value=moon/weight;
+        u.meadowGlow.value=definition.id==='klose'?airWeights[0]/weight:0;
         lamp.intensity=sun/weight;bounce.intensity=fill/weight;
         world.background.copy(u.horizon.value);
       }
@@ -246,6 +261,8 @@
       }
       if(!sisterAbove||!walking)throughScope=false;
       u.skyZoom.value=throughScope?18:1;
+      u.panorama.value=sister&&!throughScope?1-T.MathUtils.smoothstep(agl,250,1500):0;
+      u.crossingPhase.value=(flight.orbitTime%420)*(Math.PI*2/420);
       if(!world.fog)world.fog=new T.FogExp2(0x84655e,.00125);
       position=at;lightSurface(f,ground);
       sky.visible=density>.001;stars.visible=density<.94;
@@ -310,7 +327,7 @@
       if(phase==='surface'&&groundDestination(saved.mapDestination))relocate(saved.mapDestination,saved.approachMushroom===true);
       lastTime=null;lastAirLat=lastAirLon=undefined;previousFlight=flight.status().phase;
       stage.dataset.domain='planet';nav.hidden=false;atlas.hidden=true;
-      seerRobots.setExpression(rig,origin?.board?.smiling?'smile':'neutral');
+      seerRobots.setExpression(rig,boarding.expression);
       drill.set(boarding.pack().drillEquipped);updateUI();requestFrame();
     }
     function hide(){
@@ -524,7 +541,7 @@
         view.position.copy(aim).addScaledVector(dir,-back).addScaledVector(f.up,Math.max(minHeight-1.08,boom*Math.sin(angle)));
         body.clipCamera?.(aim,view.position);
         const focus=aim.clone().addScaledVector(dir,1.35);
-        if(definition.palette)focus.addScaledVector(f.up,Math.sin(Math.max(0,pitch))*boom*.87);
+        if(definition.palette)focus.addScaledVector(f.up,Math.sin(Math.max(0,pitch))*boom*.87+.20);
         view.lookAt(focus);
       }
       const side=eye?.98:1.45,forward=eye?2.5:-.24;
@@ -656,7 +673,7 @@
       // Drawing it before the terrain preserves occultation by local ridges.
       if(sister){
         const display=skyPlanets[sister.id];
-        display.visible=sisterAbove&&agl<=1800;
+        display.visible=sisterAbove&&agl<=1800&&sky.material.uniforms.panorama.value<.5;
         if(display.visible){
           display.position.copy(view.position).addScaledVector(sisterDirection,1400);
           display.scale.setScalar(1400/sisterDistance);
@@ -794,6 +811,8 @@
       }
       if(phase==='transfer'||phase==='hidden')return;
       const walking=phase==='surface',helm=phase==='helm';
+      atlas.querySelector('[data-surface-expression]').hidden=!walking;
+      lookNorth.hidden=!walking||!definition.palette;
       resetInput();select.replaceChildren();
       if(walking){
         appendSurfaceOptions(select,region,groundDestination('shuttle-ramp'));
@@ -817,6 +836,11 @@
     listen(openChart,'click',toggleAtlas);listen(closeButton,'click',toggleAtlas);
     listen(atlas,'click',e=>{if(e.target===atlas)toggleAtlas();});
     listen(select,'change',showSelection);
+    listen(lookNorth,'click',()=>{
+      if(phase!=='surface'||!definition.palette)return;
+      toggleAtlas();observedBird=null;throughScope=false;yaw=.16;pitch=.24;
+      updateUI();requestFrame();persist();
+    });
     listen(trackButton,'click',()=>{
       const id=select.value;toggleAtlas();
       if(phase==='surface'){arrival='';observedBird=null;approachRamp=false;plotRoute(id);}
@@ -981,6 +1005,12 @@
     }
     return {open,hide,draw,snapshot,clearInputs:resetInput,nearbySpirit,
       setFlameTool(value){flameTool=!!value;requestFrame();},
+      previewExpression(){
+        if(phase!=='surface')return;
+        seerRobots.setExpression(rig,boarding.expression);throughScope=false;observedBird=null;eye=false;
+        yaw=facing+Math.PI;pitch=.035;boom=2.65;
+        if(!atlas.hidden)toggleAtlas();updateUI();requestFrame();persist();
+      },
       approachForestBoss(){if(phase!=='surface'||definition.id!=='klose')return false;relocate('forest',true);updateUI();persist();requestFrame();return true;},
       setSafariState(value){safariState=value;bodies.klose?.setSafariState(value);},
       enterWetland(){if(phase==='surface'){relocate('wetland');updateUI();persist();requestFrame();}},
@@ -993,6 +1023,7 @@
       events.abort();observer.disconnect();if(!world)return;
       hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();contact.dispose();nono.dispose();escort?.dispose();pano.dispose();
       for(const surface of Object.values(bodies))surface.dispose();
+      rig.screen.material.dispose();
       for(const display of Object.values(skyPlanets))display.material.dispose();
       lamp.shadow.map?.dispose();for(const mesh of [sky,stars]){mesh.geometry.dispose();mesh.material.dispose();}
     }};

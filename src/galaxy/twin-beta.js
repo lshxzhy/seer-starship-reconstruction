@@ -5,7 +5,7 @@ const BETA_WORLD=defineTwinWorld({
   id:'beta',name:'双子贝塔星',radius:35000,lat:.19,lon:-.47,
   sites:[
     {id:'beta-plain',name:'双子贝塔星',x:0,z:0,mapId:47,lookAt:[4,-32],lookPitch:.22,description:'红褐色巨型掘进机。单目绿灯下方是红色进气口，两条节臂垂下三枚锥钻。'},
-    {id:'beta-waste',name:'贝塔星荒原',x:-105,z:-60,mapId:49,lookAt:[-108,-78],lookPitch:.08,description:'青光裂谷贯穿六角电能石层。隔岸可以看见成组的玻璃罩勘察站；左侧圆台通往双子阿尔法星海盗能源站。'},
+    {id:'beta-waste',name:'贝塔星荒原',x:-105,z:-60,mapId:49,lookAt:[-109,-83],lookPitch:.24,description:'青光裂谷贯穿六角电能石层。隔岸可以看见成组的玻璃罩勘察站；左侧圆台通往双子阿尔法星海盗能源站。'},
     {id:'beta-ruins',name:'海盗要塞废墟',x:102,z:-9,mapId:48,lookAt:[108,-31],description:'赭黄装甲塌入灰岩，横断的管束、格栅地沟和破裂的舱壁从断层中露出。'},
     {id:'beta-training',name:'海盗训练场',x:-185,z:-76,mapId:501,lookAt:[-184,-89],description:'分层校准台前立着四座紫色机柱，侧墙保存青色光栅和断开的检修平台。'},
     {id:'beta-hall',name:'精灵召唤场',x:-255,z:-139,mapId:502,lookAt:[-255,-149],description:'古藤从三座拱廊爬向能源通道，中央圆盘与红、绿、蓝三个站位仍相连。'}
@@ -32,8 +32,10 @@ const BETA_WORLD=defineTwinWorld({
     if(Math.hypot(x+255,z+146)<26)return 0x716a63;
     if(Math.hypot(x+185,z+87)<24)return 0x8b9691;
     if(Math.hypot(x-102,z+10)<42)return 0x8b8790;
-    if(z<-45&&x<-52)return z<-91?0xada999:0xac7778;
-    return 0x97937b;
+    const dust=.5+.5*Math.sin(x*.32+Math.sin(z*.21)*1.8)*Math.cos(z*.23-x*.12);
+    const tint=(r,g,b)=>((r+dust*18|0)<<16)|((g+dust*13|0)<<8)|(b+dust*11|0);
+    if(z<-45&&x<-52)return z<-91?tint(146,139,122):tint(147,101,106);
+    return tint(124,129,109);
   },
   buildLandmarks:buildBetaLandmarks
 });
@@ -45,15 +47,32 @@ function buildBetaLandmarks(kit){
   const chamfer=new T.CylinderGeometry(.82,1,1,8),torus=new T.TorusGeometry(1,.085,10,44);
   const cap=new T.SphereGeometry(1,40,20,0,tau,0,Math.PI/2);
   const p=(x,y,z)=>new T.Vector3(x,y,z),up=p(0,1,0),axisZ=p(0,0,1);
-  const metal=c=>material(c,{metalness:.42,roughness:.46});
+  const metal=c=>fieldSurfaceFinish(material(c,{metalness:.42,roughness:.46}),'metal');
   const emit=(color,intensity=.42)=>material(color,{emissive:color,emissiveIntensity:intensity,roughness:.32,metalness:.12});
   const iron=metal(0x415361),gun=metal(0x33343e),edge=metal(0x8997a0),light=metal(0xc6c4b4);
   const copper=metal(0xab6856),patina=metal(0x69575a),gold=metal(0xc99843),ochre=metal(0xae782c);
   const rose=metal(0x987381),purple=metal(0x6c477e),plum=metal(0x674e72);
   const dark=material(0x25262c,{roughness:.76}),grime=material(0x666c51,{roughness:.95});
   const green=emit(0x93d63a),aqua=emit(0x4ce0da),blue=emit(0x4bbde0),red=emit(0xe84a38);
-  const chartreuse=emit(0xcbd63c),rockTone=[0x968d7f,0x73756f,0x9d9482,0x746863].map(c=>material(c,{roughness:.98}));
-  const rockMesh=new T.DodecahedronGeometry(1,0);
+  const chartreuse=emit(0xcbd63c),rockTone=[0xa69e8e,0x818b87,0xab9c87,0x9a8680].map(c=>fieldSurfaceFinish(material(c,{roughness:.96,vertexColors:true}),'stone'));
+  // Beds have a torn edge, a dark seam recessed behind it and a freshly exposed
+  // upper face. The same profile can read as a fallen slab or an entire cliff.
+  function strata(phase){
+    const vertices=[],colors=[],faces=[],n=11;
+    const layers=[[-.82,.61,.43],[-.49,1.00,.65],[-.30,.94,.49],[-.25,1.04,.84],
+      [-.08,.95,.79],[.10,.82,.47],[.16,.95,.92],[.49,.87,.95],[.62,.61,1.12],[.69,.01,1]];
+    for(const [j,[h,r,tint]] of layers.entries())for(let k=0;k<n;k++){
+      const a=k*tau/n,broken=1+.18*Math.sin(3*a+phase)+.07*Math.cos(5*a+phase+h*1.3);
+      vertices.push(Math.cos(a)*r*broken+.16*h,h+.074*Math.sin(a*3+phase)*r,Math.sin(a)*r*broken-.09*h);
+      const shade=tint*(.94+.11*Math.sin(3*a+phase));
+      colors.push(shade,shade*(.97+.03*j/layers.length),shade*(.93+.07*j/layers.length));
+      if(j<layers.length-1){const i=j*n+k,b=j*n+(k+1)%n;faces.push(i,i+n,b,b,i+n,b+n);}
+    }
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(vertices,3));
+    g.setAttribute('color',new T.Float32BufferAttribute(colors,3));g.setIndex(faces);
+    const cut=g.toNonIndexed();cut.computeVertexNormals();g.dispose();return cut;
+  }
+  const beds=[strata(.35),strata(1.85),strata(3.35)],rockMesh=beds[0];
   function add(g,m,x,y,z,w=1,h=1,d=1,rx=0,ry=0,rz=0){stamp(g,m,x,y,z,w,h,d,rx,ry,rz);}
   function rod(a,b,r,m,g=drum){
     const dir=b.clone().sub(a),mid=a.clone().add(b).multiplyScalar(.5);
@@ -80,6 +99,28 @@ function buildBetaLandmarks(kit){
   }
   function plate(x,z,w,d,c=iron){
     const y=ground(x,z);add(box,c,x,y+.035,z,w,.07,d);
+  }
+  // Low surface panels follow actual terrain at every corner, including its
+  // spherical correction. Each shape has its own bevel, seams and fasteners.
+  const deck=new Map();
+  function inlay(x,z,outline,c,lift=.055){
+    let data=deck.get(c);if(!data){data={v:[],i:[]};deck.set(c,data);}
+    const start=data.v.length/3;
+    for(const [dx,dz] of outline)data.v.push(x+dx,ground(x+dx,z+dz)+lift,z+dz);
+    for(let k=1;k<outline.length-1;k++)data.i.push(start,start+k+1,start+k);
+  }
+  function floorPanel(x,z,w,d,tone){
+    const a=w/2,b=d/2,k=Math.min(a,b)*.25;
+    inlay(x,z,[[-a+k,-b],[a-k,-b],[a,-b+k],[a,b-k],[a-k,b],[-a,b],[-a,-b+k]],tone);
+    inlay(x,z,[[-a+k,-b+.11],[a-k,-b+.11],[a-k-.20,-b+.19],[-a+k,-b+.19]],edge,.075);
+    for(const dx of [-a+.38,a-.38])for(const dz of [-b+.39,b-.39])
+      add(hex,gun,x+dx,ground(x+dx,z+dz)+.073,z+dz,.073,.024,.073);
+  }
+  function finishDeck(){
+    for(const [mat,{v,i}] of deck){
+      const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));
+      g.setIndex(i);g.computeVertexNormals();add(g,mat,0,0,0);
+    }
   }
 
   // Map 47. The two-armed drill overlooks the whole arrival apron. The lip
@@ -222,6 +263,34 @@ function buildBetaLandmarks(kit){
     ring(x,y+.8,z,.75,edge);
   }
   for(let j=0;j<9;j++){rock(-29+3*j,-38-3*Math.sin(j*.9),2.4+j%3*.7,3+j%4,j);}
+  // Map 47's apron is made of interlocking steel panels. Long hydraulic
+  // scavenging pumps and half-buried ribs bring the machine down to eye level.
+  const deckAsh=metal(0x899298),deckBlue=metal(0x637581),deckDune=metal(0xaaa897);
+  for(let row=0;row<8;row++)for(let col=-1;col<=1;col++){
+    const x=col*4.8+(row%2?.54:-.28),z=10-row*4.6;
+    floorPanel(x,z,4.68,4.50,(row+col)%3?deckAsh:deckBlue);
+    if(col===0&&row%3===1)for(const dx of [-1.1,0,1.1])
+      inlay(x+dx,z,[[-.32,.3],[0,-.36],[.32,.3]],green,.083);
+  }
+  for(const [x,z,span,side] of [[-14,-6,9,-1],[15,-17,12,1],[-22,-33,12,-1]]){
+    const y=ground(x,z),front=p(x,y+1.37,z+span*.5),back=p(x+side*1.6,y+1.63,z-span*.5);
+    rod(front,back,1.17,iron);
+    const dir=back.clone().sub(front).normalize();
+    for(let k=0;k<=5;k++){
+      const t=k/5,pos=front.clone().lerp(back,t);ring(pos.x,pos.y,pos.z,1.20,k%2?edge:copper,dir);
+    }
+    for(const s of [-1,1]){
+      const a=front.clone().add(p(s*.83,.77,.3)),b=back.clone().add(p(s*.83,.77,-.45));
+      rod(a,b,.135,copper);
+    }
+    for(const k of [0,.32,.65,1]){
+      const pt=front.clone().lerp(back,k);add(chamfer,gun,pt.x,ground(pt.x,pt.z)+.55,pt.z,1.3,1.1,1.48);
+      block(pt.x,pt.z,1.25,2.74);
+    }
+    for(let k=0;k<4;k++){
+      const px=x+side*(2.5+(k%2)*2.1),pz=z-5+k*3.9;rock(px,pz,2.75+k%2*.9,1.9+k%3*.52,k);
+    }
+  }
   // Map 49: dark hexagonal lids sit over illuminated crystal columns. The
   // actual gully is cut from the terrain under the bases, so the cliffs have depth.
   const crystalMesh=(()=>{
@@ -237,7 +306,7 @@ function buildBetaLandmarks(kit){
     geo.setAttribute('position',new T.Float32BufferAttribute(verts,3));geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));
     geo.setIndex(idx);geo.computeVertexNormals();return geo;
   })();
-  const crystalMat=material(0xffffff,{vertexColors:true,metalness:.13,roughness:.30,emissive:0x0d5851,emissiveIntensity:.23});
+  const crystalMat=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,metalness:.13,roughness:.30,emissive:0x0d5851,emissiveIntensity:.23}),'crystal');
   function energyStone(x,z,height,r,capTilt){
     const y=ground(x,z);
     add(crystalMesh,crystalMat,x,y,z,r,height,r);
@@ -253,13 +322,71 @@ function buildBetaLandmarks(kit){
           rod(joint(u0,h0),joint(u1,h1),.018*r,aqua);
       }
     }
-    add(hex,iron,x,y+height,z,r*1.035,.6,r*1.035,capTilt);
-    add(hex,gun,x,y+height+.25,z,r*.79,.17,r*.79,capTilt);
-    block(x,z,r,height+.4);
+    // An inset hexagon sits inside an armoured socket. The profile is cut
+    // into each face so sunlight picks out a stepped rim above the dark ore.
+    add(hex,iron,x,y+height-.50,z,r*1.09,.76,r*1.09);
+    add(hex,edge,x,y+height-.12,z,r*1.085,.13,r*1.085);
+    add(hex,gun,x,y+height+.02,z,r*1.03,.23,r*1.03,capTilt);
+    add(hex,iron,x,y+height+.15,z,r*.77,.11,r*.77,capTilt);
+    add(hex,dark,x,y+height+.21,z,r*.68,.08,r*.68,capTilt);
+    const underside=new T.Vector3();
+    for(let j=0;j<6;j++){
+      const a=(j+.5)*tau/6,nx=Math.sin(a),nz=Math.cos(a),rr=.935*r;
+      const at=p(x+nx*rr,y+height-.53,z+nz*rr);
+      add(box,j%3===0?gold:patina,at.x,at.y,at.z,.34*r,.36,.13,0,a);
+      if(j%2===0){
+        underside.set(at.x+.3*Math.cos(a),y+height*.56,at.z-.3*Math.sin(a));
+        rod(at,underside,.046*r,iron,hex);
+      }
+    }
+    block(x,z,r*1.08,height+.3);
   }
   for(let j=0;j<14;j++){
     const x=-136+j*4.8,z=-81+5.6*Math.sin((x+108)*.082)+(j%3-1)*2.66;
     energyStone(x,z,13.8+4.35*Math.sin(j*1.87)+j%3*.9,1.65+j%3*.35,(j%2?.06:-.04));
+  }
+  // The painted gorge has a continuous torn lip. Mineral columns emerge
+  // through the cliff, with dark hanging seams over the luminous lower wall.
+  const roseCliff=fieldSurfaceFinish(material(0xad7479,{roughness:.95,vertexColors:true}),'stone');
+  const deepCliff=fieldSurfaceFinish(material(0x457d7d,{roughness:.91,vertexColors:true}),'stone');
+  for(const side of [-1,1])for(let n=0;n<11;n++){
+    const x=-138+n*6.6,axis=-81+5.6*Math.sin((x+108)*.082),z=axis+side*(5.0+1.45*Math.cos(n*2.6));
+    const y=ground(x,z),w=4.45+1.36*Math.cos(n*.77)**2,d=2.5+.55*Math.sin(n*3.1+.4);
+    const h=3.2+1.35*Math.sin(n*2.1+side),g=beds[(n+2+side)%3];
+    add(g,deepCliff,x,y-.42,z-side*.4,w,h+2.5,d,0,.14*Math.sin(n),-.08*Math.cos(n));
+    add(g,side>0?roseCliff:rockTone[n%4],x,y+h*.37,z,w*1.05,h*.62,d*1.15,0,.13*Math.sin(n),-.04*Math.cos(n));
+    for(const dx of [-w*.52,0,w*.52])block(x+dx,z,d*.93,Math.max(1,y+h*.83-ground(x+dx,z)));
+    for(let k=0;k<5;k++){
+      const sx=x-2.5+k*1.15,sz=z-side*d*(.67+.13*Math.sin(k+n)),sy=y+h*.30-.16*k;
+      const bottom=p(sx+.27*Math.sin(k+n),sy-1.8-(k*7+n)%4,sz-side*.48);
+      rod(p(sx,sy,sz),bottom,.075+.02*(k%3),k%3?gun:patina,hex);
+      if(k%3===0)rod(bottom,bottom.clone().add(p(.11,-.45,0)),.06,aqua,hex);
+    }
+  }
+  // Bench terraces visible from the arrival bank. The earlier low cliff follows
+  // the channel floor; these outcrops expose its geology above the rim itself.
+  const graphite=fieldSurfaceFinish(material(0x62636b,{roughness:.85,vertexColors:true}),'stone');
+  for(const [x,z,w,h,d,far] of [
+    [-132,-64,5.4,1.95,2.75,0],[-122,-66,4.7,1.15,2.5,0],[-116,-70.4,4.3,1.36,2.45,0],
+    [-98,-68.2,4.3,1.8,2.82,0],[-89,-71.5,5.1,2.45,3.0,0],[-81,-75,4.4,2.64,2.7,0],
+    [-123,-86.2,6.2,3.28,3.9,1],[-114,-88.4,4.4,2.36,3.1,1],[-105,-89.6,5.2,2.65,3.1,1],[-93,-90.5,5.6,2.38,3.65,1]
+  ]){
+    const y=ground(x,z),a=.23*Math.sin(z);
+    add(beds[far?1:2],far?rockTone[1]:graphite,x,y+h*.16,z,w,h*1.34,d,0,a,-.12);
+    add(beds[0],far?rockTone[0]:roseCliff,x-.26,y+h*.67,z+.13,w*.93,h*.75,d*.98,0,a-.06,-.08);
+    for(const u of [-.55,0,.55])block(x+u*w,z,d*.82,Math.max(.42,y+h*1.16-ground(x+u*w,z)));
+  }
+  // Small broken prismatic tips and translucent glints scatter at the bank,
+  // preserving the empty foreground of the return gate and the footpath.
+  const splitTip=new T.ConeGeometry(1,1,5),mineralTeal=fieldSurfaceFinish(material(0x439c9a,{metalness:.2,roughness:.35}),'crystal');
+  for(const [x,z,s] of [[-115,-66.6,1.05],[-119,-62.1,.72],[-100,-65.8,.67],[-92,-63.3,1.18],[-82,-72.4,.94]]){
+    for(let k=0;k<5;k++){
+      const a=k*2.4,dx=x+Math.cos(a)*(.28+.16*k)*s,dz=z+Math.sin(a)*(.29+.13*k)*s,h=(.72+.25*(k%3))*s;
+      const y=ground(dx,dz),size=s*(.24+.09*(k%2));
+      add(crystalMesh,crystalMat,dx,y-.08,dz,size,h,size,.12*Math.cos(a),a,.16*Math.sin(a));
+      add(splitTip,mineralTeal,dx+.12*h*Math.sin(a),y+h+.02,dz-.12*h*Math.cos(a),size,.46*s,size,.12*Math.cos(a),a,.16*Math.sin(a));
+    }
+    block(x,z,s*.72,s*1.52);
   }
   // Geodesic observation hoods, visible hardware and finned foundations.
   const glass=material(0x83d9d9,{roughness:.17,metalness:.14,transparent:true,opacity:.47,depthWrite:false});
@@ -278,7 +405,14 @@ function buildBetaLandmarks(kit){
     for(let i=0;i<legs;i++){
       const a=i*tau/legs;add(box,iron,x+r*Math.cos(a),y+.50,z+r*Math.sin(a),r*.4,.86,r*.23,0,-a);
     }
-    add(chamfer,green,x,y+1.04,z,r*.34,.34,r*.34);block(x,z,r*1.01,.8+h);
+    add(chamfer,green,x,y+1.04,z,r*.34,.34,r*.34);
+    for(let j=0;j<5;j++){
+      const a=tau*j/5,dx=x+.34*r*Math.cos(a),dz=z+.34*r*Math.sin(a);
+      add(chamfer,j%2?grime:iron,dx,y+1.15+r*.09,dz,r*.19,r*.26,r*.23,0,a);
+      add(chamfer,j%2?green:aqua,dx,y+1.30+r*.16,dz,r*.11,r*.19,r*.14,0,a);
+      add(box,gun,x+.77*r*Math.cos(a),y+.76,z+.77*r*Math.sin(a),r*.43,.22,r*.26,0,-a);
+    }
+    block(x,z,r*1.01,.8+h);
   }
   for(const [x,z,r] of [[-124,-101,4.2],[-112,-108,5.5],[-99,-103,3.6],[-92,-112,3.8],[-83,-104,4.2]])dome(x,z,r);
   cage.dispose();cageLines.dispose();
@@ -296,7 +430,7 @@ function buildBetaLandmarks(kit){
     const a=j*tau/8;add(box,edge,px+2.66*Math.cos(a),py+.24,pz+2.66*Math.sin(a),.5,.38,.48,0,-a);
   }
   kit.portal(px,pz,'alpha','alpha-station',3.5);
-  ruins();training();summoningHall();
+  ruins();training();summoningHall();finishDeck();
   function ruins(){
     const x=102,z=-31,y=ground(x,z);
     for(let j=0;j<6;j++){
@@ -323,6 +457,27 @@ function buildBetaLandmarks(kit){
       plate(gx,gz,2.85,2.1,dark);
       for(let k=0;k<4;k++)add(box,edge,gx-1+k*.63,gy+.093,gz,.15,.055,2.1,0,.20);
     }
+    // One continuous diagonal trench replaces the broken tiles in the apron.
+    // Its twin copper runs are visible through the lattice from the entrance.
+    for(let j=0;j<7;j++){
+      const gx=x-11.5+j*3.3,gz=z+16-j*.66,gy=ground(gx,gz);
+      floorPanel(gx,gz+3.0,3.15,3.5,j%2?deckAsh:deckDune);
+      inlay(gx,gz,[[-1.62,-.97],[1.62,-1.56],[1.62,.38],[-1.62,.98]],dark,.087);
+      for(const t of [-.37,.29])rod(p(gx-1.58,gy+.10,gz+t+.31),p(gx+1.58,gy+.10,gz+t-.31),.053,copper,hex);
+      for(let k=0;k<3;k++)for(const s of [-1,1]){
+        const dx=-1.03+.95*k;rod(p(gx+dx-.36,gy+.18,gz-.65-dx*.20),p(gx+dx+.36*s,gy+.18,gz+.6-dx*.20),.047,light,hex);
+      }
+    }
+    const capRock=beds[2];
+    for(const side of [-1,1])for(let k=0;k<4;k++){
+      const dx=x+side*(9.5+3.25*k),dz=z-2+1.5*Math.cos(k*2.14),gnd=ground(dx,dz);
+      add(capRock,rockTone[(k+2)%4],dx,gnd+6.1,dz,4.6,4.9+.7*Math.cos(k),3.1,.08,.47*k,-.16*side);
+      block(dx,dz,2.8,9.4);
+      add(box,patina,dx,gnd+3.0,dz,2.3,5.6,2.3,0,.28*k,.17*side);
+      if(k%2===0)for(let j=0;j<3;j++){
+        const sx=dx-1+j*.64;rod(p(sx,gnd+5.6,dz+2.3),p(sx+.2*side,gnd+3.8-j*.38,dz+2.56),.076,j===1?copper:gun,hex);
+      }
+    }
   }
   function training(){
     const x=-185,z=-89,y=ground(x,z);
@@ -345,6 +500,23 @@ function buildBetaLandmarks(kit){
     for(let k=0;k<4;k++)rod(p(xx-2.7,y+.95+k*.9,z+.49),p(xx+2.7,y+.95+k*.9,z+.49),.095,aqua);
     ring(x+6,y+.11,z+5.1,1.45,light);
     add(drum,chartreuse,x+6,y+.085,z+5.1,1,.07,1);
+    for(let row=0;row<3;row++)for(let c=-2;c<=2;c++){
+      const dx=x+c*4.5,dz=z+2.6+row*4.15;floorPanel(dx,dz,4.39,4.0,row===1?deckDune:deckAsh);
+      if(row!==0&&c%2===0)for(let k=0;k<5;k++)inlay(dx-1.4+k*.56,dz-1.44,[[-.16,-.22],[.14,-.22],[.32,.22],[.02,.22]],chartreuse,.081);
+    }
+    // Rear gallery and broken cantilever, supported along the back wall only.
+    for(let k=0;k<5;k++){
+      const dx=x-13+k*6.2,dz=z-5.4,hh=6.1+(k===4?.36:0);
+      add(box,iron,dx,y+hh,dz,6.06,.52,4.25,0,0,k===4?.09:0);
+      add(box,edge,dx,y+hh+.28,dz,5.86,.12,4.04);
+      for(const sx of [-2.3,2.3]){
+        add(box,plum,dx+sx,y+2.84,dz-.55,.49,5.66,.78);block(dx+sx,dz-.55,.43,hh+.30);
+        rod(p(dx+sx,y+3.85,dz-.56),p(dx+sx*.35,y+hh-.29,dz+1.65),.155,ochre,hex);
+      }
+      add(box,gun,dx,y+hh-.47,dz+1.72,6.02,.47,.23);
+      for(let j=0;j<4;j++)add(box,j%2?gold:light,dx-2.3+j*1.4,y+hh-.40,dz+1.87,.57,.25,.10,0,0,-.24);
+      if(k%2===0)rock(dx,dz-3.8,4.5,6.9+k*.22,k);
+    }
   }
   function summoningHall(){
     const cx=-255,cz=-150,y=ground(cx,cz),arcG=new T.TorusGeometry(1,.13,10,38,Math.PI);
@@ -358,6 +530,17 @@ function buildBetaLandmarks(kit){
       }
       add(arcG,plum,x,y+4.6,z,r,r,2.8);
       add(arcG,metal(0xa69a62),x,y+4.6,z+.58,r*.86,r*.86,1.08);
+      for(let k=0;k<=10;k++){
+        const a=Math.PI*k/10;
+        add(chamfer,k%2?purple:plum,x+r*Math.cos(a),y+4.6+r*Math.sin(a),z,r*.20,r*.33,1.25,0,0,a-Math.PI/2);
+        if(k%2===0)add(ball,gold,x+r*Math.cos(a),y+4.6+r*Math.sin(a),z+1.06,.16,.16,.10);
+      }
+      if(j===0){
+        const doorRear=z-4.1;
+        for(const s of [-1,1])add(box,iron,x+s*(r-.3),y+2.1,doorRear,1.25,4.2,6.0);
+        add(arcG,iron,x,y+4.55,doorRear,r-.35,r-.35,3.7);
+        add(chamfer,chartreuse,x,y+4.65+r-.63,z+.79,.48,.69,.30,0,0,Math.PI);
+      }
       if(j!==0){
         add(box,grime,x,y+2.50,z-.55,5.7,5.0,1.0);
         add(ball,grime,x,y+5.40,z-.45,2.84,2.45,.56);block(x,z-.55,2.55,7.75);
@@ -381,6 +564,28 @@ function buildBetaLandmarks(kit){
     for(let k=0;k<3;k++){
       const z=cz+5+k*2.65;add(box,gun,cx+9,y+.019,z,2.52,.05,2.45);
       add(box,aqua,cx+9,y+.065,z,.16,.05,2.35);
+    }
+    const ochreVine=material(0x6c753a,{roughness:.83}),leafVine=material(0x788745,{roughness:.77});
+    for(const s of [-1,1])for(let k=0;k<3;k++){
+      const x=cx+s*(14.1+k*1.3),z=cz-7.3+3*k;
+      const runners=pipe([p(x+s*.85,y+8.8,z-1.2),p(x-s*1.8,y+7.2,z-.3),p(x+s*.43,y+4.9,z+.68),
+        p(x-s*.97,y+3.4,z+.33),p(x+s*.8,y+.71,z+1.5),p(x-s*2.8,y+.30,z+4),p(x-s*3.2,y+.12,z+6.6)],.33+k*.10,ochreVine,32);
+      for(let j=1;j<=8;j++){
+        const at=runners.getPointAt(j/10);
+        add(chamfer,leafVine,at.x+s*.40,at.y+.24,at.z,.70,.18,.31,.35,j*.94,s*.45);
+      }
+    }
+    for(let row=0;row<3;row++)for(let k=-2;k<=2;k++){
+      const x=cx+k*4.3,z=cz+7.43+row*3.72;floorPanel(x,z,4.17,3.58,k%2?deckBlue:deckDune);
+      if(k===-2||k===1)inlay(x,z,[[-1.91,-1.42],[-1.74,-1.42],[-1.74,1.55],[-1.91,1.55]],aqua,.081);
+    }
+    for(const [dx,dz,lightMat] of [[-4.7,3.5,blue],[4.7,3.5,red],[0,-4,green]]){
+      const vec=p(dx,0,dz).normalize();
+      for(const width of [.21,.082]){
+        const a=p(cx,y+(width>.1?.11:.17),cz+1.4).addScaledVector(vec,3.4);
+        const b=p(cx+dx,y+(width>.1?.11:.17),cz+1.4+dz).addScaledVector(vec,-.84);
+        rod(a,b,width,width>.1?gun:lightMat,hex);
+      }
     }
   }
 }

@@ -78,6 +78,10 @@
     Object.assign(state,{mode:'board',room:roomId,located:'',rotate:false,wire:false});
     syncScene();root.querySelector('[data-console="terminal"]').focus({preventScroll:true});save();
   },()=>cockpit.openMap(null,true));
+  root.querySelector('[data-face-expression="planet"]').addEventListener('change',event=>{
+    boarding.setExpression(event.currentTarget.value);
+    expedition.previewExpression();
+  });
   const spiritRecords=window.openai?.setWidgetState?
     createWidgetSpiritRecords(()=>spiritArchive,async archive=>{
       const previous=spiritArchive;spiritArchive=archive;
@@ -244,6 +248,8 @@
   function restore(saved){
     if(!saved||saved.version!==3)return;
     if(!Object.hasOwn(modes,saved.mode))return;
+    const formerBoard=saved.board||saved.expedition?.origin?.board||saved.parkedLanding?.origin?.board;
+    boarding.setExpression(saved.faceExpression??formerBoard?.expression??(formerBoard?.smiling?'smile':'neutral'));
     if(saved.pack)boarding.restorePack(saved.pack);
     dockedVehicle=saved.dockedVehicle?.phase==='docked'?saved.dockedVehicle:null;
     spiritArchive=saved.spiritArchive||null;
@@ -270,7 +276,7 @@
     state.wire=state.mode!=='board' && saved.wire===true;state.rotate=state.mode!=='board' && saved.rotate===true;
   }
   function save(requireArchive=false){
-    const privateContent={version:3,...state,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
+    const privateContent={version:3,...state,faceExpression:boarding.expression,pack:boarding.pack(),board:state.mode==='board'?boarding.snapshot():null,
       expedition:state.mode==='planet'?expedition.snapshot():null,parkedLanding,dockedVehicle:state.mode==='planet'||parkedLanding?null:dockedVehicle,spiritArchive};
     if(requireArchive===true&&new TextEncoder().encode(JSON.stringify(privateContent)).length>15850){
       throw new Error('聊天存档空间不足，请在本机游戏中继续扩充队伍。');

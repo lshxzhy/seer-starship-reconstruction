@@ -1,7 +1,7 @@
   // Both camera styles follow one physical robot, using the same foot pose
   // as door collision, deck navigation and lift landings.
   function createSeerPilot(worldMetre) {
-    const rig=seerRobots.create(0xd84a38,{name:'SE-00001',castShadow:false});
+    const rig=seerRobots.create(0xd84a38,{name:'SE-00001',castShadow:false,display:true});
     const avatar=rig.root;
     avatar.name='SE-00001 · 玩家赛尔';
     avatar.scale.setScalar(worldMetre);
@@ -17,7 +17,7 @@
       active=true;previous={x:pose.x,z:pose.z};sampled=null;strideSpeed=0;
       facing=Number.isFinite(saved?.facing)?saved.facing:yaw;
       if(saved?.perspective==='eye'||saved?.perspective==='follow')style=saved.perspective;
-      if(Number.isFinite(saved?.boom))distance=T.MathUtils.clamp(saved.boom,2.4,6.6);
+      if(Number.isFinite(saved?.boom))distance=T.MathUtils.clamp(saved.boom,1.65,6.6);
     }
     function roomFor(pose){
       return habitat.byId.get(habitat.location(pose).roomId);
@@ -104,7 +104,8 @@
     }
     return {
       arrive,positionCamera,
-      setSmile(value){seerRobots.setExpression(rig,value?'smile':'neutral');},
+      setExpression(id){seerRobots.setExpression(rig,id);},
+      frameFace(){distance=2.05;sampled=null;},
       setDrill(equipped){drill.set(equipped);},
       setFlameTool(equipped){
         if(equipped&&!flameTool)flameTool=createFieldFlameTool(T,rig);
@@ -113,9 +114,9 @@
       workDrill(){drill.work();},
       leave(){active=false;avatar.visible=ground.visible=false;drill.hide();previous=null;sampled=null;},
       setStyle(next){style=next==='eye'?'eye':'follow';sampled=null;},
-      zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),2.4,6.6);sampled=null;},
+      zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),1.65,6.6);sampled=null;},
       get style(){return style;},get facing(){return facing;},
       snapshot(){return {perspective:style,facing,boom:distance};},
-      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);contacts.dispose();drill.dispose();flameTool?.dispose();}
+      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);rig.display.dispose();contacts.dispose();drill.dispose();flameTool?.dispose();}
     };
   }

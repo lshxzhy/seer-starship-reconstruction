@@ -24,19 +24,7 @@ function panoCenter(id,time,out=new T.Vector3()){
 // The original map icons show a celadon crust with ochre pools on Alpha,
 // and lavender ash with bright gold basins on Beta. Both scales of the
 // viewer use this same spherical painting and the same direction to the sun.
-function createTwinGlobe(T,definition){
-  const m=new T.ShaderMaterial({
-    uniforms:{
-      sunDir:{value:panoCenter(definition.id,0).normalize().negate()},
-      capCenter:{value:new T.Vector3(0,1,0)},cut:{value:2},
-      alpha:{value:definition.id==='alpha'?1:0}
-    },
-    vertexShader:`varying vec3 radial;varying float rim;
-      void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);radial=normal;
-        rim=1.-clamp(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)),0.,1.);
-        gl_Position=projectionMatrix*mv;}`,
-    fragmentShader:`varying vec3 radial;varying float rim;
-      uniform vec3 sunDir,capCenter;uniform float cut,alpha;
+const TWIN_CRUST_GLSL=`
       float relief(vec3 p){
         return .53*sin(p.x+p.y*.76)*cos(p.z-p.x*.37)+.29*sin(2.7*p.y+p.z)*cos(p.x*2.8)
           +.18*cos(p.y*5.1-p.z*4.1)*sin(3.2*p.x+p.z);
@@ -48,9 +36,7 @@ function createTwinGlobe(T,definition){
         vec2 q=vec2(u*ct+v*st,(v*ct-u*st)/stretch)/width;
         return dot(d,centre)>.3?length(q):4.;
       }
-      void main(){
-        vec3 d=normalize(radial);
-        if(dot(d,capCenter)>cut)discard;
+      vec3 twinCrust(vec3 d,float alpha){
         float broad=relief(d*5.),fine=relief(d*19.+broad*1.4),grain=relief(d*83.);
         float contour=clamp(.53+.39*broad+.13*fine,0.,1.);
         vec3 crust=alpha>.5?mix(vec3(.12,.53,.46),vec3(.56,.88,.65),contour)
@@ -71,6 +57,27 @@ function createTwinGlobe(T,definition){
         crust=mix(crust,edge,lip);
         crust=mix(crust,centre,pool);
         crust+=.028*fine+.014*grain;
+        return crust;
+      }`;
+
+function createTwinGlobe(T,definition){
+  const m=new T.ShaderMaterial({
+    uniforms:{
+      sunDir:{value:panoCenter(definition.id,0).normalize().negate()},
+      capCenter:{value:new T.Vector3(0,1,0)},cut:{value:2},
+      alpha:{value:definition.id==='alpha'?1:0}
+    },
+    vertexShader:`varying vec3 radial;varying float rim;
+      void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);radial=normal;
+        rim=1.-clamp(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)),0.,1.);
+        gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`varying vec3 radial;varying float rim;
+      uniform vec3 sunDir,capCenter;uniform float cut,alpha;
+${TWIN_CRUST_GLSL}
+      void main(){
+        vec3 d=normalize(radial);
+        if(dot(d,capCenter)>cut)discard;
+        vec3 crust=twinCrust(d,alpha);
         float light=clamp(dot(d,normalize(sunDir)),0.,1.);
         vec3 rgb=crust*(.27+.73*sqrt(light));
         rgb+=pow(rim,3.4)*(.22+.78*light)*(alpha>.5?vec3(.13,.41,.42):vec3(.36,.17,.30));

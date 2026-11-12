@@ -58,6 +58,18 @@
         // Recessed latches sit at the removable plate's forward edge.
         ctx.fillStyle=relief?'#505050':'#92999d';ctx.fillRect(x+w-16,y+h*.47,4,20);
         ctx.fillStyle=relief?'#aaaaaa':'#d6dad9';ctx.fillRect(x+w-15,y+h*.47+2,2,15);
+        // Stepped recess, cross-web and grip of a removable plate. Its dull
+        // pocket and burnished lip also receive different specular responses.
+        if(w>160&&h>110){
+          const hx=x+20,hy=y+h*.72,length=Math.min(54,w*.23);
+          ctx.fillStyle=relief?'#777':'#c5cdce';ctx.fillRect(hx,hy,length,9);
+          ctx.fillStyle=relief?'#4a4a4a':'#909a9d';ctx.fillRect(hx+2,hy+1,length-4,5);
+          ctx.fillStyle=relief?'#b8b8b8':'#e7e8df';ctx.fillRect(hx+5,hy+3,length-10,2);
+          for(let j=0;j<3;j++){
+            const ix=hx+4+j*6;
+            ctx.fillStyle=relief?'#929292':'#c2c7c4';ctx.fillRect(ix,hy+13,3,3);
+          }
+        }
       }
       // A few directional scuffs break the highlight only at close approach.
       for(let i=0;i<125;i++){
@@ -66,6 +78,17 @@
         ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+len,y-len*.14);ctx.stroke();
       }
       ctx.restore();
+    }
+    if(relief){
+      // Red retains the machined profile. Green is independent roughness:
+      // paint on broad panels, exposed lips, grime in the recessed seams.
+      const layer=ctx.getImageData(0,0,canvas.width,canvas.height),p=layer.data;
+      for(let i=0;i<p.length;i+=4){
+        const h=p[i],row=Math.floor(i/(4*canvas.width));
+        const rough=h<110?237:h>169?120:190;
+        p[i+1]=rough+(random()-.5)*17+5*Math.sin(row*Math.PI/8);
+      }
+      ctx.putImageData(layer,0,0);
     }
     const map=new T.CanvasTexture(canvas);
     if(!relief)map.encoding=T.sRGBEncoding;
@@ -78,7 +101,7 @@
     if(!armourCoatings.has(base)){
       const metal=base.clone();
       metal.map=armourColour;metal.bumpMap=armourHeight;metal.bumpScale=.007;
-      metal.roughness=Math.min(.7,base.roughness+.11);
+      metal.roughnessMap=armourHeight;metal.roughness=Math.min(.78,base.roughness+.22);
       armourCoatings.set(base,metal);
     }
     return armourCoatings.get(base);

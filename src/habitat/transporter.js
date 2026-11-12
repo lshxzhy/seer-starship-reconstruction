@@ -84,6 +84,16 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
   const washer=new T.TorusGeometry(1,.20,5,16),detailPose=new T.Object3D();
   const alloy=paint(0x91a5af,.25,.82),graphite=paint(0x182932,.79,.07);
   const brass=paint(0xa88c56,.35,.68),porcelain=paint(0xd6dedb,.29,.18,.45);
+  // A curved diaphragm sits in the well behind the glass. All transport
+  // positions share one blade, one machined seat and one rear optical barrel.
+  const bladeOutline=new T.Shape();
+  bladeOutline.moveTo(.14,.17);
+  bladeOutline.quadraticCurveTo(.46,.14,.62,-.17);
+  bladeOutline.quadraticCurveTo(.72,.18,.46,.50);
+  bladeOutline.quadraticCurveTo(.22,.54,-.04,.37);
+  bladeOutline.lineTo(.14,.17);
+  const blade=new T.ExtrudeGeometry(bladeOutline,{depth:.014,bevelEnabled:false,curveSegments:7});
+  const bore=new T.TorusGeometry(.68,.045,8,56),blued=paint(0x476979,.32,.68);
   const batchesFor=(geometry,material)=>{
     let materials=detailBatches.get(geometry);
     if(!materials){materials=new Map();detailBatches.set(geometry,materials);}
@@ -184,6 +194,11 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
       }
       for(const y of [4.84,5.10,5.36])
         stamp(frame,unitBox,graphite,[0,y,-.69],[.92,.09,.12]);
+      stamp(frame,roundPin,graphite,[0,4.20,-.72],[.76,.16,.76],[PI/2,0,0]);
+      stamp(frame,bore,alloy,[0,4.20,-.60]);
+      for(let i=0;i<6;i++)
+        stamp(frame,blade,i%2?blued:alloy,[0,4.20,-.625+.003*i],[1,1,1],[0,0,i*PI/3]);
+      ball(0,4.20,-.65,.25,.25,.069,tint,{roughness:.16,metalness:.31,glow:.42});
       for(const s of [-1,1]) {
         stampBeam(frame,[s*1.62,5.03,.24],[s*.32,6.71,.24],.12,.16,porcelain);
         box(s*1.93,1.68,.30,.18,.62,.12,gold);

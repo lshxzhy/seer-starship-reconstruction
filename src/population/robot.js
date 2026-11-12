@@ -72,6 +72,87 @@
       faceMaterials.set(key,material);
       return material;
     }
+    const expressions=Object.freeze({neutral:'平视',smile:'微笑',wink:'眨一只眼',surprise:'惊讶',
+      focus:'专注',sleepy:'困倦',anger:'生气',curious:'好奇'});
+    const expressionIds=Object.keys(expressions);
+    let glyphAtlas;
+    function createGlyphAtlas(){
+      const canvas=document.createElement('canvas');
+      canvas.width=1024;canvas.height=512;
+      const ctx=canvas.getContext('2d');
+      ctx.fillStyle='black';ctx.fillRect(0,0,canvas.width,canvas.height);
+      for(const [index,id] of expressionIds.entries()){
+        for(const side of [-1,1]){
+          ctx.save();
+          ctx.translate((index%4)*256+128+side*49,Math.floor(index/4)*256+131);
+          ctx.fillStyle='white';ctx.strokeStyle='white';
+          if((id==='wink'&&side===1)||id==='sleepy'){
+            const high=id==='wink'?-14:23;
+            ctx.lineWidth=id==='wink'?13:11;ctx.lineCap='round';
+            ctx.beginPath();ctx.moveTo(-32,12);ctx.quadraticCurveTo(0,high,32,12);ctx.stroke();
+          }else{
+            if(id==='curious')ctx.translate(0,side===1?-14:8);
+            const width=id==='surprise'?40:45,height=id==='surprise'?75:id==='curious'&&side===-1?51:72;
+            ctx.beginPath();ctx.ellipse(0,0,width,height,0,0,TAU);ctx.clip();
+            if(id==='focus'||id==='anger'){
+              // The inner tips of the two upper lids angle toward the nose.
+              const slope=id==='anger'?-.68*side:-.20*side,top=id==='anger'?-22:-32;
+              ctx.beginPath();ctx.moveTo(-55,top-55*slope);ctx.lineTo(55,top+55*slope);
+              ctx.lineTo(55,90);ctx.lineTo(-55,90);ctx.closePath();ctx.clip();
+            }
+            ctx.fillRect(-50,-80,100,160);
+            ctx.fillStyle='black';ctx.beginPath();
+            ctx.translate(id==='curious'?11:-side*4,id==='surprise'?-11:-5);
+            if(id==='smile'||id==='wink'){
+              // The early dialogue sprite keeps the eyes lit around dark, raised arcs.
+              ctx.moveTo(-25,13);ctx.bezierCurveTo(-22,-42,20,-44,25,13);
+              ctx.bezierCurveTo(10,-10,-12,-10,-25,13);
+            }else{
+              const rx=id==='surprise'?13:19,ry=id==='surprise'?19:32;
+              ctx.ellipse(0,0,rx,ry,0,0,TAU);
+            }
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
+      const map=new T.CanvasTexture(canvas);
+      map.minFilter=T.LinearMipmapLinearFilter;map.magFilter=T.LinearFilter;
+      return map;
+    }
+    // The two playable rigs share the lithographic mask but have their own frame and eyelids.
+    function createDisplay(){
+      if(!glyphAtlas)glyphAtlas=createGlyphAtlas();
+      return new T.ShaderMaterial({toneMapped:false,extensions:{derivatives:true},
+        uniforms:{glyphs:{value:glyphAtlas},frame:{value:0},eyeOpen:{value:1}},
+        vertexShader:`varying vec2 panelUV;
+          void main(){panelUV=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+        fragmentShader:`uniform sampler2D glyphs;
+          uniform float frame,eyeOpen;
+          varying vec2 panelUV;
+          float eye(vec2 p){
+            p.y=(p.y-.48)/eyeOpen+.48;
+            vec2 tile=vec2(mod(frame,4.),1.-floor(frame/4.));
+            return texture2D(glyphs,(tile+clamp(p,vec2(.003),vec2(.997)))/vec2(4.,2.)).r*
+              step(.005,p.y)*step(p.y,.995);
+          }
+          void main(){
+            vec2 cells=panelUV*66.,cell=abs(fract(cells)-.5);
+            float footprint=max(fwidth(cells.x),fwidth(cells.y));
+            float distant=smoothstep(.35,1.35,footprint);
+            float dots=1.-smoothstep(.30,.48,max(cell.x,cell.y));
+            float signal=mix(eye((floor(cells)+.5)/66.),eye(panelUV),distant);
+            vec2 p=(panelUV-.5)*2.;
+            float r=length(p);
+            float rim=(1.-smoothstep(.007,.016,abs(r-.932)))*.45;
+            float reflection=(1.-smoothstep(.0,.49,abs(p.y-.42*p.x-.59)))*.035;
+            vec3 substrate=mix(vec3(.018,.041,.059),vec3(.035,.098,.117),1.-smoothstep(.27,.98,r));
+            substrate+=reflection+vec3(.022,.092,.102)*rim;
+            float emitter=mix(.58+.42*dots,.90,distant);
+            vec3 light=mix(vec3(.48,.93,.98),vec3(.85,1.,.99),panelUV.y);
+            gl_FragColor=vec4(mix(substrate,light,signal*emitter),1.);
+          }`});
+    }
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: new T.MeshStandardMaterial({vertexColors:true, roughness:.33, metalness:.28}),
@@ -101,8 +182,8 @@
       return suitMaterials.get(key);
     }
     const templates = new Map();
-    function template(simple,officer=false) {
-      const variant=officer?'officer':simple?'crew':'pilot';
+    function template(simple,officer=false,display=false) {
+      const variant=officer?'officer':simple?'crew':display?'display':'pilot';
       if (templates.has(variant)) return templates.get(variant);
       const parts = new Map(), primitives = [];
       const segments = simple ? 24 : 48;
@@ -226,6 +307,7 @@
         cast('core',cube,sign*.148,-.02,.537,.034,.008,.010,graphite,null,0,sign*.33);
 
       const faceY = faceAxisY;
+      const panelZ=display?-.574:glassZ,panelDepth=display?.032:glassDepth;
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
         [.419,.033],[.407,.061],[.384,.073],[.351,.073],[.339,.062],[.339,-.130]],simple?segments:88);
       coreShape(bezel,0,faceY,-.498,graphite,-PI/2);
@@ -249,13 +331,13 @@
         // Only the front hemisphere is drawn. The eye graphics stay below the glass.
         const cover=new T.SphereGeometry(1,64,40,PI,PI);
         primitives.push(cover);
-        cast('core',cover,0,faceY,glassZ,glassRadius,glassRadius,glassDepth+.031,0x12181b,'glass');
+        cast('core',cover,0,faceY,panelZ,glassRadius,glassRadius,panelDepth+(display?.010:.031),0x12181b,'glass');
       }
       const screen=new T.SphereGeometry(1,simple?22:48,simple?14:32,PI,PI);
       const pos=screen.getAttribute('position'), uv=screen.getAttribute('uv');
       for (let i=0;i<pos.count;i++) uv.setXY(i,(1-pos.getX(i))/2,(1+pos.getY(i))/2);
-      screen.scale(glassRadius,glassRadius,glassDepth);
-      screen.translate(0,faceY,glassZ);
+      screen.scale(glassRadius,glassRadius,panelDepth);
+      screen.translate(0,faceY,panelZ);
 
       const sole = profile([[0,0],[.94,0],[1,.022],[1,.032],[.94,.05],[0,.05]]);
       const shoe = smoothProfile([[0,0],[.95,0],[1,.018],[.99,.044],[.91,.075],[.72,.101],
@@ -349,15 +431,16 @@
       rig.expression='neutral';
       rig.portrait=['roger','raymond','shawn'].includes(options.officer)?options.officer:null;
       rig.faceFrame='neutral';
-      for(const entry of template(options.simple===true,Boolean(options.officer))){
+      for(const entry of template(options.simple===true,Boolean(options.officer),options.display===true)){
         const m=entry.family==='paint'?suitMaterial(color,options.simple===true):skinMaterials[entry.family];
         const mesh=new T.Mesh(entry.geometry,m);
         const opaqueBody=entry.family!=='glass' && entry.family!=='screen';
         mesh.castShadow=options.castShadow!==false && opaqueBody;
         mesh.receiveShadow=opaqueBody;
         if (entry.family==='screen') {
-          mesh.name='赛尔面盘 · 曲面显示屏';
-          mesh.material=faceMaterial('neutral',rig.portrait);
+          mesh.name=options.display?'小赛尔 · 点阵电子屏':'赛尔面盘 · 曲面显示屏';
+          rig.display=options.display?createDisplay():null;
+          mesh.material=rig.display||faceMaterial('neutral',rig.portrait);
           rig.screen=mesh;
         }
         rig.bones[entry.bone].add(mesh);
@@ -370,6 +453,11 @@
       rig.faceFrame=frame;
     }
     function setExpression(rig,expression){
+      if(rig?.display){
+        const index=expressionIds.indexOf(expression);
+        if(index<0)return false;
+        rig.expression=expression;rig.display.uniforms.frame.value=index;return true;
+      }
       if (!rig || !rig.screen || (expression!=='neutral' && expression!=='smile')) return false;
       rig.expression=expression;
       showFaceFrame(rig,expression);
@@ -384,6 +472,11 @@
       rig.lastYaw=yaw;rig.clock+=step;
       applyPose(rig,phase,speed,rig.clock,riding);
       const blink=rig.clock%4.3;
+      if(rig.display){
+        const closing=clamp((blink-3.74)/.22,0,1);
+        rig.display.uniforms.eyeOpen.value=1-.92*Math.sin(PI*closing)**2;
+        return;
+      }
       let frame=rig.expression;
       if (blink>=3.80 && blink<3.98) {
         if (blink>=3.84 && blink<3.93) frame='closed';
@@ -429,5 +522,5 @@
       }
       return {root,write,finish,capacity};
     }
-    return {create,animate,createBatch,phaseStep,setExpression,height:1.70,eyeHeight:restCoreY+faceAxisY};
+    return {create,animate,createBatch,phaseStep,setExpression,expressions,height:1.70,eyeHeight:restCoreY+faceAxisY};
   })();

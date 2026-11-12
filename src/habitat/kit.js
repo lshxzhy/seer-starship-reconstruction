@@ -12,7 +12,7 @@
   // Joint widths, captive screws, overhead air slots and tread are inferred.
   function cabinFinish(kind){
     return cabinAsset(cabinAssets.canvases,'finish/'+kind,()=>{
-      const deck=['deck','tread','sealed','inlay','ribbed'].includes(kind),lid=kind==='soffit';
+      const deck=['deck','tread','sealed','inlay','ribbed'].includes(kind),lid=kind==='soffit',casework=kind==='enamel';
       const n=deck?512:256;
       const makeCanvas=()=>{
         const c=document.createElement('canvas');c.width=n;c.height=n;return c;
@@ -25,10 +25,12 @@
         seed=(Math.imul(seed,1664525)+1013904223)>>>0;
         const grain=(seed>>>29)-3;
         const row=Math.floor(i/(4*n));
-        const shade=248+grain+(row%5===0?-2:0);
+        const x=i/4%n;
+        const brush=Math.sin(2*Math.PI*row/16)+.45*Math.sin(2*Math.PI*(x+2*row)/32);
+        const shade=246+grain+(casework?1:2)*brush;
         pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=shade;
         pixels.data[i+3]=255;
-        packed.data[i]=156;packed.data[i+1]=(deck?223:202)+grain;
+        packed.data[i]=156+grain*.35;packed.data[i+1]=(deck?218:casework?193:203)+grain*3+brush*7;
         packed.data[i+3]=255;
       }
       ink.putImageData(pixels,0,0);data.putImageData(packed,0,0);
@@ -49,9 +51,12 @@
       const bevel=deck?3.0:2.1;
       const edge=[[bevel,8],[8,bevel],[248,bevel],[256-bevel,8],
         [256-bevel,248],[248,256-bevel],[8,256-bevel],[bevel,248],[bevel,8]];
-      stroke(edge,deck?2.5:1.8,200,106,247);
-      stroke(edge,.9,163,70,244);
-      for(const x of [11,245])for(const y of [11,245])screw(x,y);
+      if(!casework){
+        stroke(edge,deck?4.5:3.4,224,143,220);
+        stroke(edge,deck?2.5:1.8,200,106,247);
+        stroke(edge,.9,163,70,244);
+        for(const x of [11,245])for(const y of [11,245])screw(x,y);
+      }
       if(deck){
         // Two recessed finger holds near one edge of each removable deck plate.
         for(const x of [98,140]){
@@ -90,7 +95,7 @@
           const x=26+i*11;stroke([[x,207],[x+4,216]],2.6,189,65,235);
         }
         stroke([[19,200],[235,200]],.8,220,121,226);
-      }else{
+      }else if(!casework){
         // Stepped removable facing and two quarter-turn latches.
         stroke([[15,180],[15,216],[26,227],[124,227]],1.2,219,112,233);
         for(const x of [24,232]){
@@ -98,13 +103,30 @@
           stroke([[x-2,38],[x+2,38]],.7,250,163,152);
         }
       }
-      const spanX=deck?2:lid?2.4:2.8,spanY=deck?2:1.6;
+      // A tangent-space normal keeps the same physical slopes on the full
+      // ship, the boarding view and the small exterior model. Wrap the height
+      // samples at the tile edge so no artificial border catches the lights.
+      const heights=data.getImageData(0,0,n,n).data,normalCanvas=makeCanvas();
+      const normalCtx=normalCanvas.getContext('2d'),normals=normalCtx.createImageData(n,n);
+      const spanX=casework?.72:deck?2:lid?2.4:2.8,spanY=casework?.72:deck?2:1.6;
+      const reliefMetres=casework?.0018:deck?.012:.009;
+      const kx=reliefMetres*n/(2*255*spanX),ky=reliefMetres*n/(2*255*spanY);
+      for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+        const at=(y*n+x)*4;
+        const dx=(heights[(y*n+(x+n-1)%n)*4]-heights[(y*n+(x+1)%n)*4])*kx;
+        const dy=(heights[(((y+1)%n)*n+x)*4]-heights[(((y+n-1)%n)*n+x)*4])*ky;
+        const scale=127.5/Math.sqrt(dx*dx+dy*dy+1);
+        normals.data[at]=127.5+dx*scale;normals.data[at+1]=127.5+dy*scale;
+        normals.data[at+2]=127.5+scale;normals.data[at+3]=255;
+      }
+      normalCtx.putImageData(normals,0,0);
       const albedo=new T.CanvasTexture(colour),detail=new T.CanvasTexture(relief);
+      const normalMap=new T.CanvasTexture(normalCanvas);
       albedo.encoding=T.sRGBEncoding;
-      for(const tex of [albedo,detail]){
+      for(const tex of [albedo,detail,normalMap]){
         tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.repeat.set(1/spanX,1/spanY);tex.anisotropy=4;
       }
-      return {map:albedo,bumpMap:detail,roughnessMap:detail,bumpScale:deck?.013:.009};
+      return {map:albedo,roughnessMap:detail,normalMap};
     });
   }
 
@@ -122,13 +144,34 @@
     return g;
   }
 
+  // Each cast housing stays inside its original envelope. The broad faces
+  // retain flat normals and the narrow fillet carries the moving highlight.
+  // The surrounding kit scales unit geometries, hence the normal correction.
+  function cabinHousing(w,h,d){
+    const g=new T.BoxGeometry(1,1,1,3,3,3);
+    const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;
+    const r=Math.min(.095,Math.min(w,h,d)*.21);
+    const at=new T.Vector3(),outward=new T.Vector3(),face=new T.Vector3();
+    for(let i=0;i<p.count;i++){
+      at.fromBufferAttribute(p,i);face.fromBufferAttribute(n,i);
+      outward.set(Math.abs(at.x)>.4?Math.sign(at.x):0,Math.abs(at.y)>.4?Math.sign(at.y):0,
+        Math.abs(at.z)>.4?Math.sign(at.z):0).normalize();
+      const x=Math.sign(at.x)*(w*.5-r)+r*outward.x,y=Math.sign(at.y)*(h*.5-r)+r*outward.y,
+        z=Math.sign(at.z)*(d*.5-r)+r*outward.z;
+      p.setXYZ(i,x/w,y/h,z/d);
+      if(face.y)uv.setXY(i,x,-z*face.y);
+      else if(face.x)uv.setXY(i,-z*face.x,y);
+      else uv.setXY(i,x*face.z,y);
+      outward.set(outward.x*w,outward.y*h,outward.z*d).normalize();
+      n.setXYZ(i,outward.x,outward.y,outward.z);
+    }
+    return g;
+  }
+
   function buildRoomKit(parent,spec){
     const W=spec.width,D=spec.depth,H=spec.height;
     const halfW=W/2,halfD=D/2;
     const root=parent;
-    // Lighting derivatives are in rendered world units while plate dimensions
-    // are authored in metres, even when the ship is displayed at reduced scale.
-    const worldUnitsPerMetre=root.getWorldScale(new T.Vector3()).x;
     const geom=(key,fn)=>cabinAsset(cabinAssets.geometries,key,fn);
     const texture=(key,fn)=>cabinAsset(cabinAssets.canvases,key,fn);
     const material=(color,opts={})=>{
@@ -136,14 +179,13 @@
       const tint=new T.Color(color===undefined?0xc9d4d9:color);
       const glow=opts.glow||0,roughness=opts.roughness??.53,metalness=opts.metalness??.23;
       const opacity=opts.opacity??1;
-      const key=[tint.getHex(),glow,roughness,metalness,opacity,opts.finish||'',
-        opts.finish?worldUnitsPerMetre:0].join('/');
+      const key=[tint.getHex(),glow,roughness,metalness,opacity,opts.finish||''].join('/');
       return cabinAsset(cabinAssets.materials,key,()=>{
         tint.convertSRGBToLinear();
         const finish=opts.finish?cabinFinish(opts.finish):null;
         return new T.MeshStandardMaterial({color:tint,roughness,metalness,
           emissive:tint.clone(),emissiveIntensity:glow,transparent:opacity<1,
-          opacity,depthWrite:opacity>=1,...(finish?{...finish,bumpScale:finish.bumpScale*worldUnitsPerMetre}:{})});
+          opacity,depthWrite:opacity>=1,...finish});
       });
     };
     const blocks=root.userData.blocks||(root.userData.blocks=[]);
@@ -166,9 +208,13 @@
       return m;
     }
     function box(x,y,z,w,h,d,color,opts={}){
-      const g=opts.finish?geom('metric-box/'+[w,h,d].join('/'),
-        ()=>cabinMetricUV(boxGeometry.clone(),w,h,d)):boxGeometry;
-      const m=place(g,material(color,opts),x,y,z,opts);
+      const size=Math.max(w,h,d);
+      const housing=!opts.structural&&!opts.finish&&!opts.glow&&(opts.opacity??1)===1&&
+        !color?.isMaterial&&Math.min(w,h,d)>=.18&&size>=.72&&size<=10.5;
+      const dimensions=[w,h,d].join('/');
+      const g=housing?geom('housing/'+dimensions,()=>cabinHousing(w,h,d)):
+        opts.finish?geom('metric-box/'+dimensions,()=>cabinMetricUV(boxGeometry.clone(),w,h,d)):boxGeometry;
+      const m=place(g,material(color,housing?{...opts,finish:'enamel'}:opts),x,y,z,opts);
       m.scale.set(w,h,d);return m;
     }
     function cyl(x,y,z,rt,rb,h,color,opts={}){
@@ -371,8 +417,8 @@
     const openEdge=family==='terraceAccess' && spec.openRoof===true;
     const shell=new T.Group();shell.name='舱室内衬';root.add(shell);
     const roof=new T.Group();roof.name='顶棚与上部横梁';roof.userData.roof=true;shell.add(roof);
-    const shellOpts={parent:shell};
-    const roofOpts={parent:roof};
+    const shellOpts={parent:shell,structural:true};
+    const roofOpts={parent:roof,structural:true};
     const shellBox=(x,y,z,w,h,d,c,opts={})=>box(x,y,z,w,h,d,c,{...shellOpts,...opts});
     const roofBox=(x,y,z,w,h,d,c,opts={})=>box(x,y,z,w,h,d,c,{...roofOpts,...opts});
     const floorFace=box(0,-.125,0,W,.25,D,frameColor,shellOpts);
@@ -399,6 +445,16 @@
       shellBox(side*(doorWidth/2+.19),doorHeight/2,halfD-.22,.13,doorHeight,.22,lining);
       shellBox(side*(doorWidth/2+.27),doorHeight*.73,halfD-.35,.07,.59,.05,accent,{glow:.46});
       shellBox(side*(doorWidth/2+.39),1.34,halfD-.15,.20,.32,.11,dark);
+      // Each side has a recessed latch pocket and keeper. Closed hardware
+      // stays outboard of the clear opening and the gaskets sit in its rebate.
+      const keeperX=side*(doorWidth/2+.53);
+      for(const height of [.57,doorHeight-.50]){
+        shellBox(keeperX,height,halfD-.049,.48,.27,.13,dark);
+        shellBox(keeperX,height,halfD-.116,.38,.15,.08,frameColor);
+        shellBox(keeperX-side*.085,height,halfD-.164,.12,.09,.08,0xa4b2b6);
+      }
+      for(const dz of [-.08,.09])
+        shellBox(side*(doorWidth/2+.013),doorHeight/2,halfD+dz,.025,doorHeight,.033,0x354247);
     }
     shellBox(0,(H+doorHeight)/2,halfD+t/2,doorWidth,H-doorHeight,t,wall,{finish:'skin'});
     shellBox(0,doorHeight+.11,halfD,doorWidth+.48,.22,.52,frameColor);

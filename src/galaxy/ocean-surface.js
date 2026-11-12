@@ -117,7 +117,21 @@ function createOceanSurface(T,world){
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
   const organic=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide});
+  const tideTime={value:0};
+  const waterLightGLSL=`
+    float reefLight(vec2 p,float depth,float t){
+      vec2 bent=p*.72 + vec2(.81*sin(.52*p.y+t*.31)+.27*sin(1.08*p.x-t*.21),
+                              .73*sin(.47*p.x-t*.27)+.31*cos(.89*p.y+t*.19));
+      float a=sin(bent.x+.36*bent.y+t*.13),b=cos(bent.y-.42*bent.x-t*.17);
+      float line=abs(a+b+.27*sin(1.46*bent.x-.82*bent.y));
+      return (1.-smoothstep(.025,.21,line))*(1.-smoothstep(8.,54.,depth))/
+        (1.+length(fwidth(p))*.7);
+    }
+  `;
   const limestone=mineral.clone();
+  const spongeSkin=fieldSurfaceFinish(organic.clone(),'sponge');
+  const nacre=fieldSurfaceFinish(organic.clone(),'nacre');
+  fieldSurfaceFinish(mineral,'crystal');
   // Thin folded bedding follows each outcrop, including its underside.
   // Fade the fine strata at a distance so the reef still reads in clear masses.
   limestone.onBeforeCompile=shader=>{
@@ -131,6 +145,22 @@ function createOceanSurface(T,world){
       float prominence=.5+.5*sin(7.*bedCoordinate.x+2.*bedCoordinate.z);
       diffuseColor.rgb*=1.+fine*(.044*sin(bed*34.)-.16*lamina*prominence);`);
   };
+  // Refracted light uses the same metre coordinates on an oyster shell, its
+  // limestone support and the sand underneath. It fades down the deep trench.
+  for(const [i,mat] of [limestone,mineral,organic,painted,spongeSkin,nacre].entries()){
+    const surfacePass=mat.onBeforeCompile.bind(mat);
+    mat.customProgramCacheKey=()=>'reef-light-'+i;
+    mat.onBeforeCompile=s=>{
+      surfacePass(s);s.uniforms.seaClock=tideTime;
+      s.vertexShader='varying vec3 reefPlace;\n'+s.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nreefPlace=(instanceMatrix*vec4(position,1.)).xyz;');
+      s.fragmentShader='varying vec3 reefPlace;uniform float seaClock;\n'+waterLightGLSL+s.fragmentShader.replace('#include <color_fragment>',
+        `#include <color_fragment>
+         float lightNet=reefLight(reefPlace.xz+.18*reefPlace.y,-reefPlace.y,seaClock);
+         diffuseColor.rgb*=vec3(1.)+vec3(.22,.36,.36)*lightNet*
+           (1.-smoothstep(-.18,0.,reefPlace.y));`);
+    };
+  }
   function shape(name,g,m=painted){shapes.set(name,{g,m});}
   // Closed contour rings share vertices and colours between adjacent faces.
   // One indexed mesh per shape is reused by every colony, shell and outcrop.
@@ -172,7 +202,7 @@ function createOceanSurface(T,world){
   shape('tube',ringMesh(24,spongeRim.length,(j,i,a)=>{
     const [y,r,light]=spongeRim[j],flute=.97+.055*Math.cos(8*a+.9*y)+.023*Math.sin(3*a);
     return [r*flute*Math.cos(a)+.18*y*y,y*(1+.024*Math.cos(a*3+.6)),r*flute*Math.sin(a),light*flute];
-  }),organic);
+  }),spongeSkin);
   // Individual calyces on the fan tips have a six-lobed lip and recessed
   // centre. All of them share one instance batch across the district.
   const calyx=[[0,.13,.64],[.28,.34,.78],[.55,.67,.88],[.90,.86,1],[.59,.53,.71],[.44,0,.40]];
@@ -193,7 +223,12 @@ function createOceanSurface(T,world){
       lip===3?.16:lip===2?.64:(.84+.13*Math.cos(t*tau*12))*(1+.12*Math.cos(a))];
   });
   whorl.rotateX(-.47);whorl.computeBoundingBox();whorl.translate(0,-whorl.boundingBox.min.y,0);
-  shape('shell',whorl,organic);
+  shape('shell',whorl,nacre);
+  const plates=[[0,.91,.52],[.12,1,.77],[.55,.75,.89],[.78,.60,1.04],[.80,.40,1.12],[.59,.30,.46],[.38,.18,.22],[.33,0,.14]];
+  shape('barnacle',ringMesh(30,plates.length,(j,i,a)=>{
+    const [y,r,light]=plates[j],rib=Math.cos(a*6),flute=1+.065*rib;
+    return [r*flute*Math.cos(a),y+.095*y*rib,r*flute*Math.sin(a),light*(.95+.08*rib)];
+  }),organic);
   const temp=new T.Object3D();
   function record(id,tint){
     if(!entries.has(id))entries.set(id,[]);
@@ -211,7 +246,20 @@ function createOceanSurface(T,world){
   }
   let seed=832491;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   function boulder(x,z,w,h,d,tint){
-    stamp('rock',x,groundY(x,z)+h*.42,z,w,h,d,tint,.10*random(),random()*.9,.05);
+    const base=groundY(x,z),tilt=.10*random(),turn=random()*.9;
+    stamp('rock',x,base+h*.42,z,w,h,d,tint,tilt,turn,.05);
+    // The colony grows from the upper limestone bed. Transform its contacts
+    // along with the rock so that shells never hang on the air beside a terrace.
+    const rockFrame=temp.matrix.clone(),anchor=v();
+    for(let j=0;j<14;j++){
+      const a=j*2.39996+x*.1,r=.19*Math.sqrt(j/14);
+      anchor.set(-.13+r*Math.cos(a),.875,.1+r*Math.sin(a));
+      anchor.y+=.07*anchor.x+.08*anchor.z;
+      anchor.applyMatrix4(rockFrame);
+      const size=(.075+.026*(j%4))*Math.min(w,4);
+      stamp('barnacle',anchor.x,anchor.y-.045,anchor.z,size,size*.80,size,
+        j%3===0?0xa79299:0xd3c2b5,tilt,turn+a,.10);
+    }
     if(w>1.35)blockers.push({x,z,r:Math.min(w,d)*.64,top:groundY(x,z)+h*1.42});
   }
   function sponge(x,z,s,shade){
@@ -222,6 +270,10 @@ function createOceanSurface(T,world){
       const a=j*2.4,l=s*(.45+random()*.71);
       const dx=s*Math.sin(a)*.56,dz=s*Math.cos(a)*.56,r=.12*s+.10*l;
       stamp('tube',x+dx,base,z+dz,r,l,r,shade,Math.cos(a)*.14,0,-Math.sin(a)*.15);
+      if(j%2===0){
+        const outerX=x+dx*1.23,outerZ=z+dz*1.23;
+        stamp('barnacle',outerX,base+.018,outerZ,.23*s,.18*s,.22*s,0xc6a79d,.09,a);
+      }
     }
     if(s>=1.8)blockers.push({x,z,r:s*.76,top:base+1.2*s});
   }
@@ -468,14 +520,15 @@ function createOceanSurface(T,world){
     g.setAttribute('uv',chartUV);
   }
   groundGeo.setAttribute('color',new T.BufferAttribute(new Float32Array(coords.length*3),3));
-  const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92}),tideTime={value:0};
+  const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92});
   sandMat.onBeforeCompile=s=>{
     s.uniforms.tideTime=tideTime;
-    s.vertexShader='varying vec2 floorUV;varying float sunWater;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;sunWater=1.-smoothstep(5.,47.,-position.y);');
-    s.fragmentShader='uniform float tideTime;varying vec2 floorUV;varying float sunWater;\n'+s.fragmentShader.replace('#include <color_fragment>',
+    s.vertexShader='varying vec2 floorUV;varying float depthBelow;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;depthBelow=-position.y;');
+    s.fragmentShader='uniform float tideTime;varying vec2 floorUV;varying float depthBelow;\n'+waterLightGLSL+s.fragmentShader.replace('#include <color_fragment>',
       `#include <color_fragment>
       float ripple=sin(floorUV.x*3.+sin(floorUV.y*1.14)+floorUV.y*.75);
-      float gleam=abs(sin(floorUV.x*.85+1.3*sin(floorUV.y*.60+tideTime*.21))+sin(floorUV.y*.73+.84*cos(floorUV.x*.49-tideTime*.14)));
+      float sunWater=1.-smoothstep(5.,47.,depthBelow);
+      float gleam=reefLight(floorUV-.18*depthBelow,depthBelow,tideTime);
       float pixel=length(fwidth(floorUV));
       vec2 grainCell=floorUV*17.;
       vec2 tile=floor(grainCell);
@@ -484,8 +537,8 @@ function createOceanSurface(T,world){
       float fleck=(1.-smoothstep(.08,.27,length(fract(grainCell)-center)))*(grain-.49);
       float grit=1.-smoothstep(.008,.060,pixel);
       float bed=.035*sin(floorUV.x*13.+floorUV.y*2.+2.*sin(floorUV.y*1.2));
-      diffuseColor.rgb*=1.+(.07*ripple+.18*sunWater*(1.-smoothstep(.02,.18,gleam)))/(1.+.04*pixel)
-        +grit*(.19*fleck+sunWater*bed);`);
+      diffuseColor.rgb*=1.+.07*ripple/(1.+.04*pixel)+grit*(.19*fleck+sunWater*bed);
+      diffuseColor.rgb*=vec3(1.)+vec3(.25,.39,.39)*gleam;`);
   };
   sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
   const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;

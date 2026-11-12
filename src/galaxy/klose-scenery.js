@@ -48,11 +48,23 @@ function createKloseScenery(T, parent, surface) {
   const luminous=new T.MeshBasicMaterial({color:0xffffff,side:T.DoubleSide});
   function shape(name,geo,material=rough) {shapes.set(name,{geo,material});}
   shape('round',new T.SphereGeometry(1,12,9));
-  shape('rock',new T.IcosahedronGeometry(1,1));
-  shape('boulder',new T.DodecahedronGeometry(1,0));
-  shape('facet',new T.CylinderGeometry(.65,1,1,7,1));
-  shape('cane',new T.CylinderGeometry(.79,1,1,9,2));
-  shape('twig',new T.CylinderGeometry(.62,1,1,7,1));
+  const stone=fieldSurfaceFinish(rough.clone(),'stone'),bark=fieldSurfaceFinish(rough.clone(),'stem');
+  shape('rock',new T.IcosahedronGeometry(1,1),stone);
+  // Successively undercut slabs form a ledge with a small bevel and a broken lip.
+  const rockProfile=[[-.80,.19],[-.70,.68],[-.48,.84],[-.36,.82],[-.33,.94],[.16,1.0],
+    [.23,.89],[.29,.94],[.48,.88],[.60,.62],[.64,.12],[.64,0]];
+  const slab=new T.LatheGeometry(rockProfile.map(([y,r])=>new T.Vector2(r,y)),14);
+  const pos=slab.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i),a=Math.atan2(z,x);
+    const bank=.96+.08*Math.cos(3*a+.25)+.05*Math.sin(5*a)+.022*Math.cos(9*a+y);
+    pos.setXYZ(i,x*bank+.09*y,y+.13*x-.05*z,z*bank);
+  }
+  slab.computeVertexNormals();
+  shape('boulder',slab,stone);
+  shape('facet',new T.CylinderGeometry(.65,1,1,7,1),stone);
+  shape('cane',new T.CylinderGeometry(.79,1,1,12,3),bark);
+  shape('twig',new T.CylinderGeometry(.62,1,1,9,2),bark);
   shape('rim',new T.TorusGeometry(1,.10,8,40));
   const poolShape=new T.SphereGeometry(1,48,16);
   shape('mud',poolShape,rough);
@@ -112,9 +124,9 @@ function createKloseScenery(T, parent, surface) {
     return meshData(p,rgb,ix);
   })();
   gloss.vertexColors=true;
-  shape('crystal',crystalShape,gloss);
-  shape('coreCrystal',crystalShape,new T.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:.39,
-    metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}));
+  shape('crystal',crystalShape,fieldSurfaceFinish(gloss,'crystal'));
+  shape('coreCrystal',crystalShape,fieldSurfaceFinish(new T.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:.39,
+    metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}),'crystal'));
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.8,side:T.DoubleSide});
   const mushroomCap=(()=>{
     const p=[],rgb=[],ix=[],segments=64;
@@ -130,8 +142,9 @@ function createKloseScenery(T, parent, surface) {
     return meshData(p,rgb,ix);
   })();
   shape('cap',mushroomCap,colored);
-  shape('leaf',leafGeometry(),colored);
-  shape('canopy',kloseCanopyGeometry(T,true),colored);
+  const moss=fieldSurfaceFinish(colored.clone(),'moss');
+  shape('leaf',leafGeometry(),fieldSurfaceFinish(colored.clone(),'blade'));
+  shape('canopy',kloseCanopyGeometry(T,true),moss);
   function meshData(positions,colors,indices) {
     const g=new T.BufferGeometry();
     g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
@@ -168,7 +181,28 @@ function createKloseScenery(T, parent, surface) {
     }
     return meshData(p,rgb,idx);
   }
-  shape('sod',sodGeometry(),colored);
+  shape('sod',sodGeometry(),moss);
+  // Paired pinnules share one mesh with a bowed rachis. Each meadow bed can
+  // carry many fern tips with a single instance batch.
+  function fernGeometry(){
+    const points=[],colors=[],indices=[];
+    function fold(x,y,z,tx,ty,tz,width,rise){
+      const i=points.length/3,mx=(x+tx)*.5,my=(y+ty)*.5,mz=(z+tz)*.5;
+      points.push(x,y,z,mx,my,mz-width,mx,my+rise,mz,tx,ty,tz,mx,my,mz+width);
+      colors.push(.49,.61,.58, .68,.83,.79, .98,1,.97, .89,.97,.94, .57,.74,.69);
+      indices.push(i,i+1,i+2,i+1,i+3,i+2,i+2,i+3,i+4,i,i+2,i+4);
+    }
+    for(let j=0;j<10;j++){
+      const t=j/10,u=(j+1)/10,stem=t*.50+.17*Math.sin(t*Math.PI);
+      fold(0,stem,t,.012,u*.50+.17*Math.sin(u*Math.PI),u,.018,.012);
+      for(const side of [-1,1]){
+        const reach=(.10+.23*Math.sin(Math.PI*(.15+t*.85)))*(1-.59*t);
+        fold(0,stem,t,side*reach,stem+.17*(1-t),t+.19-.11*t,.057*(1-.67*t),.036);
+      }
+    }
+    return meshData(points,colors,indices);
+  }
+  shape('fern',fernGeometry(),colored);
   const distantShapes={round:new T.SphereGeometry(1,8,5),rock:new T.IcosahedronGeometry(1,0),canopy:kloseCanopyGeometry(T,false),
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);
@@ -196,7 +230,6 @@ function createKloseScenery(T, parent, surface) {
     flame:{bark:'#632b6a',crown:['#e28714','#cd6509','#f7a225','#ab4d0e'],vine:'#1667bc'}
   };
   const randFrom=value=>()=>{value=(Math.imul(value,1664525)+1013904223)>>>0;return value/4294967296;};
-  const lerp=(a,b,t)=>a+(b-a)*t;
   function makeSite(site,order) {
     const group=new T.Group(),near=new T.Group(),far=new T.Group();
     group.name=site.name;group.add(near,far);parent.add(group);
@@ -381,13 +414,27 @@ function createKloseScenery(T, parent, surface) {
           }
         }
       }
-      for(let i=0;i<26;i++) {
-        const x=lerp(-21,23,i/25),z=-23+3*Math.sin(.18*x);
-        if(blocked(x,z,2))continue;
-        const leaves=x>8?meadowLeaves:azureLeaves;
-        roughLedge(x,z,1.8+.55*seed(),openGround.grassland.rock,.32);
-        stamp('sod',x,yAt(x,z)+1.42,z-.95,2.8,1.3,3.35,choose(leaves),.02,.1);
-        if(i%2===0)leafFan(x+.24,yAt(x,z)+1.78,z-.7,.8,leaves,7);
+      // Map 10 shows overlapping courses of ochre stone under blue turf,
+      // turning chartreuse at the eastern terrace. Leave the wetland trail
+      // open at the centre and the flame trail open on the eastern flank.
+      const masonry=['#936341','#b17c4e','#c18e60','#cc9b6e','#b98359'];
+      for(let i=0;i<21;i++){
+        const x=(i-10)*2.85,z=-24+3.9*Math.sin(.14*x);
+        if(blocked(x,z,2.5))continue;
+        const ground=yAt(x,z),rise=1.92+.44*Math.cos(.26*x),leaves=x>8?meadowLeaves:azureLeaves;
+        const turn=.22*Math.cos(.14*x);
+        for(let j=0;j<3;j++){
+          const dx=x+.48*(j%2),dz=z-.38*j;
+          stamp('boulder',dx,ground+(.15+.32*j)*rise,dz,2.08,.69*rise,1.64,
+            masonry[(i*2+j)%masonry.length],.05*(j-1),turn+.17*j,-.07*Math.sin(i+j));
+        }
+        obstacle(x,z,1.72);
+        for(let j=0;j<4;j++){
+          const dx=x+.70*(j-1.5),dz=z-.70+.32*Math.sin(i+j);
+          stamp('canopy',dx,ground+rise+.13*Math.cos(j+i),dz,1.55,.49,1.65,
+            leaves[(i+j)%leaves.length],.05,turn);
+        }
+        if(i%2===0)leafFan(x+.12,ground+rise+.32,z-1.2,.62,leaves,7);
       }
     }
     if(site.id==='swamp') {
@@ -519,6 +566,22 @@ function createKloseScenery(T, parent, surface) {
         obstacle(px,pz,s*.26);
       }
     }
+    // Put small understory colonies at the edges of the route and around the
+    // existing habitat, without moving its older randomly placed flora and fauna.
+    if(site.id!=='core'){
+      const tint=openGround[site.id]?.leaves||groves[site.id]?.crown||azureLeaves;
+      const detail=randFrom(3733+order*419);
+      for(let i=0;i<62;i++){
+        const az=detail()*tau,range=5+23*detail(),x=Math.sin(az)*range,z=Math.cos(az)*range;
+        if(padClear(site.x+x,site.z+z,.5)||trail(site.x+x,site.z+z)<2.7||
+           pools.some(p=>Math.hypot((site.x+x-p.x)/p.rx,(site.z+z-p.z)/p.rz)<1.03))continue;
+        const size=.35+.71*detail(),y=yAt(x,z)-.015;
+        for(let j=0;j<6;j++){
+          const angle=az+j*tau/6,stretch=size*(.65+.42*detail());
+          stamp('fern',x,y,z,stretch,size,stretch,tint[j%tint.length],-.22+.22*detail(),angle);
+        }
+      }
+    }
     // Record the top of solid scenery in 3 m ground cells directly from the
     // rendered geometry. A shuttle approaches a crown, arch or cave roof from
     // above; the walker's trunk-only footprint cannot describe that contact.
@@ -527,7 +590,7 @@ function createKloseScenery(T, parent, surface) {
       const {geo,material}=shapes.get(key);
       // Ground creatures need a canopy clearance appropriate to their height.
       if(!geo.boundingBox)geo.computeBoundingBox();
-      for(const item of items){
+      for(const item of key==='fern'?[]:items){
         bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);
         if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
         const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
@@ -540,7 +603,7 @@ function createKloseScenery(T, parent, surface) {
             birdCover.get(cell).push(box);
           }
       }
-      if(!['pool','energyPool','mud','lamp','sod','leaf'].includes(key)){
+      if(!['pool','energyPool','mud','lamp','sod','leaf','fern'].includes(key)){
         if(!geo.boundingBox)geo.computeBoundingBox();
         for(const item of items){
           bounds.copy(geo.boundingBox).applyMatrix4(item.matrix);

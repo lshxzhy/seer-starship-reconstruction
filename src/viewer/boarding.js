@@ -125,7 +125,7 @@
       notifyPlayer(on?'已装备双臂挖矿钻头。':'挖矿钻头已放回背包。');
     }
     benchButton.addEventListener('click',useBench);
-    let smiling=false;
+    let expression='neutral';
     const crewDialogue=createCrewDialogue({
       context:()=>({roomId:currentRoomId,location:tag.textContent,
         nearby:nearbyDuty()||(active&&pose?population.nearest(pose,4):null)}),
@@ -137,7 +137,10 @@
     });
     const perspective=root.querySelector('[data-perspective]');
     const inspect=root.querySelector('[data-face-player]');
-    const smile=root.querySelector('[data-smile]');
+    const faceFields=[...root.querySelectorAll('[data-face-expression]')];
+    for(const field of faceFields){
+      for(const [id,label] of Object.entries(seerRobots.expressions))field.add(new Option(label,id));
+    }
     const greet=root.querySelector('[data-nono]');
     const mount=root.querySelector('[data-flyer]');
     const climb=root.querySelector('[data-climb]'),descend=root.querySelector('[data-descend]');
@@ -273,6 +276,7 @@
       machine:{floor:[-14.1,6.7],look:[-16.0,1.35,5.95]},
       teleport:{floor:[-2.1,-4.1],look:[-4.8,2.9,-9.8]},
       power:{floor:[3.7,4.6],look:[-.2,3.7,-3.4]},
+      laboratory:{floor:[5.0,-1.80],look:[10.1,3.50,-8.45]},
       observation:{floor:[-2.5,3.4],look:[-6.9,4.35,-2.3]}
     };
     detailVisit.addEventListener('click',()=>{
@@ -317,18 +321,19 @@
     });
     inspect.addEventListener('click',()=>{
       if(!active)return;
-      crewDialogue.close();
-      yaw=pilot.facing+Math.PI;pitch=0;requestFrame();focusFlightControls();persist();
+      crewDialogue.close();pilot.frameFace();
+      yaw=pilot.facing+Math.PI;pitch=.12;requestFrame();focusFlightControls();persist();
     });
-    function setSmile(on){
-      smiling=on;pilot.setSmile(on);
-      smile.setAttribute('aria-pressed',String(on));
-      smile.textContent=on?'恢复平视':'微笑';
+    function setExpression(id){
+      expression=Object.hasOwn(seerRobots.expressions,id)?id:'neutral';
+      pilot.setExpression(expression);
+      for(const field of faceFields)field.value=expression;
     }
-    smile.addEventListener('click',()=>{
+    root.querySelector('[data-face-expression="ship"]').addEventListener('change',event=>{
       if(!active)return;
-      cameraStyle('follow');setSmile(!smiling);
-      yaw=pilot.facing+Math.PI;pitch=0;focusFlightControls();requestFrame();persist();
+      cameraStyle('follow');setExpression(event.currentTarget.value);pilot.frameFace();
+      if(stage.dataset.consoleOpen==='terminal')root.querySelector('[data-dismiss]').click();
+      yaw=pilot.facing+Math.PI;pitch=.12;focusFlightControls();requestFrame();persist();
     });
     greet.addEventListener('click',()=>{
       if(!active)return;
@@ -508,7 +513,6 @@
       movePad.hidden=false;
       stage.dataset.boarded='true';
       flight.restore(saved?.flight,pose);
-      if(typeof saved?.smiling==='boolean')setSmile(saved.smiling);
       companion.arrive(pose,yaw);flightControls();
       refreshPlace(true);
       flightControls();
@@ -764,10 +768,10 @@
       const route=port.routes.find(r=>r.destination===berthRoute.destination);
       return route?{...port,...route}:port;
     }
-    function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,berthRoute,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
+    function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,expression,smiling:expression==='smile',berthRoute,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
-      clearInputs,pack,restorePack,deliver,
+      clearInputs,pack,restorePack,deliver,setExpression,get expression(){return expression;},
       setEscortSpecies(id){escort.setSpecies(id);requestFrame();},
       setFlameTool(value){
         const equipped=Boolean(value);

@@ -56,17 +56,48 @@
       }
       g.position.set(x,0,z);g.rotation.y=angle;block(x,z,1.8,1.9);return g;
     }
-    function windowBay(x,y,z,w,h,tint=0x102744) {
+    function windowBay(x,y,z,w,h,field) {
       box(x,y,z,w+.50,h+.50,.40,C.navy);
-      box(x,y,z+.24,w,h,.12,tint,{glow:.13});
+      box(x,y,z+.24,w,h,.12,C.ink);
       for(const s of [-1,1]){
         box(x+s*(w/2+.14),y,z+.37,.20,h+.38,.28,C.edge);
         box(x,y+s*(h/2+.14),z+.37,w+.44,.20,.28,C.edge);
       }
-      for(let i=0;i<15;i++){
-        const u=((i*37+11)%101)/101,v=((i*29+17)%97)/97;
-        ball(x+(u-.5)*(w-.6),y+(v-.5)*(h-.6),z+.32,.025+(i%3)*.014,.025+(i%3)*.014,.018,i%4?C.edge:C.blue,{glow:.6});
-      }
+      // Three chart panes share a single continuous stellar survey and use
+      // different thirds of its texture. The plotted 3D course sits above it.
+      const paint=cabinAsset(cabinAssets.materials,'command/panorama',()=>{
+        const c=document.createElement('canvas');c.width=1536;c.height=384;
+        const ctx=c.getContext('2d'),bg=ctx.createLinearGradient(0,0,0,c.height);
+        bg.addColorStop(0,'#0e203b');bg.addColorStop(.65,'#19394e');bg.addColorStop(1,'#102434');
+        ctx.fillStyle=bg;ctx.fillRect(0,0,c.width,c.height);
+        let seed=1221;
+        function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
+        // A broad oblique dust lane is built as soft overlapping clouds, with
+        // a higher density of stars near its centre and room for the route ink.
+        const lane=px=>200+90*Math.sin(px/560+.22);
+        for(let i=0;i<86;i++){
+          const px=rand()*c.width,py=lane(px)+(rand()-.5)*108,r=30+rand()*83;
+          const cloud=ctx.createRadialGradient(px,py,0,px,py,r);
+          cloud.addColorStop(0,i%3?'rgba(77,125,148,.09)':'rgba(123,104,151,.11)');
+          cloud.addColorStop(1,'rgba(80,110,140,0)');
+          ctx.fillStyle=cloud;ctx.fillRect(px-r,py-r,2*r,2*r);
+        }
+        for(let i=0;i<2800;i++){
+          const px=rand()*c.width,py=i%3?rand()*c.height:lane(px)+(rand()-.5)*92;
+          const intensity=rand(),r=intensity>.989?1.65:intensity>.84?.90:.46;
+          ctx.globalAlpha=.23+.68*intensity;
+          ctx.fillStyle=i%13===0?'#f0d5a8':i%4===0?'#8ec7e2':'#d4e7e8';
+          ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fill();
+        }
+        const map=new T.CanvasTexture(c);map.encoding=T.sRGBEncoding;map.anisotropy=4;
+        return new T.MeshBasicMaterial({map,toneMapped:false});
+      });
+      const pane=cabinAsset(cabinAssets.geometries,'command/pane/'+field,()=>{
+        const g=new T.PlaneGeometry(w,h),uv=g.attributes.uv;
+        for(let i=0;i<uv.count;i++)uv.setX(i,(uv.getX(i)+field)/3);
+        return g;
+      });
+      const sky=new T.Mesh(pane,paint);sky.position.set(x,y,z+.305);root.add(sky);
     }
     function lightBar(x,y,z,w,color=C.cyan) {
       box(x,y,z,w,.22,.52,C.navy);box(x,y-.13,z,w-.2,.035,.31,color,{glow:.6});
@@ -81,7 +112,7 @@
     // 2010 command room: ivory stepped map desk, cyan rings, green slots,
     // framed star/track surfaces. Their viewport use and the seat are inferred.
     const rear=-D/2+.55;
-    for(let i=0;i<3;i++)windowBay(-8.8+i*8.8,5.45,rear,8.0,4.75,0x112b45);
+    for(let i=0;i<3;i++)windowBay(-8.8+i*8.8,5.45,rear,8.0,4.75,i);
     for(const x of [-13.7,-4.5,4.5,13.7]){
       box(x,4.25,rear+.30,.72,8.3,.9,C.ivory);
       box(x,4.5,rear+.82,.16,4.2,.08,C.green,{glow:.25});
@@ -212,24 +243,54 @@
     ball(10.1,3.75,-10.05,3.55,3.65,1.0,C.ivory);
     box(10.1,.35,-8.7,7.3,.7,4.6,C.ink);
     box(10.1,.86,-8.7,6.7,.32,4.0,C.steel);
-    tube([10.1,3.75,-9.0],[10.1,3.75,-8.7],2.57,C.navy);
+    tube([10.1,3.75,-9.08],[10.1,3.75,-8.94],2.57,C.navy);
     torus(10.1,3.75,-8.45,2.87,.47,C.edge);
     torus(10.1,3.75,-8.13,2.37,.15,C.cyan,{glow:.40});
     glass(tube([10.1,3.75,-8.14],[10.1,3.75,-8.06],2.19,0x4ebdc7),.26);
+    // Concentric pressure seats and bolted winding segments are visible at
+    // different depths through the source's glazed annulus. The opening in
+    // the middle remains clear so the specimen still reads from the console.
+    torus(10.1,3.75,-8.18,2.19,.064,C.ink);
+    torus(10.1,3.75,-8.31,2.10,.042,C.steel);
+    torus(10.1,3.75,-8.67,1.80,.09,C.navy);
+    torus(10.1,3.75,-8.052,2.69,.031,C.steel);
+    const chamberPoint=(angle,r,z)=>[10.1+r*Math.sin(angle),3.75+r*Math.cos(angle),z];
+    for(let i=0;i<8;i++){
+      const start=i*Math.PI/4+.09,span=Math.PI/4-.18;
+      for(const [r,z,wire,color] of [[1.83,-8.60,.065,0xb89463],[1.96,-8.47,.047,C.steel]]){
+        const points=Array.from({length:6},(_,j)=>chamberPoint(start+j*span/5,r,z));
+        pipe(points,wire,color,{segments:6});
+      }
+      const a=i*Math.PI/4,[x,y]=chamberPoint(a,1.92,-8.46);
+      box(x,y,-8.49,.17,.38,.16,C.ivory,{rz:-a});
+    }
     for(let i=0;i<8;i++){
       const t=i*Math.PI/4,x=10.1+Math.sin(t)*2.9,y=3.75+Math.cos(t)*2.9;
       box(x,y,-8.12,.55,.85,.48,i%2?C.ivory:C.steel,{rz:-t});
       ball(x,y,-7.84,.09,.09,.07,C.amber,{glow:.3});
+      const outer=chamberPoint(t,3.14,-7.865),inner=chamberPoint(t,2.64,-7.865);
+      tube(outer,[outer[0],outer[1],-7.81],.078,C.edge);
+      tube(inner,[inner[0],inner[1],-7.81],.078,C.edge);
     }
     cyl(10.1,1.48,-8.55,1.50,1.78,.30,C.navy);
     cyl(10.1,1.68,-8.55,1.35,1.35,.10,C.cyan,{glow:.3});
     for(const dx of [-1.05,1.05]){
-      cyl(10.1+dx,2.40,-8.9,.43,.53,1.35,C.steel);
-      ball(10.1+dx,3.30,-8.9,.61,.81,.61,C.green,{glow:.18});
-      ring([10.1+dx,3.04,-8.9],[0,1,0],.59,.048,C.edge);
+      const x=10.1+dx;
+      cyl(x,2.40,-8.69,.43,.53,1.35,C.steel);
+      cyl(x,2.97,-8.69,.47,.47,.20,C.navy);
+      ball(x,3.38,-8.62,.28,.43,.24,dx<0?0x70e6be:0x85c9db,{glow:.43,roughness:.24});
+      glass(ball(x,3.30,-8.69,.57,.78,.42,C.green),.25);
+      for(const y of [2.86,3.04])ring([x,y,-8.70],[0,1,0],.52,.045,C.edge);
+      for(const s of [-1,1]){
+        const p=[[x+s*.43,3.03,-8.49],[x+s*.50,3.39,-8.48],
+          [x+s*.34,3.80,-8.49],[x+s*.10,4.02,-8.61]];
+        pipe(p,.041,C.steel,{segments:6});
+      }
+      cyl(x,4.02,-8.69,.115,.16,.12,C.steel,{segments:16});
     }
     smallConsole(10.1,-4.85,4.7,C.ivory);
-    text(10.1,2.33,-5.2,'精灵融合转生仓',5.1,.46,C.edge);
+    box(10.1,1.02,-4.045,3.36,.28,.095,C.navy);
+    text(10.1,1.02,-3.991,'精灵融合转生仓',2.92,.22,C.paper);
     pipe([[13.2,2,-9.8],[15.4,2,-9.8],[15.4,6.9,-9.8],[11.8,6.9,-9.8]],.18,C.steel);
     block(10.1,-8.5,7.7,5.3);
     // Left amber-domed analysis device, with the source's red support arms.
@@ -401,6 +462,21 @@
     cyl(gx,1.19,gz,1.77,1.65,.22,C.ivory);
     cyl(gx,1.40,gz,1.42,1.63,.20,C.navy);
     glass(ball(gx,2.55,gz,1.47,1.47,1.47,C.cyan,{glow:.18}),.23);
+    // Reference meridians and index stars are inside the archive globe.
+    for(const lat of [-.58,0,.58])
+      ring([gx,2.55+1.36*Math.sin(lat),gz],[0,1,0],1.36*Math.cos(lat),.012,C.edge);
+    for(let i=0;i<3;i++){
+      const angle=i*Math.PI/3;
+      ring([gx,2.55,gz],[Math.cos(angle),0,Math.sin(angle)],1.36,.012,C.edge);
+    }
+    const constellation=new T.InstancedMesh(new T.IcosahedronGeometry(.034,0),
+      new T.MeshBasicMaterial({toneMapped:false}),32),pose=new T.Matrix4();
+    for(let i=0;i<32;i++){
+      const y=1-2*(i+.5)/32,angle=i*2.39996,h=1.32*Math.sqrt(1-y*y);
+      constellation.setMatrixAt(i,pose.makeTranslation(gx+h*Math.sin(angle),2.55+y*1.32,gz+h*Math.cos(angle)));
+      constellation.setColorAt(i,new T.Color(i%5?C.cyan:C.amber).convertSRGBToLinear());
+    }
+    kit.root.add(constellation);
     for(const n of [[0,1,0],[.62,.26,.70]])ring([gx,2.55,gz],n,1.44,.033,C.cyan);
     ring([gx,2.55,gz],[.86,.18,-.38],1.51,.052,C.edge);
     pipe([[gx-.8,2.25,gz+.2],[gx-.4,3.25,gz+.4],[gx+.3,2.7,gz+.7],[gx+.8,3.0,gz]],.055,C.green);
