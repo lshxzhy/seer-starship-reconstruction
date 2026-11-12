@@ -53,17 +53,20 @@ function finishSpiritPart(mesh,kind,palette){
   mesh.material=spiritCoating(mesh.material,kind,palette);return mesh;
 }
 function createCompanionFigure(T,id){
-  return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
+  return createIyooFigure(T,id)||createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
-// World presentation uses catalogue height once, regardless of the sculpt's native units.
+// World presentation uses catalogue height once, with a visibility floor for
+// tiny species. This is a scene presentation rule, not a change to their data.
 // A scaled scene receives local dimensions; records convert them back to metres.
 // Keep the attachment at unit scale so its local focus point matches its geometry.
-const FIELD_SPIRIT_SCALE=1.65, FIELD_BOSS_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
+const FIELD_SPIRIT_SCALE=3.0, FIELD_SPIRIT_MIN_HEIGHT=1.10, FIELD_BOSS_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
 function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
   const centimetres=SEER_SPIRIT_DATA.index.find(row=>row[0]===id)?.[3];
-  const size=FIELD_SPIRIT_SCALE*(boss?FIELD_BOSS_SCALE:1)*(centimetres>0?centimetres/100:extent.y)/sceneScale;
+  const naturalHeight=centimetres>0?centimetres/100:extent.y;
+  const displayHeight=Math.max(FIELD_SPIRIT_MIN_HEIGHT,FIELD_SPIRIT_SCALE*naturalHeight);
+  const size=displayHeight*(boss?FIELD_BOSS_SCALE:1)/sceneScale;
   const factor=size/Math.max(.01,extent.y),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
   model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;

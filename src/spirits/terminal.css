@@ -17,7 +17,7 @@
 .spirit-list{display:flex;flex-wrap:wrap;gap:6px}
 .spirit-list button,.spirit-moves button{text-align:left}
 .spirit-list button small,.spirit-moves button small{display:block;color:#b9d5d2;font-size:11px}
-.spirit-stage{position:relative;height:clamp(125px,24cqw,206px);background:radial-gradient(ellipse at 50% 20%,#466f73 0%,#2b4c58 51%,#1b343d 99%);border-radius:7px;overflow:hidden}
+.spirit-stage{position:relative;height:clamp(190px,34cqw,300px);background:radial-gradient(ellipse at 50% 20%,#466f73 0%,#2b4c58 51%,#1b343d 99%);border-radius:7px;overflow:hidden}
 .spirit-stage.duel{background:radial-gradient(ellipse at 50% 30%,#5b7776,#3f5b63 55%,#263a43);}
 .spirit-stage canvas{display:block;width:100%;height:100%}
 .spirit-missing{position:absolute;inset:auto 10px 8px;color:#d8e4db;font-size:12px;text-align:center}
@@ -37,5 +37,5 @@
 .spirit-panel .spirit-dex-results button{font-size:13px}
 .spirit-panel .spirit-dex-info{max-height:138px;overflow:auto}
 .spirit-panel .spirit-catalog-number{color:#96bcb9;font:12px Consolas,monospace}
-@container(max-width:660px){.spirit-columns{grid-template-columns:1fr}.spirit-scroll{padding:9px}.spirit-panel .spirit-stage{height:137px}.spirit-tabs{padding:5px 8px}.spirit-page{gap:8px}.spirit-row,.spirit-actions{gap:5px}}
-@container(max-width:450px){.spirit-panel .spirit-stage{height:105px}.spirit-panel button:not(.ship-dismiss){padding:4px 6px;font-size:12px}.spirit-tabs{gap:4px}}
+@container(max-width:660px){.spirit-columns{grid-template-columns:1fr}.spirit-scroll{padding:9px}.spirit-panel .spirit-stage{height:210px}.spirit-tabs{padding:5px 8px}.spirit-page{gap:8px}.spirit-row,.spirit-actions{gap:5px}}
+@container(max-width:450px){.spirit-panel .spirit-stage{height:180px}.spirit-panel button:not(.ship-dismiss){padding:4px 6px;font-size:12px}.spirit-tabs{gap:4px}}

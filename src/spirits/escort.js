@@ -42,7 +42,7 @@ function createSpiritEscort(T,world,metre=1){
       goal=null;sample=.15;
       // NoNo normally flies at the player's right. Prefer the opposite side,
       // then try a single-file position in a narrow passage.
-      for(const [lateral,front] of [[-side,fore],[0,-1.1-radius],[-.6*side,-1.4],[side,fore]]){
+      for(const [lateral,front] of [[-side,fore],[0,-1.1-radius],[-.6*side,-1.1-radius],[side,fore]]){
         const dx=c*lateral-s*front,dz=-s*lateral-c*front;
         const candidate=move(owner,dx,dz),offset=direction(owner,candidate);
         if(Math.hypot(offset.x-dx,offset.z-dz)>.19||!clear(candidate,radius))continue;

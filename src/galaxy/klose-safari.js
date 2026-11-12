@@ -168,6 +168,7 @@ function createKloseSafari(T,surface){
   const {chart,move,groundCorrection,pools,sceneScale=1}=surface;
   const stations=[],actors=[],labels=new Map();
   let s=null,wet=null,clock=0,stepOrigin=null,strides=0,stepGoal=12,sequence=0,guest=null,guestKey='';
+  let fieldRetryAt=0,guestRetryAt=0,guestRetryKey='';
   const fieldIds=[10,16,574,690,553,249,414,164,738];
   const anchors=[[3,-4],[-7,0],[9,4],[-3,-8],[1,-12],[-11,3],[12,-3],[-7,10],[4,9]];
   const cube=new T.BoxGeometry(1,1,1),round=new T.SphereGeometry(1,15,11);
@@ -301,7 +302,7 @@ function createKloseSafari(T,surface){
     }
   }
   function clear(x,z,r,size,actor){
-    if(!wet||Math.hypot(x,z)<1.05+r)return false;
+    if(!wet||Math.hypot(x,z)<1.05+r||Math.abs(x)+r>21.5||Math.abs(z)+r>21.5)return false;
     const gx=wet.site.x+x,gz=wet.site.z+z;
     if(wet.hazards.some(h=>Math.hypot(gx-h.x,gz-h.z)<r+h.r))return false;
     if(pools.some(p=>Math.hypot((gx-p.x)/(p.rx+r),(gz-p.z)/(p.rz+r))<1.06))return false;
@@ -310,7 +311,8 @@ function createKloseSafari(T,surface){
     return actors.every(p=>p===actor||Math.hypot(p.x-x,p.z-z)>=p.r+r);
   }
   function locate(x,z,model){
-    for(let j=0;j<=14;j++)for(let k=0,n=Math.max(1,8*j);k<n;k++){
+    const reach=Math.min(12,Math.max(5.32,model.radius*2.2+1.6)),rings=Math.ceil(reach/.38);
+    for(let j=0;j<=rings;j++)for(let k=0,n=Math.max(1,8*j);k<n;k++){
       const a=k*2*Math.PI/n,dx=x+Math.cos(a)*j*.38,dz=z+Math.sin(a)*j*.38;
       if(clear(dx,dz,model.radius,model.size,null))return {x:dx,z:dz};
     }
@@ -329,25 +331,28 @@ function createKloseSafari(T,surface){
     p.root.position.set(p.x,wet.yAt(p.x,p.z)+groundCorrection(p.at.lat,p.at.lon)+bob+.004,p.z);p.root.rotation.y=p.yaw;
   }
   function buildField(){
-    if(actors.length||!wet)return;
+    if(!wet||actors.length===fieldIds.length||clock<fieldRetryAt)return;
+    fieldRetryAt=clock+2;
     for(const [i,id] of fieldIds.entries()){
+      if(actors.some(p=>p.id===id))continue;
       const [x,z]=anchors[i],p=createActor(id,x,z,'field',7+i%5);if(!p)continue;
       p.yaw=i*2.4;actors.push(p);
     }
   }
   function dropGuest(){
     if(guest){wet.near.remove(guest.root);guest.dispose();guest=null;}
-    guestKey='';
+    guestKey='';guestRetryKey='';guestRetryAt=0;
   }
   function syncGuest(viewer){
     const encounter=s?.encounter,pet=encounter?.pet,method=encounter?.method;
-    if(!pet||method==='field'){if(guest)dropGuest();return;}
+    if(!pet||method==='field'){if(guest||guestRetryKey)dropGuest();return;}
     const key=method+'-'+pet.speciesId;if(guestKey===key)return;
+    if(guestRetryKey===key&&clock<guestRetryAt)return;
     dropGuest();
     const point=method==='fish'?[-6.6,-7.4]:method==='tree'?[5.0,-3.6]:method==='bear'?[-4.0,5.4]:
       [viewer.x-wet.site.x+1.1,viewer.z-wet.site.z-1.6];
     guest=createActor(pet.speciesId,point[0],point[1],method,pet.level);
-    if(guest)guestKey=key;
+    if(guest)guestKey=key;else{guestRetryKey=key;guestRetryAt=clock+2;}
   }
   function setState(state){
     s=state||null;

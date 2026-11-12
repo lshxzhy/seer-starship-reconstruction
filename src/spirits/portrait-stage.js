@@ -69,7 +69,7 @@ function createSpiritStage(T){
           arranged.add(model.root);holder.add(arranged);
         }
         anchor.position.x=entries.length===1?0:(i===0?-1.25:1.25);
-        anchor.rotation.y=entries.length===1?-.28:(i===0?.66:-.66);
+        anchor.rotation.y=entries.length===1?(entry.id===4?-.55:-.28):(i===0?.66:-.66);
         cast.push({anchor,holder,model});
       }
     }
