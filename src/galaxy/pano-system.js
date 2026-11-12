@@ -7,17 +7,78 @@ const PANO_ORBITS=(()=>{
     return {id:world.id,name:world.name,a:scale*Math.hypot(x,z),phase:Math.atan2(z,x),colour};
   };
   const klose=icon(KLOSE_WORLD,551,154,'#e8d34e');
-  const ocean=icon(OCEAN_WORLD,409,78,'#7ed9f5');
-  for(const row of [klose,ocean])row.period=period*Math.pow(row.a/klose.a,1.5);
-  return {klose,ocean};
+  const rows=[klose,icon(OCEAN_WORLD,409,78,'#7ed9f5'),
+    icon(ALPHA_WORLD,345,221,'#81d7a2'),icon(BETA_WORLD,237,341,'#efbf75')];
+  for(const row of rows)row.period=period*Math.pow(row.a/klose.a,1.5);
+  return Object.fromEntries(rows.map(row=>[row.id,row]));
 })();
 
-const PANO_NAVIGATION=createPlanetNavigation([KLOSE_WORLD,OCEAN_WORLD]);
+const PANO_NAVIGATION=createPlanetNavigation([KLOSE_WORLD,OCEAN_WORLD,ALPHA_WORLD,BETA_WORLD]);
 
 function panoCenter(id,time,out=new T.Vector3()){
   if(id==='star')return out.set(0,0,0);
   const orbit=PANO_ORBITS[id],angle=orbit.phase+2*Math.PI*((time%orbit.period)/orbit.period);
   return out.set(orbit.a*Math.cos(angle),0,orbit.a*Math.sin(angle));
+}
+
+// The original map icons show a celadon crust with ochre pools on Alpha,
+// and lavender ash with bright gold basins on Beta. Both scales of the
+// viewer use this same spherical painting and the same direction to the sun.
+function createTwinGlobe(T,definition){
+  const m=new T.ShaderMaterial({
+    uniforms:{
+      sunDir:{value:panoCenter(definition.id,0).normalize().negate()},
+      capCenter:{value:new T.Vector3(0,1,0)},cut:{value:2},
+      alpha:{value:definition.id==='alpha'?1:0}
+    },
+    vertexShader:`varying vec3 radial;varying float rim;
+      void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);radial=normal;
+        rim=1.-clamp(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)),0.,1.);
+        gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`varying vec3 radial;varying float rim;
+      uniform vec3 sunDir,capCenter;uniform float cut,alpha;
+      float relief(vec3 p){
+        return .53*sin(p.x+p.y*.76)*cos(p.z-p.x*.37)+.29*sin(2.7*p.y+p.z)*cos(p.x*2.8)
+          +.18*cos(p.y*5.1-p.z*4.1)*sin(3.2*p.x+p.z);
+      }
+      float basin(vec3 d,vec3 centre,float width,float stretch,float tilt){
+        centre=normalize(centre);
+        vec3 x=normalize(cross(vec3(0.,1.,0.),centre)),y=cross(centre,x);
+        float u=dot(d,x),v=dot(d,y),ct=cos(tilt),st=sin(tilt);
+        vec2 q=vec2(u*ct+v*st,(v*ct-u*st)/stretch)/width;
+        return dot(d,centre)>.3?length(q):4.;
+      }
+      void main(){
+        vec3 d=normalize(radial);
+        if(dot(d,capCenter)>cut)discard;
+        float broad=relief(d*5.),fine=relief(d*19.+broad*1.4),grain=relief(d*83.);
+        float contour=clamp(.53+.39*broad+.13*fine,0.,1.);
+        vec3 crust=alpha>.5?mix(vec3(.12,.53,.46),vec3(.56,.88,.65),contour)
+          :mix(vec3(.39,.24,.43),vec3(.78,.57,.64),contour);
+        float r=min(basin(d,vec3(.81,.28,.61),.23,.63,-.58),basin(d,vec3(.18,.69,-.68),.29,.75,.84));
+        r=min(r,basin(d,vec3(.88,-.41,-.23),.21,.67,.22));
+        r=min(r,basin(d,vec3(-.39,.14,.90),.30,.70,-.60));
+        r=min(r,basin(d,vec3(-.77,.57,-.30),.25,.60,1.1));
+        r=min(r,basin(d,vec3(.04,-.91,.39),.24,.90,.45));
+        r=min(r,basin(d,vec3(-.48,-.39,-.81),.33,.64,1.02));
+        r+=.048*fine+.019*grain;
+        float lip=smoothstep(.73,.94,r)*(1.-smoothstep(.96,1.12,r)),pool=1.-smoothstep(.70,.90,r);
+        float seam=(1.-smoothstep(.035,.115,abs(broad+.11*fine-.23)))*.11;
+        crust*=1.-seam;
+        vec3 edge=alpha>.5?vec3(.35,.59,.30):vec3(.99,.77,.25);
+        vec3 centre=alpha>.5?mix(vec3(.46,.67,.25),vec3(.81,.80,.37),clamp(.42+r*.45+fine*.15,0.,1.))
+                          :mix(vec3(.49,.23,.27),vec3(.96,.58,.12),clamp(.27+r*.81+fine*.18,0.,1.));
+        crust=mix(crust,edge,lip);
+        crust=mix(crust,centre,pool);
+        crust+=.028*fine+.014*grain;
+        float light=clamp(dot(d,normalize(sunDir)),0.,1.);
+        vec3 rgb=crust*(.27+.73*sqrt(light));
+        rgb+=pow(rim,3.4)*(.22+.78*light)*(alpha>.5?vec3(.13,.41,.42):vec3(.36,.17,.30));
+        gl_FragColor=vec4(rgb,1.);
+      }`
+  });
+  const body=new T.Mesh(new T.SphereGeometry(definition.radius,96,64),m);
+  body.name=definition.name;return body;
 }
 
 function createPanoSystem(T,world){
@@ -71,7 +132,9 @@ function createPanoSystem(T,world){
     const sphere=new T.Mesh(new T.SphereGeometry(radius,64,40),m);
     sphere.name=PANO_ORBITS[id].name;sphere.frustumCulled=false;root.add(sphere);return sphere;
   }
-  const proxies={klose:remoteSphere('klose',KLOSE_WORLD.radius),ocean:remoteSphere('ocean',OCEAN_WORLD.radius)};
+  const proxies={klose:remoteSphere('klose',KLOSE_WORLD.radius),ocean:remoteSphere('ocean',OCEAN_WORLD.radius),
+    alpha:createTwinGlobe(T,ALPHA_WORLD),beta:createTwinGlobe(T,BETA_WORLD)};
+  root.add(proxies.alpha,proxies.beta);
   const rings=KLOSE_WORLD.rings;
   const band=new T.Mesh(new T.RingGeometry(rings.inner*KLOSE_WORLD.radius,rings.outer*KLOSE_WORLD.radius,100),
     new T.MeshBasicMaterial({color:0xe4c54b,side:T.DoubleSide,fog:false}));
@@ -95,7 +158,7 @@ function createPanoSystem(T,world){
 function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,vehicle=null,vehiclePlanet=current,carrier=null}={}){
     const ids=Object.keys(PANO_ORBITS);
     svg.replaceChildren();svg.setAttribute('viewBox','0 0 510 286');
-    const scale=201/PANO_ORBITS.ocean.a,project=p=>[252+(p.x+.28*p.z)*scale,139+p.z*scale*.56];
+    const scale=201/Math.max(...ids.map(id=>PANO_ORBITS[id].a)),project=p=>[252+(p.x+.28*p.z)*scale,139+p.z*scale*.56];
     function mark(tag,attrs,words=''){
       const el=document.createElementNS('http://www.w3.org/2000/svg',tag);
       for(const [key,val] of Object.entries(attrs))el.setAttribute(key,val);
@@ -118,15 +181,20 @@ function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,veh
     }
     for(const id of ids){
       const orbit=PANO_ORBITS[id],[x,y]=project(panoCenter(id,time));
-      const radius=9*(id==='klose'?KLOSE_WORLD.radius:OCEAN_WORLD.radius)/KLOSE_WORLD.radius;
+      const radius=9*PANO_NAVIGATION.regions[id].definition.radius/KLOSE_WORLD.radius;
+      const fill={klose:'#a6a27e',ocean:'#53829d',alpha:'#51a58b',beta:'#ae839c'}[id];
+      const label=orbit.name+(current===id?' · 当前':''),left=x+13+label.length*12>505;
       const hit=mark('g',{'data-pano-planet':id,role:'button',tabindex:'0','aria-label':orbit.name,'aria-pressed':String(selected===id),style:'cursor:pointer'});
       for(const [tag,args,words] of [
-        ['circle',{cx:x,cy:y,r:18,fill:'transparent'}],
-        ['circle',{cx:x,cy:y,r:radius,fill:id==='klose'?'#a6a27e':'#53829d',stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}],
-        ['text',{x:x+13,y:y-7,fill:'#e5f2ec','font-size':13},orbit.name+(current===id?' · 当前':'')]
+        ['circle',{cx:x,cy:y,r:15,fill:'transparent'}],
+        ['circle',{cx:x,cy:y,r:radius,fill,stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}],
+        ['text',{x:left?x-13:x+13,y:y-7,'text-anchor':left?'end':'start',fill:'#e5f2ec','font-size':12},label]
       ])hit.append(mark(tag,args,words));
       if(id==='klose')hit.append(mark('ellipse',{cx:x,cy:y,rx:radius*1.39,ry:radius*.31,transform:'rotate(-24 '+x+' '+y+')',fill:'none',stroke:orbit.colour,'stroke-width':2}));
-      else for(const [dx,dy,r] of [[-.36,-.22,.27],[.39,.22,.20]])hit.append(mark('circle',{cx:x+dx*radius,cy:y+dy*radius,r:r*radius,fill:'none',stroke:'#b7d6e2','stroke-width':1}));
+      else if(id==='ocean')for(const [dx,dy,r] of [[-.36,-.22,.27],[.39,.22,.20]])hit.append(mark('circle',{cx:x+dx*radius,cy:y+dy*radius,r:r*radius,fill:'none',stroke:'#b7d6e2','stroke-width':1}));
+      else for(const [dx,dy,r] of [[-.34,-.05,.40],[.40,.20,.30]])hit.append(mark('ellipse',{
+        cx:x+dx*radius,cy:y+dy*radius,rx:r*radius*.53,ry:r*radius,
+        fill:id==='alpha'?'#b5c962':'#8e544e',stroke:id==='alpha'?'#538655':'#f7c75b','stroke-width':1}));
       hit.onclick=()=>onSelect?.(id);
       hit.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect?.(id);}};
     }

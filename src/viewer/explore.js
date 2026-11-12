@@ -46,7 +46,7 @@
     if(trip){
       if(trip.vehicle.phase==='docked')dockedVehicle=trip.vehicle;
       parkedLanding=trip.vehicle.phase==='landed'?{
-        origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId},vehicle:trip.vehicle,
+        origin:{roomId:trip.origin.roomId,berthId:trip.origin.berthId,destination:trip.origin.destination},vehicle:trip.vehicle,
         navTarget:trip.navTarget,ramp:expedition.parkedRamp()}:null;
     }
     const passenger=trip?.origin.board||(liveBoard?boarding.snapshot():null);
@@ -124,7 +124,7 @@
     if(parkedPlanetName()){cockpit.openMap('shuttle-ramp');return;}
     const target=PANO_NAVIGATION.flights.get(berth.landingSiteId);
     if(!target||target.planetId!==berth.destination)return;
-    stagedExpedition={format:3,origin:{roomId:boarding.roomId,berthId:berth.id,board:boarding.snapshot()},
+    stagedExpedition={format:3,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
       phase:'transfer',navTarget:target.id,vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();

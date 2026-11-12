@@ -5,7 +5,7 @@ const previousPlanetRadius={klose:480000,ocean:410000};
 function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
   if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon))return location;
   const current=definition.radius;
-  if(current===oldRadius)return location;
+  if(!Number.isFinite(oldRadius)||current===oldRadius)return location;
   const home=definition.sites[0],cos=Math.cos(home.lat);
   const lonDelta=location.lon-home.lon;
   const x=Math.atan2(Math.sin(lonDelta),Math.cos(lonDelta))*oldRadius*cos,z=(home.lat-location.lat)*oldRadius;
@@ -39,7 +39,7 @@ function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[
 
 function compactVehicleRecord(record,dock){
   if(!record||![1,2].includes(record.version))return record;
-  const definition=record.planetId==='ocean'?OCEAN_WORLD:KLOSE_WORLD;
+  const definition=PANO_NAVIGATION.regions[record.planetId]?.definition||KLOSE_WORLD;
   const updated={...record,version:3,planetId:definition.id};
   const site=(value,body)=>{
     if(!value)return value;
@@ -48,11 +48,12 @@ function compactVehicleRecord(record,dock){
   };
   updated.target=site(record.target,definition);
   if(record.route?.site){
-    const body=record.route.planet==='ocean'?OCEAN_WORLD:KLOSE_WORLD;
+    const body=PANO_NAVIGATION.regions[record.route.planet]?.definition||KLOSE_WORLD;
     updated.route={...record.route,site:site(record.route.site,body)};
   }
   // Interstellar coordinates are relative to the same moving planet centre.
-  if(record.inTransit||!Array.isArray(record.p)||record.p.length!==3||!record.p.every(Number.isFinite))return updated;
+  if(record.inTransit||previousPlanetRadius[definition.id]===undefined||
+     !Array.isArray(record.p)||record.p.length!==3||!record.p.every(Number.isFinite))return updated;
   const position=new T.Vector3().fromArray(record.p),oldRadius=previousPlanetRadius[definition.id];
   if(position.length()<oldRadius*.99)return null;
   const altitude=position.length()-oldRadius;

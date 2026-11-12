@@ -18,10 +18,13 @@ function createPlanetNavigation(definitions){
     const walkingLinks=[...routes],pads=[],outlying=[];
     for(const pad of landingSites){
       flights.set(pad.id,{...pad,planetId:definition.id});
-      const local=byId.has(pad.id);
+      const sharesAddress=byId.has(pad.id);
+      const district=sharesAddress?byId.get(pad.id):sites.reduce((best,site)=>
+        Math.hypot(site.x-pad.x,site.z-pad.z)<Math.hypot(best.x-pad.x,best.z-pad.z)?site:best,sites[0]);
+      const local=sharesAddress||Math.hypot(district.x-pad.x,district.z-pad.z)<100;
       // The walking address and the flight address must remain distinct even
       // when the original scene and its landing pad share an id.
-      const place=local?{...pad,id:pad.id+'-pad',area:pad.id,description:pad.description||'经典探索区旁的自然着陆坪'}:
+      const place=local?{...pad,id:sharesAddress?pad.id+'-pad':pad.id,area:district.id,description:pad.description||'探索区旁的着陆坪'}:
         {...pad,area:sites[0].id,description:pad.description||outlands[pad.id]||'外围自然着陆点'};
       byId.set(place.id,place);walkingLinks.push([place.area,place.id]);
       (local?pads:outlying).push(place);
@@ -74,7 +77,8 @@ function drawKloseMap(chart,{region,selected,ramp,observer,onSelect}){
   for(const site of entries){
     const [x,y]=xy(points.get(site.id)),chosen=selected===site.id;
     const dot=mark('circle',{cx:x,cy:y,r:chosen?6:4.3,fill:chosen?'#ffc973':'#92e5cb',stroke:'#102c31','stroke-width':2});
-    const label=mark('text',{x,y:y+(site.id===home.id||site.id==='shuttle-ramp'?18:-9),'text-anchor':'middle'},site.name.replace(/^(?:克洛斯星|海洋星)的?/,'')||site.name);
+    const name=site.name.startsWith(definition.name)?site.name.slice(definition.name.length).replace(/^的/,''):site.name;
+    const label=mark('text',{x,y:y+(site.id===home.id||site.id==='shuttle-ramp'?18:-9),'text-anchor':'middle'},name||site.name);
     for(const el of [dot,label]){
       el.setAttribute('data-klose-site',site.id);el.onclick=()=>onSelect(site.id);
     }

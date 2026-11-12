@@ -1,7 +1,7 @@
 // One L-01. Surface flight uses the current planet's metre frame; while in
 // transit the same pose and velocity integrate in the star-centred inertial frame.
 function createPanoFlight(T,bodies,dock,pano,saved){
-  const ids=['klose','ocean'],clamp=T.MathUtils.clamp,cruiseLimit=260000;
+  const ids=Object.keys(PANO_ORBITS),clamp=T.MathUtils.clamp,cruiseLimit=260000;
   const position=new T.Vector3(),velocity=new T.Vector3(),quaternion=new T.Quaternion();
   const globalP=new T.Vector3(),globalV=new T.Vector3(),wanted=new T.Vector3(),goal=new T.Vector3();
   const centre=new T.Vector3(),orbitalV=new T.Vector3(),axis=new T.Vector3(),turn=new T.Quaternion();
@@ -189,9 +189,16 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     globalV.add(dv.clampLength(0,(input.brake&&!route?20500:13500)*dt));
     prev.copy(globalP);globalP.addScaledVector(globalV,dt);time+=dt;
     for(const id of ['star',...ids])protectSurface(id,dt);
-    const other=reference==='klose'?'ocean':'klose';
-    const dist=(id)=>globalP.distanceTo(pano.center(id,time,centre));
-    if(dist(other)/bodies[other].radius<.96*dist(reference)/bodies[reference].radius)reference=other;
+    // Keep a little hysteresis at an influence boundary. Evaluate every registered body
+    // against the same inertial position before choosing the nearest reference frame.
+    let closest=reference;
+    let best=.96*globalP.distanceTo(pano.center(reference,time,centre))/bodies[reference].radius;
+    for(const id of ids){
+      if(id===reference)continue;
+      const relative=globalP.distanceTo(pano.center(id,time,centre))/bodies[id].radius;
+      if(relative<best){best=relative;closest=id;}
+    }
+    reference=closest;
     syncInertial();
     if(route&&route.planet===reference){
       const d=globalP.distanceTo(approachPoint(route));

@@ -63,11 +63,12 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
   const {paint,casting}=castings;
   const installed=root.userData.shipTransporterPorts||[];
   const stations=placements.map(site=>{
-    const planet=PANO_NAVIGATION.regions[site.destination]?.definition;
-    const landing=planet?.landingSites[0];
-    return Object.freeze({...site,id:roomId+':'+site.slot,name:site.slot+' 号传送位',
-      destinationName:planet?.name??site.destinationName??'',landingSiteId:landing?.id??null,
-      landingSiteName:landing?.name??''});
+    const routes=Array.from(new Set([site.destination,...(site.alternates||[])])).map(destination=>{
+      const planet=PANO_NAVIGATION.regions[destination]?.definition,landing=planet?.landingSites[0];
+      return Object.freeze({destination,destinationName:planet?.name||site.destinationName||'',
+        landingSiteId:landing?.id??null,landingSiteName:landing?.name||''});
+    });
+    return Object.freeze({...site,...routes[0],id:roomId+':'+site.slot,name:site.slot+' 号传送位',routes:Object.freeze(routes)});
   });
   const ids=[...installed,...stations].map(site=>site.id);
   if(new Set(ids).size!==ids.length)throw new Error(roomId+'的传送位编号重复');
@@ -245,10 +246,13 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
       }
       const routeColor=PANO_ORBITS[site.destination]?.colour??tint;
       // Anchor the larger route plate to the original gate lintel; its lower edge stays at 2.86 m.
-      box(0,3.24,scanZ,3.46,.76,.29,dark);
-      box(0,3.595,scanZ+.15,3.40,.045,.025,routeColor,{glow:.36});
-      text(0,3.37,scanZ+.167,slot+'  '+destinationName,3.25,.45,white);
-      text(0,3.015,scanZ+.168,site.landingSiteName,2.85,.26,routeColor);
+      const alternate=site.routes.slice(1),extra=alternate.length ? .40 : 0;
+      box(0,3.24+extra*.5,scanZ,3.46,.76+extra,.29,dark);
+      box(0,3.595+extra,scanZ+.15,3.40,.045,.025,routeColor,{glow:.36});
+      text(0,3.37+extra,scanZ+.167,slot+'  '+destinationName,3.25,.45,white);
+      text(0,3.015+extra,scanZ+.168,site.landingSiteName,2.85,.26,routeColor);
+      if(extra)text(0,3.035,scanZ+.168,'支线 '+alternate.map(r=>r.destinationName).join(' / '),3.25,.32,
+        PANO_ORBITS[alternate[0].destination]?.colour||white);
       // Opposed three-lens scan heads sit flush on the outside jambs. Their
       // smoked hood and inset cyan optics keep the passage physically clear.
       for(const s of [-1,1]){
@@ -429,9 +433,12 @@ function buildShipTransporterRoom(kit,roomId,placements) {
     const rearX=bank.reduce((sum,p)=>sum+p.x,0)/bank.length;
     const frontX=(i+.5-routes.size/2)*Math.min(5.2,W*.55/routes.size);
     const frontZ=kit.D/2-5.45,wallZ=-kit.D/2+.74;
+    const shared=site.routes.slice(1).filter(r=>bank.every(p=>p.routes.some(line=>line.destination===r.destination)));
     box(rearX,8.44,wallZ,5.5,1.20,.20,dark);
     box(rearX,8.98,wallZ+.102,5.43,.075,.023,routeColor,{glow:.4});
-    text(rearX,8.44,wallZ+.122,slots+'  '+site.destinationName,5.15,.72,white);
+    text(rearX,shared.length?8.64:8.44,wallZ+.122,slots+'  '+site.destinationName,5.15,shared.length ? .51 : .72,white);
+    if(shared.length)text(rearX,8.13,wallZ+.122,'支线 '+shared.map(r=>r.destinationName).join(' / '),5.15,.37,
+      PANO_ORBITS[shared[0].destination]?.colour||white);
     box(frontX,.071,frontZ,4.26,.024,.94,dark);
     text(frontX,.090,frontZ,slots+'  '+site.destinationName,4.05,.75,routeColor,{rx:-PI/2});
   }

@@ -143,6 +143,16 @@
     const climb=root.querySelector('[data-climb]'),descend=root.querySelector('[data-descend]');
     const detailVisit=root.querySelector('[data-inspect-workstation]');
     const berthPicker=root.querySelector('[data-berth-picker]'),berthSelect=berthPicker.querySelector('select');
+    const routePicker=root.querySelector('[data-berth-route-picker]'),routeSelect=routePicker.querySelector('select');
+    let berthRoute=null;
+    function selectPortRoutes(){
+      const port=shipTransporters.ports(habitat.byId.get(currentRoomId)).find(p=>p.id===berthSelect.value);
+      routePicker.hidden=!port||port.routes.length<2;
+      routeSelect.replaceChildren(...(port?.routes||[]).map(r=>new Option(r.destinationName+' · '+r.landingSiteName,r.destination)));
+      if(port&&berthRoute?.id===port.id&&port.routes.some(r=>r.destination===berthRoute.destination))routeSelect.value=berthRoute.destination;
+    }
+    berthSelect.addEventListener('change',selectPortRoutes);
+    routeSelect.addEventListener('change',()=>{berthRoute={id:berthSelect.value,destination:routeSelect.value};requestFrame();persist();});
     let portGuide='';
     const populationText=root.querySelector('[data-population]');
     const idleClock={timer:0,lastReadout:-1};
@@ -334,7 +344,7 @@
       embarkButton.hidden=!berth;
       if(berth){
         embarkButton.textContent=parkedAt?'L-01 停在'+parkedAt+' · 查看艇位':berth.slot+' 号 · 登艇去'+berth.destinationName;
-        if(!stage.dataset.consoleOpen)berthSelect.value=berth.id;
+        if(!stage.dataset.consoleOpen&&berthSelect.value!==berth.id){berthSelect.value=berth.id;selectPortRoutes();}
       }
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
@@ -413,10 +423,11 @@
       const ports=shipTransporters.ports(room),preferred=berthSelect.value;
       berthPicker.hidden=!ports.length;
       if(ports.length){
-        berthSelect.replaceChildren(...ports.map(p=>new Option(p.slot+' 号 · '+p.destinationName+' · '+p.landingSiteName,p.id)));
+        berthSelect.replaceChildren(...ports.map(p=>new Option(p.slot+' 号 · '+p.routes.map(r=>r.destinationName).join(' / '),p.id)));
         berthSelect.value=currentBerth()?.id||ports.find(p=>p.id===preferred)?.id||ports.find(p=>p.slot==='02')?.id||ports[0].id;
-        portGuide='航线：'+[...new Set(ports.map(p=>p.destinationName))].join(' ／ ')+' · 走进对应编号亮框后按 E';
+        portGuide='按机位牌登艇，双子星航线可在终端的「目的地」中选取。';
       }
+      selectPortRoutes();
       detailVisit.hidden=!workstationViews[currentRoomId]&&!ports.length;
       detailVisit.textContent=ports.length?'前往所选机位':currentRoomId==='machine'?'前往装备工位':'近看设备';
       if(currentRoomId==='machine')updateSamples();
@@ -466,6 +477,7 @@
       crewDialogue.close();crewDialogue.setBoarded(true);
       escort.hide();
       active = true;
+      berthRoute=saved?.berthRoute||null;
       clearInputs();
       const id = (habitat.byId.has(roomId)||residentialStops.has(roomId)||wardIds.has(roomId)) ? roomId :
         habitat.byId.has('teleport') ? 'teleport' : habitat.rooms[0].id;
@@ -747,9 +759,12 @@
     document.addEventListener('visibilitychange',onHidden);
     function currentBerth(){
       const room=habitat.byId.get(currentRoomId);
-      return active&&room&&!flight.mounted&&!lifts.riding?shipTransporters.nearby(room,pose):null;
+      const port=active&&room&&!flight.mounted&&!lifts.riding?shipTransporters.nearby(room,pose):null;
+      if(!port||port.id!==berthRoute?.id)return port;
+      const route=port.routes.find(r=>r.destination===berthRoute.destination);
+      return route?{...port,...route}:port;
     }
-    function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
+    function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,smiling,berthRoute,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
       clearInputs,pack,restorePack,deliver,

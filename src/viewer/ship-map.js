@@ -201,7 +201,7 @@
           systemDestination=sitePicker.value;
           panel.querySelector('[data-sm-position]').textContent='帕诺星系';
           panel.querySelector('.sm-target').textContent=regions[systemDestination]?.definition.name||'';
-          chart.setAttribute('aria-label','帕诺星系轨道及两颗行星的位置');
+          chart.setAttribute('aria-label','帕诺星系轨道与各行星当前位置');
           drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(regions[id]){sitePicker.value=id;refresh();}});
           text.textContent='球体半径 '+(regions[systemDestination].definition.radius/1000)+' 公里。在登陆艇驾驶席打开航线可飞往这颗行星。';
           travel.textContent='查看地表地图';travel.hidden=false;return;
