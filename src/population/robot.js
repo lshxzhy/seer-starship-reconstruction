@@ -171,7 +171,8 @@
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: seerShellEnamel,
-      alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.34, metalness:.78}),
+      // The gold side covers and waist band are solid, satin-finished colour.
+      alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.38, metalness:.65}),
       machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
       gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
       screen: faceMaterial('neutral'),
@@ -180,7 +181,6 @@
         clearcoat:1, clearcoatRoughness:.065, reflectivity:.59, envMapIntensity:.8,
         transparent:true, opacity:.22, blending:T.AdditiveBlending, depthWrite:false})
     };
-    applyManufacturedFinish(skinMaterials.alloy,'metal');
     applyManufacturedFinish(skinMaterials.machined,'metal');
     applyManufacturedFinish(skinMaterials.gasket,'rubber');
     const suitColors = new Map(), suitMaterials = new Map();
@@ -227,7 +227,7 @@
           else if (color===rubber || color===dark) family='gasket';
         }
         const key = bone + '/' + family;
-        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:family==='paint'?null:[],col:[],ix:[]});
+        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:family==='paint'||family==='alloy'?null:[],col:[],ix:[]});
         const dest = parts.get(key), offset = dest.pos.length/3;
         const tint = color === paint ? new T.Color(1,1,1) : hex(color);
         pose.position.set(x,y,z);
