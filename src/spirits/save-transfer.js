@@ -9,6 +9,7 @@ function readSpiritTransfer(raw){
   if(!raw.party.length&&raw.storage.length)reject('有仓库存放记录，但缺少当前队伍。');
   if(!uint(raw.nextId)||raw.nextId<1||!uint(raw.capsules,9999)||!uint(raw.potions,9999))reject('个体序号或补给数量有误。');
   const playable=new Set(SEER_SPIRIT_DATA.playable),known=new Set(SEER_SPIRIT_DATA.index.map(row=>row[0]));
+  includeSpiritEvolutionForms(playable);
   const uids=new Set(),partyIds=new Set(raw.party.map(p=>p?.uid));
   function pet(p,temporaryUid=null){
     if(!object(p)||!playable.has(p.speciesId))reject('此版本无法读取伙伴编号 '+String(p?.speciesId??'空')+'。');
@@ -22,11 +23,21 @@ function readSpiritTransfer(raw){
        !uint(p.xp)||!uint(p.hp)||!Array.isArray(p.ev)||p.ev.length!==6||
        !p.ev.every(n=>uint(n,255))||p.ev.reduce((a,b)=>a+b,0)>510)reject('伙伴的等级、体力或养成记录有误。');
     if(!Array.isArray(p.moves)||p.moves.length>4)reject('伙伴的技能槽有误。');
+    if(p.inheritedMoves!==undefined&&(!Array.isArray(p.inheritedMoves)||
+       new Set(p.inheritedMoves).size!==p.inheritedMoves.length||
+       !p.inheritedMoves.every(id=>uint(id)&&Object.hasOwn(SEER_SPIRIT_DATA.moves,id))))reject('进化继承技能记录有误。');
     const moves=new Set();
     for(const slot of p.moves){
       if(!Array.isArray(slot)||slot.length!==2||!uint(slot[0])||!Object.hasOwn(SEER_SPIRIT_DATA.moves,slot[0])||
         moves.has(slot[0])||!uint(slot[1],SEER_SPIRIT_DATA.moves[slot[0]][4]))reject('伙伴的技能或剩余 PP 有误。');
       moves.add(slot[0]);
+    }
+    if(p.reservePP!==undefined){
+      if(!object(p.reservePP))reject('未装配技能的 PP 记录有误。');
+      for(const [key,pp] of Object.entries(p.reservePP)){
+        const id=Number(key),row=SEER_SPIRIT_DATA.moves[id];
+        if(!uint(id)||String(id)!==key||!row||moves.has(id)||!uint(pp,row[4]))reject('未装配技能的 PP 记录有误。');
+      }
     }
   }
   for(const p of [...raw.party,...raw.storage])pet(p);
@@ -40,6 +51,7 @@ function readSpiritTransfer(raw){
   if(raw.owned.some(id=>!seen.has(id))||[...raw.party,...raw.storage].some(p=>!owned.has(p.speciesId)))
     reject('持有的伙伴与图鉴收藏记录不一致。');
   if(raw.materials!==undefined&&(!object(raw.materials)||!uint(raw.materials.photo)||!uint(raw.materials.air)))reject('融合材料数量有误。');
+  if(raw.materials?.water!==undefined&&!uint(raw.materials.water))reject('水之精华数量有误。');
   if(raw.materials?.blackCrystal!==undefined&&!uint(raw.materials.blackCrystal,raw.bosses.includes(34)?SPT_CHALLENGES.get(34).blackCrystal:0))reject('钢牙鲨的黑晶矿数量有误。');
   if(raw.bead!=null&&(!object(raw.bead)||!(raw.bead.phase==='fresh'&&raw.bead.readyAt===null||
       raw.bead.phase==='incubating'&&uint(raw.bead.readyAt)&&raw.bead.readyAt>0)))reject('元神珠的孵化记录有误。');
@@ -87,7 +99,9 @@ function readSpiritTransfer(raw){
   // or abandons a battle would lose progress and must not replace the save.
   function samePet(a,b){
     return !!b&&['uid','speciesId','level','xp','iv','nature','hp'].every(k=>a[k]===b[k])&&
-      JSON.stringify(a.moves)===JSON.stringify(b.moves)&&a.ev.every((n,i)=>n===b.ev[i]);
+      JSON.stringify(a.moves)===JSON.stringify(b.moves)&&a.ev.every((n,i)=>n===b.ev[i])&&
+      (a.inheritedMoves||[]).every(id=>b.inheritedMoves?.includes(id))&&
+      Object.entries(a.reservePP||{}).every(([id,pp])=>(b.reservePP?.[id]??SEER_SPIRIT_DATA.moves[id][4])===pp);
   }
   if(!raw.party.every((p,i)=>samePet(p,clean.party[i]))||!raw.storage.every((p,i)=>samePet(p,clean.storage[i]))||
      (raw.battle&&(!samePet(raw.battle.enemy,clean.battle?.enemy)||raw.battle.kind!==clean.battle.kind))||

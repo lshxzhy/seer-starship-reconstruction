@@ -47,8 +47,8 @@
     <div class="ship-overlay" data-planet-atlas hidden>
       <section class="ship-window planet-atlas" role="dialog" aria-modal="true" aria-labelledby="planet-chart-title">
         <header class="console-head"><div><small>帕诺星系 ／ L-01</small><h2 id="planet-chart-title">登陆艇航线</h2></div><button type="button" class="ship-dismiss" data-chart-close aria-label="关闭航线">×</button></header>
-        <div class="atlas-body"><svg data-site-map role="img" aria-label="行星导航图"></svg>
-        <section class="atlas-controls"><label>目的地 <select data-site-select></select></label><p data-site-summary></p>
+        <div class="atlas-body"><div class="atlas-chart"><svg data-site-map role="group" aria-label="行星导航图"></svg></div>
+        <section class="atlas-controls"><div class="atlas-modes" role="group" aria-label="航图范围"><button class="ship-key" type="button" data-atlas-view="system">星系轨道</button><button class="ship-key" type="button" data-atlas-view="landing">着陆点</button></div><label>目的地 <select data-site-select></select></label><p data-site-summary></p>
           <div class="atlas-actions"><button class="ship-key" type="button" data-track-site>自动飞往此处</button><button class="ship-key" type="button" data-target-only>设为手动航点</button><button class="ship-key" type="button" data-unseat hidden>离开驾驶席</button></div></section></div>
       </section>
     </div>

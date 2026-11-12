@@ -31,7 +31,7 @@
         .sm-radar .sm-toolbar label {display:flex;align-items:center;gap:.5em}
         .sm-radar select,.sm-radar button {font:inherit;color:inherit}
         .sm-radar .sm-position {color:#a5ded5}
-        .sm-radar .sm-chart {position:relative;overflow:hidden;height:clamp(156px,28vw,224px);border:1px solid #245267;border-radius:5px;background-color:#0a2030;background-image:linear-gradient(#23516b39 1px,transparent 1px),linear-gradient(90deg,#23516b39 1px,transparent 1px),radial-gradient(ellipse at 48% 45%,#10425a 0,transparent 72%);background-size:18px 18px,18px 18px,100% 100%}
+        .sm-radar .sm-chart {position:relative;overflow:auto;height:clamp(315px,52vh,562px);scrollbar-gutter:stable;border:1px solid #245267;border-radius:5px;background-color:#0a2030;background-image:linear-gradient(#23516b39 1px,transparent 1px),linear-gradient(90deg,#23516b39 1px,transparent 1px),radial-gradient(ellipse at 48% 45%,#10425a 0,transparent 72%);background-size:18px 18px,18px 18px,100% 100%}
         .sm-radar svg {display:block;width:100%;height:100%;font:12px "Microsoft YaHei UI",sans-serif}
         .sm-radar svg text {pointer-events:none;fill:#d4e9f1;paint-order:stroke;stroke:#0a2738;stroke-width:3px;stroke-linejoin:round}
         .sm-radar svg .sm-fine {font-size:10px;fill:#9bbecf}
@@ -53,7 +53,7 @@
       </style>
       <section class="sm-radar">
         <div class="sm-toolbar"><label>区域 <select class="form-select" data-sm-area><option value="ship">赛尔号</option><option value="system">帕诺星系 · 轨道图</option></select></label><label data-sm-deck-label>甲板 <select class="form-select" data-sm-deck></select></label><label data-sm-site-label hidden>目的地 <select class="form-select" data-sm-site></select></label><span class="sm-position" data-sm-position></span></div>
-        <div class="sm-chart"><svg role="img" aria-label="舰内平面图"></svg></div>
+        <div class="sm-chart"><svg role="group" aria-label="舰内平面图"></svg></div>
         <div class="sm-keys"><span><i class="sm-crew-dot"></i>当前位置</span><span><i class="sm-stop-dot"></i>升降站</span><span><i class="sm-route-dash"></i>步行路线</span></div>
         <div class="sm-choices" role="group" aria-label="本层舱室与升降站"></div>
         <div class="sm-controls"><strong class="sm-target"></strong><span><button type="button" class="ship-key" data-sm-cancel hidden>取消当前路线</button> <button type="button" class="ship-key" data-sm-walk hidden>步行引导</button> <button type="button" class="ship-key" data-sm-travel hidden>传送到此</button></span></div>
@@ -71,7 +71,7 @@
     for(const planet of planets)areaPicker.add(new Option(planet.name,planet.id));
     let systemDestination='ocean';
     function selectArea(area,target){
-      areaPicker.value=area;sitePicker.replaceChildren();
+      areaPicker.value=area;sitePicker.replaceChildren();chart.parentElement.scrollTop=0;
       if(area==='system'){
         for(const p of planets)sitePicker.add(new Option(p.name,p.id));
         sitePicker.value=systemDestination;
@@ -125,22 +125,27 @@
       return {rides,legs,arrived};
     }
     function plot(deck,items,pose,route){
-      const box=chart.getBoundingClientRect();
-      if(!box.width || !box.height)return;
-      const w=box.width,h=box.height;
+      const box=chart.parentElement;
+      if(!box.clientWidth||!box.clientHeight)return;
+      const w=box.clientWidth;
+      const nodes=items.map(item=>({id:item.id,name:item.label,mapX:item.center.x,mapY:item.center.z,
+        colour:item.kind==='lift'?'#e3bc7b':'#85c8d4'}));
+      const layout=mapLabelColumns(nodes,w,box.clientHeight,23,29),h=layout.height;
+      const focused=chart.contains(document.activeElement)?document.activeElement.getAttribute('data-nav-label'):null;
+      chart.style.height=h+'px';
       chart.setAttribute('viewBox',`0 0 ${w} ${h}`);
       chart.setAttribute('aria-label',deck.name+'平面图；可用下方舱名选择目的地');
       chart.replaceChildren();
       const points=deck.corridors.flatMap(c=>[c.from,c.to]);
       for(const item of items){
-        if(item.kind==='lift')continue;
+        if(item.kind==='lift'){points.push(item.center);continue;}
         points.push({x:item.center.x-item.width/2,z:item.center.z-item.depth/2},
           {x:item.center.x+item.width/2,z:item.center.z+item.depth/2});
       }
       if(pose?.level===level)points.push(pose);
       const xs=points.map(p=>p.x),zs=points.map(p=>p.z);
       const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
-      const scale=Math.min((w-70)/Math.max(1,maxX-minX),(h-60)/Math.max(1,maxZ-minZ));
+      const scale=Math.min(Math.max(12,w-2*layout.rail-30)/Math.max(1,maxX-minX),(h-69)/Math.max(1,maxZ-minZ));
       const X=x=>w/2+(x-(minX+maxX)/2)*scale;
       const Y=z=>h/2+(z-(minZ+maxZ)/2)*scale;
       for(const c of deck.corridors){
@@ -164,14 +169,7 @@
           fill:item.id===selected?'#215865':'#16425b',stroke:item.id===selected?'#9fffe2':'#65b6d4','stroke-width':1.4});
         const doorY=Y(item.door.z),doorX=X(item.door.x);
         draw(group,'line',{x1:doorX-2.4,y1:doorY,x2:doorX+2.4,y2:doorY,stroke:'#d4f6f3','stroke-width':2});
-        const label=item.kind==='ward'?item.sector+' 区':item.label;
-        const fit=width>label.length*12+6&&height>15;
-        const above=item.center.z<0;
-        const labelY=fit?y+4:above?y-height/2-4:y+height/2+13;
-        draw(group,'text',{x,y:labelY,'text-anchor':'middle'},label);
-        // The label can extend beyond a small room's outline on compact screens.
-        draw(group,'rect',{x:x-Math.max(22,label.length*12)/2,y:labelY-12,
-          width:Math.max(22,label.length*12),height:16,fill:'transparent'});
+
       }
       const leg=route?.legs.get(level);
       if(leg?.length)draw(chart,'polyline',{points:leg.map(p=>X(p.x)+','+Y(p.z)).join(' '),
@@ -184,6 +182,8 @@
         draw(group,'path',{d:`M ${x} ${y-4.5} l 4.5 4.5 -4.5 4.5 -4.5 -4.5 Z`,
           fill:item.id===selected?'#ffe2a8':'#594331',stroke:'#ffc46e','stroke-width':1.4});
       }
+      layout.draw(chart,n=>[X(n.mapX),Y(n.mapY)],id=>{selected=id;refresh();},selected,'data-sm-target');
+      if(focused)Array.from(chart.querySelectorAll('[data-nav-label]')).find(el=>el.dataset.navLabel===focused)?.focus({preventScroll:true});
       if(pose?.level===level){
         const x=X(pose.x),y=Y(pose.z);
         draw(chart,'circle',{cx:x,cy:y,r:7.5,fill:'#77f4b4','fill-opacity':.18,'pointer-events':'none'});
@@ -195,8 +195,8 @@
       const state=getState(),pose=state.active?state.pose:null;
       const visitor=surfaceNavigation(),remote=Boolean(visitor),area=areaPicker.value,planet=area!=='ship';
       const view=[area,remote,sitePicker.value,level,selected,pose?.level,pose?.x.toFixed(1),pose?.z.toFixed(1),
-        visitor?.planetId,visitor?.targetId,visitor?.position.lat,visitor?.position.lon,state.tracking,
-        chart.clientWidth,chart.clientHeight].join('|');
+        visitor?.planetId,visitor?.targetId,visitor?.position?.lat,visitor?.position?.lon,state.tracking,
+        chart.parentElement.clientWidth,chart.parentElement.clientHeight].join('|');
       if(view===lastView)return;
       lastView=view;
       panel.querySelector('[data-sm-deck-label]').hidden=planet;
@@ -274,8 +274,9 @@
       if(!element || !panel.contains(element))return;
       selected=element.dataset.smTarget;refresh();
     }
-    areaPicker.addEventListener('change',()=>selectArea(areaPicker.value));sitePicker.addEventListener('change',refresh);
-    picker.addEventListener('change',()=>{level=picker.value;refresh();});
+    areaPicker.addEventListener('change',()=>selectArea(areaPicker.value));
+    sitePicker.addEventListener('change',()=>{refresh();revealMapAddress(chart,sitePicker.value);});
+    picker.addEventListener('change',()=>{level=picker.value;chart.parentElement.scrollTop=0;refresh();});
     guide.addEventListener('click',()=>{
       const visitor=surfaceNavigation();if(visitor?.planetId!==areaPicker.value||guide.hidden)return;
       onGuide(visitor.targetId===sitePicker.value?null:sitePicker.value);
@@ -297,7 +298,7 @@
       }else onTravel(target.id);
     });
     const observer=new ResizeObserver(refresh);
-    observer.observe(chart);
+    observer.observe(chart.parentElement);
     return {
       open(id){
         const away=parkedRamp(),visitor=surfaceNavigation();
@@ -307,7 +308,7 @@
         level=target?.level||(s.active&&s.pose?.level)||level;
         if(target)selected=target.id;
         if(!target)selected=null;
-        opened=true;lastView='';refresh();
+        opened=true;lastView='';refresh();revealMapAddress(chart,regions[area]?sitePicker.value:selected);
       },
       refresh,close(){opened=false;},
       dispose(){opened=false;observer.disconnect();container.replaceChildren();}
