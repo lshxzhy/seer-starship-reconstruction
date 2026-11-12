@@ -50,10 +50,11 @@ const BETA_WORLD=defineTwinWorld({
 function buildBetaLandmarks(kit){
   const {T,ground,stamp,block,root,material,projection}=kit,tau=2*Math.PI;
   const projectedPoint=new T.Vector3();
-  function projectAbsolute(geo){
+  function projectAbsolute(geo,region){
+    if(!region){geo.computeBoundingSphere();const centre=geo.boundingSphere.center;region=projection.region(centre.x,centre.z);}
     const positions=geo.attributes.position;
     for(let i=0;i<positions.count;i++){
-      projection.point(positions.getX(i),positions.getY(i),positions.getZ(i),projectedPoint);
+      projection.point(positions.getX(i),positions.getY(i),positions.getZ(i),projectedPoint,region);
       positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
     }
     positions.needsUpdate=true;geo.userData.surveyProjected=true;
@@ -122,7 +123,10 @@ function buildBetaLandmarks(kit){
   // spherical correction. Each shape has its own bevel, seams and fasteners.
   const deck=new Map();
   function inlay(x,z,outline,c,lift=.055,spacing=Infinity){
-    let data=deck.get(c);if(!data){data={v:[],i:[]};deck.set(c,data);}
+    const region=projection.region(x,z);
+    if(!deck.has(region))deck.set(region,new Map());
+    const batch=deck.get(region);
+    let data=batch.get(c);if(!data){data={v:[],i:[]};batch.set(c,data);}
     const area=outline.reduce((sum,[x,z],k)=>{const [nx,nz]=outline[(k+1)%outline.length];return sum+x*nz-z*nx;},0);
     for(let k=1;k<outline.length-1;k++){
       const a=outline[0],b=outline[area>0?k+1:k],c=outline[area>0?k:k+1];
@@ -149,9 +153,9 @@ function buildBetaLandmarks(kit){
       add(hex,gun,x+dx,ground(x+dx,z+dz)+.073,z+dz,.073,.024,.073);
   }
   function finishDeck(){
-    for(const [mat,{v,i}] of deck){
+    for(const [region,batch] of deck)for(const [mat,{v,i}] of batch){
       const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));
-      g.setIndex(i);add(projectAbsolute(g),mat,0,0,0);
+      g.setIndex(i);add(projectAbsolute(g,region),mat,0,0,0);
     }
   }
 

@@ -1,7 +1,7 @@
 // In the planet-fixed frame distances are metres, velocities are m/s. The
 // vehicle origin is the plane through the three deployed landing feet.
 function hasShuttleControlInput(input={}){
-  return Boolean(input.brake)||['forward','turn','pitch','strafe','lift'].some(
+  return Boolean(input.brake||input.boost)||['forward','turn','pitch','strafe','lift','lookYaw','lookPitch'].some(
     key=>Number.isFinite(Number(input[key]))&&Math.abs(Number(input[key]))>.001);
 }
 
@@ -496,7 +496,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     return budget-remaining+remaining/rate;
   }
   function snapshot(){
-    return {version:5,planetId,planetRadius:R,systemScale:compactVoyageSystemScale,
+    return {version:5,surfaceLayout:currentVoyageLayout,planetId,planetRadius:R,systemScale:compactVoyageSystemScale,
       phase,auto,leg,target:target?{id:target.id,name:target.name,lat:target.lat,lon:target.lon}:null,
       p:position.toArray(),v:velocity.toArray(),q:quaternion.toArray(),heading:heading.toArray(),pitch,roll,riseLevel,
       boostPower,tour,tourIndex};
@@ -509,7 +509,9 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
         !tuple(s.v,3)||!tuple(s.q,4)||!tuple(s.heading,3))return false;
     if(s.phase==='docked'){settleDock();return true;}
     next.fromArray(s.p);
-    if(next.length()<R*.99||next.length()>R*1000)return false;
+    // A compact world's crater or seabed can be more than 1% below its
+    // datum. Its local support is resolved below, independently of that datum.
+    if(next.length()<R*.5||next.length()>R*1000)return false;
     position.copy(next);const frame=currentFrame();
     phase=s.phase;heading.fromArray(s.heading);levelHeading(frame);quaternion.fromArray(s.q).normalize();
     velocity.fromArray(s.v).clampLength(0,highSpeed);
@@ -535,7 +537,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
   }
   function status(){
     return {phase,auto,stage,speed:velocity.length(),verticalSpeed:velocity.dot(up),clearance:Math.max(0,altitude-ground),
-      altitude,lat:latitude,lon:longitude,heading:Math.atan2(heading.dot(eastAxis),heading.dot(northAxis)),range,timeScale,throttle:power,
+      altitude,lat:latitude,lon:longitude,heading:Math.atan2(heading.dot(eastAxis),heading.dot(northAxis)),range,timeScale,throttle:power,boostPower,
       targetName:auto==='dock'?'赛尔号泊位':target?.name||'',targetId:target?.id||null,
       canCapture:canCapture(),canLand:canLand(),landingReason:pad?.reason||''};
   }

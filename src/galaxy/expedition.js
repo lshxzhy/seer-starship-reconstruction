@@ -390,13 +390,14 @@
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
-      if(current&&saved.format<5&&phase==='surface')position=migrateSurfacePoint(position,definition,saved.format,saved.surfaceRadius);
+      const oldSurface=current&&(saved.format<5||(definition.id==='ocean'&&saved.surfaceLayout===singleOceanLayout));
+      if(oldSurface&&phase==='surface')position=migrateSurfacePoint(position,definition,saved.format,saved.surfaceRadius,saved.surfaceLayout);
       if(!current&&saved.phase==='surface'){
         // The previous radius was 780 km. Keep the visitor's distances from the meadow.
         position=compactSurfacePoint(position,definition,780000);
         flight.placeOnSurface('grassland');phase='surface';dock.setTravel(dock.total);
       }
-      if(saved.format!==5&&phase==='surface'&&!saved.mapDestination)
+      if((!current||oldSurface)&&phase==='surface'&&!saved.mapDestination)
         position=(body.resolveMigration||body.resolveArrival)(position.lat,position.lon);
       pending=current&&['launch','auto'].includes(saved.pending)&&phase==='helm'?saved.pending:null;
       arrival='';observedBird=null;arrivedOnDeck=!!saved.arrivedOnDeck;approachRamp=false;feedback='';
@@ -419,7 +420,7 @@
       delete stage.dataset.domain;delete stage.dataset.planet;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
-      return {format:5,origin,phase,planetId:definition.id,surfaceRadius:definition.radius,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
+      return {format:5,surfaceLayout:currentVoyageLayout,origin,phase,planetId:definition.id,surfaceRadius:definition.radius,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
         door,transfer:dock.travel,transferSign,external,navTarget,pending,arrivedOnDeck,yaw,pitch,eye,facing,targetId};
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
@@ -503,13 +504,16 @@
       pitch=nearHull?0:site.lookPitch||0;walkPhase=0;observedBird=null;approachRamp=false;feedback='';arrival=site.name;
       plotRoute(null);resetInput();
     }
-    function playerPoint(){return body.point(position.lat,position.lon,jump.offset);}
+    const footCorrection=at=>body.groundCorrection?.(at.lat,at.lon)||0;
+    const footHeight=at=>body.height(at.lat,at.lon)+footCorrection(at);
+    function renderFootOffset(){return jump.offset+footCorrection(position);}
+    function playerPoint(){return body.point(position.lat,position.lon,renderFootOffset());}
     function closeToRamp(){return !jump.airborne&&localVehicle()&&flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
-    function surfaceCeiling(at=position,ground=body.height(at.lat,at.lon)){
+    function surfaceCeiling(at=position,ground=footHeight(at)){
       if(!body.clipCamera)return Infinity;
       // Reuse the authored solid/roof constraints for the upward head sweep.
       const up=body.frame(at.lat,at.lon).up;
-      const head=body.point(at.lat,at.lon,seerRobots.height),end=head.clone().addScaledVector(up,1.25);
+      const head=body.point(at.lat,at.lon,seerRobots.height+footCorrection(at)),end=head.clone().addScaledVector(up,1.25);
       body.clipCamera(head,end);
       return ground+seerRobots.height+Math.max(0,end.sub(head).dot(up));
     }
@@ -715,7 +719,7 @@
       }
     }
     function surfaceCamera(dt){
-      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015+jump.offset);
+      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015+renderFootOffset());
 
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
       if(localVehicle()&&flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();
@@ -730,7 +734,7 @@
       }else{
         const angle=clamp(.23-pitch,-.12,1.0),back=boom*Math.cos(angle);
         const behind=body.move(position.lat,position.lon,Math.sin(yaw)*back,-Math.cos(yaw)*back);
-        const minHeight=body.height(behind.lat,behind.lon)-body.height(position.lat,position.lon)+.35;
+        const minHeight=footHeight(behind)-footHeight(position)+.35;
         view.position.copy(aim).addScaledVector(dir,-back).addScaledVector(f.up,Math.max(minHeight-1.08,boom*Math.sin(angle)));
         const focus=aim.clone().addScaledVector(dir,1.35);
         if(definition.palette||definition.kind==='ship')focus.addScaledVector(f.up,Math.sin(Math.max(0,pitch))*boom*.87+.20);
@@ -754,7 +758,7 @@
       const side=atWindow?-1.68:eye?.98:1.45,forward=atWindow?-.66:eye?2.5:-.24;
       const dx=Math.cos(yaw)*side-Math.sin(yaw)*forward,dz=-Math.sin(yaw)*side-Math.cos(yaw)*forward;
       const peer=body.move(position.lat,position.lon,dx,-dz);
-      nono.followOnPlanet(dx,body.height(peer.lat,peer.lon)-body.height(position.lat,position.lon)-jump.offset,dz,yaw+Math.PI,dt,true);
+      nono.followOnPlanet(dx,footHeight(peer)-footHeight(position)-jump.offset,dz,yaw+Math.PI,dt,true);
       if(observedBird!==null){
         const bird=nearbySpirit();
         if(canObserve(bird)&&bird.kind==='apparition'){
@@ -795,7 +799,7 @@
       if(parked)originRotation.copy(flight.quaternion).invert();
       function advance(east,north){
         const next=body.walk(position.lat,position.lon,east,north);
-        const ground=body.height(next.lat,next.lon);
+        const ground=footHeight(next);
         if(!jump.canMoveTo(ground,jump.airborne?surfaceCeiling(next,ground):Infinity))return false;
         if(parked){
           const q=body.point(next.lat,next.lon).sub(flight.position).applyQuaternion(originRotation);
@@ -984,7 +988,7 @@
       const speed=phase==='cabin'||phase==='surface'?walkInput(dt):0;
       const walking=phase==='surface';
       if(walking){
-        const ground=body.height(position.lat,position.lon);
+        const ground=footHeight(position);
         jump.update(dt,ground,jump.airborne?surfaceCeiling(position,ground):Infinity);
       }else jump.reset();
       const at=walking?position:{lat:s.lat,lon:s.lon},agl=walking?jump.offset:s.clearance;
@@ -1166,7 +1170,7 @@
         if(e.target.closest?.('button,a,summary,[role="button"]'))return;
         e.preventDefault();
         if(phase==='surface'&&!e.repeat&&!keys.has(code)){
-          const ground=body.height(position.lat,position.lon);
+          const ground=footHeight(position);
           if(jump.start(ground,surfaceCeiling(position,ground))){
             keys.add(code);throughScope=false;observedBird=null;approachRamp=false;requestFrame();
           }

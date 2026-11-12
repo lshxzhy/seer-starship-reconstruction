@@ -51,11 +51,13 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal,
   const tau=Math.PI*2,V=(x,y,z)=>new T.Vector3(x,y,z);
   const projectedPoint=V(0,0,0),particleRotation=new T.Quaternion();
   function projectAbsolute(geo,particles=false){
+    geo.computeBoundingSphere();
+    const centre=geo.boundingSphere.center,region=projection.region(centre.x,centre.z);
     const positions=geo.attributes.position,rotations=particles?new Float32Array(positions.count*4):null;
     for(let i=0;i<positions.count;i++){
       const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);
-      if(rotations)projection.rotation(x,z,particleRotation).toArray(rotations,i*4);
-      projection.point(x,y,z,projectedPoint);positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
+      if(rotations)projection.rotation(x,z,particleRotation,region).toArray(rotations,i*4);
+      projection.point(x,y,z,projectedPoint,region);positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
     }
     positions.needsUpdate=true;geo.userData.surveyProjected=true;
     if(rotations)geo.setAttribute('surveyRotation',new T.BufferAttribute(rotations,4));

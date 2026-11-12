@@ -31,11 +31,10 @@ function placeSurfaceDistrict(T,district,projection){
       object.frustumCulled=false;
     }
   }
-  district.position.set(0,0,0);district.quaternion.identity();district.scale.set(1,1,1);district.updateMatrixWorld(true);
 }
 
 function createTwinSurface(T,world,definition){
-  const {radius,sites,landingSites,palette,layout}=definition,home={lat:definition.lat,lon:definition.lon},sceneScale=layout.scale;
+  const {radius,sites,landingSites,palette,layout}=definition,sceneScale=layout.scale;
   const v=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),tau=Math.PI*2;
   const root=new T.Group(),district=new T.Group(),patch=new T.Group();
   root.name=definition.name;root.add(district,patch);root.visible=false;world.add(root);
@@ -46,11 +45,10 @@ function createTwinSurface(T,world,definition){
     const up=v(c*a,s,-c*b),east=v(-b,0,-a),north=v(-s*a,c,s*b),south=north.clone().negate();
     return {east,up,north,south,quaternion:new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(east,up,south))};
   }
-  const districtFrame=frame(home.lat,home.lon);
-  district.quaternion.copy(districtFrame.quaternion);district.position.copy(districtFrame.up).multiplyScalar(radius);
   const move=(lat,lon,x,n)=>twinMove(radius,lat,lon,x,n);
   let constructionRegion=null;
-  const chart=(lat,lon)=>layout.chart(lat,lon),fromXZ=(x,z,region=constructionRegion??layout.source(x,z))=>layout.fromXZ(x,z,region);
+  const regionAt=(x,z)=>constructionRegion??layout.source(x,z);
+  const chart=(lat,lon)=>layout.chart(lat,lon),fromXZ=(x,z,region=regionAt(x,z))=>layout.fromXZ(x,z,region);
   const padHeights=landingSites.map(p=>definition.terrainHeight(p.x,p.z));
   // Keep the walking district open. Beyond it, the approach crosses real mesas
   // or scarps; their silhouettes, foot heights and flight clearances agree.
@@ -79,11 +77,14 @@ function createTwinSurface(T,world,definition){
     }
     return T.MathUtils.lerp(land,far,T.MathUtils.smoothstep(range,800,2000))+rimRelief(x,z);
   }
-  const ground=(x,z)=>{
-    const region=constructionRegion??layout.source(x,z),distance=Math.hypot(x-region.x,z-region.z)*sceneScale;
-    const ll=constructionRegion?fromXZ(x,z):null,h=ll?height(ll.lat,ll.lon):heightAt(x,z);
+  function baseElevation(x,z,region){
+    if(!constructionRegion&&region===layout.source(x,z))return heightAt(x,z);
+    const ll=fromXZ(x,z,region);return height(ll.lat,ll.lon);
+  }
+  function ground(x,z,region=regionAt(x,z)){
+    const distance=Math.hypot(x-region.x,z-region.z)*sceneScale,h=baseElevation(x,z,region);
     return ((radius+h)*Math.cos(distance/radius)-radius)/sceneScale;
-  };
+  }
   function regionalTerrain(lat,lon){
     const c=Math.cos(lat),x=c*Math.cos(lon),y=Math.sin(lat),z=-c*Math.sin(lon);
     const roll=Math.sin(x*9+z*4)*Math.cos(y*8-z*3),vein=Math.sin(z*19+x*7+2*Math.sin(y*11));
@@ -111,9 +112,16 @@ function createTwinSurface(T,world,definition){
     localTone.setHex(definition.groundTone(p.x,p.z,h));out.lerp(localTone,weight);
     out.multiplyScalar(.96+.04*Math.sin(h*.37));return out.convertSRGBToLinear();
   }
-  const projection=createLayoutProjection(T,layout,frame,ground,(x,z)=>{
-    const ll=fromXZ(x,z);return height(ll.lat,ll.lon);
-  },(x,z)=>constructionRegion??layout.source(x,z));
+  // Several disconnected panels can share one material batch. The author
+  // pins each contiguous mesh to one region before projecting its vertices.
+  const projections=new Map(layout.regions.map(region=>[region,createLayoutProjection(T,layout,frame,
+    (x,z)=>ground(x,z,region),(x,z)=>{const ll=fromXZ(x,z,region);return height(ll.lat,ll.lon);},()=>region)]));
+  const projection={
+    region:regionAt,scale:sceneScale,
+    point:(x,y,z,out,region=regionAt(x,z))=>projections.get(region).point(x,y,z,out),
+    rotation:(x,z,out,region=regionAt(x,z))=>projections.get(region).rotation(x,z,out),
+    matrix:(source,out=source)=>projections.get(regionAt(source.elements[12],source.elements[14])).matrix(source,out)
+  };
   function point(lat,lon,above=0){
     const r=radius+height(lat,lon)+above,c=Math.cos(lat);
     return v(r*c*Math.cos(lon),r*Math.sin(lat),-r*c*Math.sin(lon));
@@ -131,7 +139,7 @@ function createTwinSurface(T,world,definition){
       return materials.get(key);
     }
     function stamp(geo,mat,x,y,z,sx=1,sy=1,sz=1,rx=0,ry=0,rz=0){
-      if(landingSites.slice(1).some(p=>Math.hypot(x-p.x,z-p.z)<26))return;
+      if(landingSites.slice(1).some(p=>layout.source(p.x,p.z)===regionAt(x,z)&&Math.hypot(x-p.x,z-p.z)<26))return;
       const key=geo.uuid+':'+mat.uuid+':'+(constructionRegion??layout.source(x,z)).ids[0];
       if(!batches.has(key))batches.set(key,{geo,mat,poses:[]});
       pose.position.set(x,y,z);pose.scale.set(sx,sy,sz);pose.rotation.set(rx,ry,rz);pose.updateMatrix();
@@ -139,11 +147,15 @@ function createTwinSurface(T,world,definition){
     }
     definition.buildLandmarks({T,root:district,ground,material,stamp,projection,transition:(type,make)=>transitions.set(type,make),
       block:(x,z,r,h)=>{
-        if(landingSites.slice(1).some(p=>Math.hypot(x-p.x,z-p.z)<26))return;
-        const region=constructionRegion??layout.source(x,z),ll=fromXZ(x,z,region);
-        blocks.push({x,z,r,region,top:height(ll.lat,ll.lon)+h*sceneScale});
+        const region=regionAt(x,z);
+        if(landingSites.slice(1).some(p=>layout.source(p.x,p.z)===region&&Math.hypot(x-p.x,z-p.z)<26))return;
+        const ll=fromXZ(x,z,region),bottom=height(ll.lat,ll.lon);
+        blocks.push({x,z,r,region,bottom,top:bottom+h*sceneScale});
       },
-      cover:(x,z,halfX,halfZ,bottom,top)=>overheads.push({x,z,halfX,halfZ,bottom:heightAt(x,z)+bottom*sceneScale,top:heightAt(x,z)+top*sceneScale}),
+      cover:(x,z,halfX,halfZ,bottom,top)=>{
+        const region=regionAt(x,z),ll=fromXZ(x,z,region),floor=height(ll.lat,ll.lon);
+        overheads.push({x,z,halfX,halfZ,region,bottom:floor+bottom*sceneScale,top:floor+top*sceneScale});
+      },
       animate:fn=>animations.push(fn),portal:(x,z,planet,site,r=3.5)=>portals.push({x,z,planet,site,r})});
     // Reuse each area's own trees or mineral growths beyond its classic core.
     // The temporary region prevents an extended chart from jumping to another
@@ -179,7 +191,7 @@ function createTwinSurface(T,world,definition){
   }
   function isSheltered(lat,lon,eyeHeight){
     const p=chart(lat,lon),eye=heightAt(p.x,p.z)+eyeHeight;
-    return overheads.some(b=>layout.source(b.x,b.z)===p.region&&eye<b.bottom&&Math.abs(p.x-b.x)<b.halfX&&Math.abs(p.z-b.z)<b.halfZ);
+    return overheads.some(b=>b.region===p.region&&eye<b.bottom&&Math.abs(p.x-b.x)<b.halfX&&Math.abs(p.z-b.z)<b.halfZ);
   }
   function siteAt(lat,lon){
     const p=chart(lat,lon);
@@ -187,36 +199,66 @@ function createTwinSurface(T,world,definition){
     for(const site of sites){const d=Math.hypot(p.x-site.x,p.z-site.z);if(d<distance&&p.region.ids.includes(site.id)){closest=site;distance=d;}}
     return closest;
   }
+  function canStand(lat,lon,bodyRadius=.30,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<0)return false;
+    const p=chart(lat,lon),floor=height(lat,lon,p),head=floor+bodyHeight,r=bodyRadius/sceneScale;
+    if((definition.waterAreas||[]).some(([x,z,size])=>layout.source(x,z)===p.region&&Math.hypot(x-p.x,z-p.z)<size+r))return false;
+    if(groundProfile(lat,lon,p,bodyRadius).slope>=.65)return false;
+    build();
+    if(blocks.some(b=>b.region===p.region&&floor<b.top-.03&&head>b.bottom+.03&&Math.hypot(p.x-b.x,p.z-b.z)<b.r+r))return false;
+    return !overheads.some(b=>b.region===p.region&&floor<b.top-.03&&head>b.bottom+.03&&
+      Math.abs(p.x-b.x)<b.halfX+r&&Math.abs(p.z-b.z)<b.halfZ+r);
+  }
   function walk(lat,lon,east,north){
     const start=chart(lat,lon);
     build();
     const end=move(lat,lon,east,north),q=chart(end.lat,end.lon);if(q.region!==start.region)return end;
     const steps=Math.max(1,Math.ceil(Math.hypot(east,north)/.25));
     const dx=(q.x-start.x)/steps,dz=(q.z-start.z)/steps;
+    function walkingFloor(x,z){
+      const ll=layout.fromXZ(x,z,start.region);
+      return height(ll.lat,ll.lon);
+    }
     let x=start.x,z=start.z;
     for(let i=0;i<steps;i++){
       x+=dx;z+=dz;
+      const floor=walkingFloor(x,z);
       for(const b of blocks){
-        if(b.region!==start.region)continue;
+        if(b.region!==start.region||floor>=b.top-.03||floor+1.70<=b.bottom+.03)continue;
         const bx=x-b.x,bz=z-b.z,d=Math.hypot(bx,bz),min=b.r+.30/sceneScale;
         if(d<min){x=b.x+(d?bx/d:1)*min;z=b.z+(d?bz/d:0)*min;}
+      }
+      // The old centre-only block pass omitted the solid slab of a low
+      // overhead. Test its real bottom/top while retaining walkable arches.
+      const coverFloor=walkingFloor(x,z);
+      for(const b of overheads){
+        if(b.region!==start.region||coverFloor>=b.top-.03||coverFloor+1.70<=b.bottom+.03)continue;
+        const bx=x-b.x,bz=z-b.z,rx=b.halfX+.30/sceneScale,rz=b.halfZ+.30/sceneScale;
+        if(Math.abs(bx)<rx&&Math.abs(bz)<rz){
+          if(rx-Math.abs(bx)<rz-Math.abs(bz))x=b.x+(bx<0?-rx:rx);
+          else z=b.z+(bz<0?-rz:rz);
+        }
       }
     }
     const at=fromXZ(x,z,start.region);return ecology?.avoidWalker?ecology.avoidWalker(at.lat,at.lon,.30):at;
   }
-  function footprint(lat,lon,r=7.4){
-    r/=sceneScale;
-    const p=chart(lat,lon),floor=height(lat,lon);
-    build();
-    const step=Math.max(.8,r),pad=landingSites.find(s=>Math.hypot(s.x-p.x,s.z-p.z)+r<=23);
+  function groundProfile(lat,lon,p,bodyRadius){
+    const floor=height(lat,lon,p),step=Math.max(.8*sceneScale,bodyRadius);
     let high=floor,low=floor;
-    for(const [ex,sz] of [[step,0],[-step,0],[0,step],[0,-step]]){
-      const at=move(lat,lon,ex*sceneScale,-sz*sceneScale),h=height(at.lat,at.lon);high=Math.max(high,h);low=Math.min(low,h);
+    for(const [east,north] of [[step,0],[-step,0],[0,step],[0,-step]]){
+      const at=move(lat,lon,east,north),h=height(at.lat,at.lon);high=Math.max(high,h);low=Math.min(low,h);
     }
-    const slope=(high-low)/(step*sceneScale);
+    return {height:floor,top:high,slope:(high-low)/step};
+  }
+  function footprint(lat,lon,bodyRadius=7.4){
+    const p=chart(lat,lon),r=bodyRadius/sceneScale;
+    build();
+    const pad=landingSites.find(s=>layout.source(s.x,s.z)===p.region&&Math.hypot(s.x-p.x,s.z-p.z)+r<=23);
+    const {height:floor,top,slope}=groundProfile(lat,lon,p,bodyRadius);
+    let high=top;
     let obstruction=false;
     for(const b of blocks)if(b.region===p.region&&Math.hypot(b.x-p.x,b.z-p.z)<b.r+r){high=Math.max(high,b.top);obstruction=true;}
-    for(const b of overheads)if(layout.source(b.x,b.z)===p.region&&Math.abs(b.x-p.x)<b.halfX+r&&Math.abs(b.z-p.z)<b.halfZ+r){high=Math.max(high,b.top);obstruction=true;}
+    for(const b of overheads)if(b.region===p.region&&Math.abs(b.x-p.x)<b.halfX+r&&Math.abs(b.z-p.z)<b.halfZ+r){high=Math.max(high,b.top);obstruction=true;}
     return {height:floor,top:high,slope,obstruction,ok:!obstruction&&(!!pad||slope<.30),
       reason:obstruction?'机翼范围内有设施或岩体':'请在平缓处或标注的着陆坪降落'};
   }
@@ -227,8 +269,8 @@ function createTwinSurface(T,world,definition){
       sample.copy(aim).addScaledVector(ray,i/steps);
       const lat=Math.atan2(sample.y,Math.hypot(sample.x,sample.z)),lon=Math.atan2(-sample.z,sample.x),p=chart(lat,lon);
       const altitude=sample.length()-radius;
-      const underRoof=overheads.some(b=>layout.source(b.x,b.z)===p.region&&altitude>b.bottom-.12&&altitude<b.top+.16&&Math.abs(p.x-b.x)<b.halfX+.10/sceneScale&&Math.abs(p.z-b.z)<b.halfZ+.10/sceneScale);
-      if(underRoof||altitude<height(lat,lon)+.16||blocks.some(b=>b.region===p.region&&altitude<b.top+.16&&Math.hypot(b.x-p.x,b.z-p.z)<b.r+.10/sceneScale)){
+      const underRoof=overheads.some(b=>b.region===p.region&&altitude>b.bottom-.12&&altitude<b.top+.16&&Math.abs(p.x-b.x)<b.halfX+.10/sceneScale&&Math.abs(p.z-b.z)<b.halfZ+.10/sceneScale);
+      if(underRoof||altitude<height(lat,lon)+.16||blocks.some(b=>b.region===p.region&&altitude>b.bottom-.12&&altitude<b.top+.16&&Math.hypot(b.x-p.x,b.z-p.z)<b.r+.10/sceneScale)){
         eye.copy(aim).addScaledVector(ray,Math.max(.01,(i-1)/steps));return;
       }
     }
@@ -323,15 +365,10 @@ function createTwinSurface(T,world,definition){
     }
   }
   const nothing=()=>null;
-  const body={root,globe,radius,sceneScale,sites,landingSites,siteAt,frame,point,move,chart,height,walk,portalAt,isSheltered,
+  const body={root,globe,radius,sceneScale,sites,landingSites,siteAt,frame,point,move,chart,height,walk,canStand,portalAt,isSheltered,
     landingSite:id=>landingSites.find(s=>s.id===id),groundCorrection:()=>0,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),clipCamera,
     flightHeight:(lat,lon,r=0)=>footprint(lat,lon,r).top,landingInfo:footprint,
-    canStand:(lat,lon,r=.4)=>{
-      const p=chart(lat,lon),info=footprint(lat,lon,r);
-      const wet=(definition.waterAreas||[]).some(([x,z,size])=>layout.source(x,z)===p.region&&Math.hypot(x-p.x,z-p.z)<size+r/sceneScale);
-      return !wet&&!info.obstruction&&info.slope<.65;
-    },
     setMode(next){if(mode!==next)last=null;mode=next;root.visible=next!=='hidden';ecology?.setVisible(next==='surface');},update,prepareFlight:build,
     setSunDirection:dir=>uniforms.sunDir.value.copy(dir),
     nearbySpirit:(lat,lon)=>ecology?.nearbySpirit(lat,lon)||null,

@@ -38,14 +38,15 @@ function createTwinEcology(T,parent,definition,surface){
   }).filter(Boolean);
   let enabled=true,visitor=null;
   const displacement=(a,b)=>surfaceDisplacement(a,b,definition.radius);
-  function groundClear(at,radius){
-    if(surface.canStand)return surface.canStand(at.lat,at.lon,radius);
+  const hoverHeight=p=>p.id===91?.10:0;
+  function groundClear(at,radius,height=1.70){
+    if(surface.canStand)return surface.canStand(at.lat,at.lon,radius,height);
     if(!surface.walk)return true;
     const resolved=surface.walk(at.lat,at.lon,0,0);
     return displacement(at,resolved).distance<.05;
   }
   function clear(p,at,visitorRadius=.40){
-    if(!groundClear(at,p.model.radius+.08))return false;
+    if(!groundClear(at,p.model.radius+.08,p.model.size+hoverHeight(p)))return false;
     if(visitor&&displacement(at,visitor).distance<p.model.radius+visitorRadius)return false;
     return nodes.every(other=>other===p||!other.ready||other.site!==p.site||
       displacement(at,other.at).distance>p.model.radius+other.model.radius+.22);
@@ -64,7 +65,7 @@ function createTwinEcology(T,parent,definition,surface){
     return false;
   }
   function pose(p){
-    p.anchor.position.copy(surface.point(p.at.lat,p.at.lon,p.id===91?.10:0));
+    p.anchor.position.copy(surface.point(p.at.lat,p.at.lon,hoverHeight(p)));
     p.anchor.quaternion.copy(surface.frame(p.at.lat,p.at.lon).quaternion);
     p.turn.rotation.y=p.yaw;
   }

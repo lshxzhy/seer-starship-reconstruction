@@ -1,7 +1,7 @@
 """Assemble the same scene as an embeddable fragment and a portable offline viewer."""
 from html import escape
 from base64 import b64encode
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -38,10 +38,12 @@ def source_revision():
 
 build_revision = source_revision()
 build_dirty = 'true' if build_revision.endswith('+working-changes') else 'false' if len(build_revision) == 40 else 'unknown'
+source_head = build_revision.removesuffix('+working-changes')
+built_at = datetime.now(timezone.utc)
 build_metadata = (
-    f'<meta name="seer-source-commit" content="{escape(build_revision.removesuffix("+working-changes"), quote=True)}">'
+    f'<meta name="seer-source-commit" content="{escape(source_head, quote=True)}">'
     f'<meta name="seer-source-dirty" content="{build_dirty}">'
-    f'<meta name="seer-built-at" content="{datetime.now(timezone.utc).isoformat()}">'
+    f'<meta name="seer-built-at" content="{built_at.isoformat()}">'
 )
 work = root / 'work'
 output = root / 'outputs'
@@ -96,8 +98,16 @@ def script_source(path):
     if path == spirits/'catalog.json':
         return '/* spirit-catalog:start */\nconst SEER_SPIRIT_DATA = '+raw.strip().replace('<',r'\u003c')+';\n/* spirit-catalog:end */'
     return raw
-source = '\n'.join(script_source(path) for path in scripts)
+revision = source_head[:7] if build_dirty != 'unknown' else '本机源码'
+display_time = built_at.astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m-%d %H:%M:%S')
+build = {'revision': revision, 'modified': {'true': True, 'false': False}.get(build_dirty),
+         'builtAt': display_time,
+         'label': revision + (' + 本机修改' if build_dirty == 'true' else '') + ' · ' + display_time}
+source = ('const SEER_BUILD_INFO=' + json.dumps(build, ensure_ascii=False) + ';\n'
+          'document.title="SEER · "+SEER_BUILD_INFO.label;\n' +
+          '\n'.join(script_source(path) for path in scripts))
 layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + (spirits/'terminal.css').read_text('utf-8') + '</style>'
+layout = layout.replace('<strong data-tag>', '<small data-build title="本页实际加载的构建">' + escape(build['label']) + '</small><strong data-tag>', 1)
 library = (work/'three-r128.min.js').read_text('utf-8').replace('</script','<\\/script')
 fragment = build_metadata + layout + '\n<script>\n' + library + '\n</script>\n<script>\n' + source + '\n</script>\n'
 publish_text(viz,fragment)
@@ -105,7 +115,7 @@ publish_text(viz,fragment)
 head = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">' + build_metadata)
 style = (work / 'standalone.css').read_text(encoding='utf-8')
-title = '<title>SEER · SE–A015 舰内漫游</title>'
+title = f'<title>SEER · {escape(build["label"])}</title>'
 notices = '\n\n'.join(path.read_text(encoding='utf-8') for path in
                      [root / 'LICENSE', root / 'licenses' / 'three-r128.txt'])
 inner = f'{head}{title}<style>{style}</style><body>{fragment}</body></html>'

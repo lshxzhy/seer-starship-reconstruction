@@ -53,8 +53,10 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     if(!transit)local.departSystem();
     return true;
   }
-  function enterTransfer(){
+  function enterTransfer(status){
     syncLocal();
+    boostPower=clamp(Number(status.boostPower)||0,0,1);
+    coastSign=velocity.dot(axis.copy(forward).applyQuaternion(quaternion))<0?-1:1;
     globalP.copy(position).add(pano.center(reference,time,centre));
     globalV.copy(velocity).add(pano.velocity(reference,time,orbitalV));
     transit=true;stage=route?'星际转移':'星际手动驾驶';range=0;
@@ -66,9 +68,9 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     const side=axis.copy(right).applyQuaternion(quaternion);
     const flatRight=along.crossVectors(localHeading,radial);
     const roll=flatRight.lengthSq()>.0001?Math.atan2(side.dot(radial),side.dot(flatRight.normalize())*Math.cos(pitch)):0;
-    createLocal(id,{version:5,planetId:id,planetRadius:definition(id).radius,systemScale:compactVoyageSystemScale,
+    createLocal(id,{version:5,surfaceLayout:currentVoyageLayout,planetId:id,planetRadius:definition(id).radius,systemScale:compactVoyageSystemScale,
       phase:'flying',p:position.toArray(),v:velocity.toArray(),q:quaternion.toArray(),
-      heading:localHeading.toArray(),pitch,roll});
+      heading:localHeading.toArray(),pitch,roll,boostPower});
     if(route){
       const r=route;route=null;local.autopilot(r.destination,r.site);
     }
@@ -251,7 +253,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
       const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>(route?1850:5100);
       const orbitalBoundary=definition(reference).kind==='ship'?(route?1700:4500):
         definition(reference).radius*(route ? .75 : 1.7);
-      if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer();
+      if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer(s);
       return;
     }
     scale=1;
@@ -282,14 +284,14 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     localHeading.copy(forward).applyQuaternion(quaternion);
     return {phase:'flying',auto:route?.destination||null,stage,speed:velocity.length(),verticalSpeed:velocity.dot(f.up),
       clearance:Math.max(0,b.kind==='ship'?height:height-b.height(lat,lon)),altitude:height,lat,lon,heading:Math.atan2(localHeading.dot(f.east),localHeading.dot(f.north)),
-      range,timeScale:scale,throttle:power,planetId:reference,destinationPlanetId,interplanetary:true,
+      range,timeScale:scale,throttle:power,boostPower,planetId:reference,destinationPlanetId,interplanetary:true,
       targetName:route?.site?.name||(route?.destination==='dock'?'赛尔号泊位':''),targetId:route?.site?.id||null,
       canCapture:false,canLand:false,landingReason:'进入行星近地航段后可着陆'};
   }
   function snapshot(){
     const record=transit?{phase:'flying',auto:route?.destination||null,p:position.toArray(),v:velocity.toArray(),
       q:quaternion.toArray(),heading:localHeading.copy(forward).applyQuaternion(quaternion).toArray()}:local.snapshot();
-    return {...record,version:5,planetId:reference,planetRadius:definition(reference).radius,systemScale:compactVoyageSystemScale,
+    return {...record,version:5,surfaceLayout:currentVoyageLayout,planetId:reference,planetRadius:definition(reference).radius,systemScale:compactVoyageSystemScale,
       orbitTime:time,inTransit:transit,boostPower:transit?boostPower:record.boostPower,
       route:route?{...route,planetRadius:definition(route.planet).radius,site:route.site?
       {id:route.site.id,name:route.site.name,lat:route.site.lat,lon:route.site.lon}:null}:null};

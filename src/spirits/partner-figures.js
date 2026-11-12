@@ -56,30 +56,25 @@ function createCompanionFigure(T,id){
   return createIyooFigure(T,id)||createStarterGrassFigure(T,id)||createStarterWaterFigure(T,id)||createStarterFireFigure(T,id)||
     createBirdEvolutionFigure(T,id)||createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
-// World presentation uses catalogue height once, with a visibility floor for
-// tiny species. This is a scene presentation rule, not a change to their data.
-// A scaled scene receives local dimensions; records convert them back to metres.
-// Keep the attachment at unit scale so its local focus point matches its geometry.
-// Ordinary inhabitants grow by 25%; the additional boss factor doubles, so
-// field bosses are 2.5 times their previous size. Preserve catalogue values.
-const FIELD_SPIRIT_GROWTH=1.25;
-const FIELD_SPIRIT_SCALE=3.0*FIELD_SPIRIT_GROWTH, FIELD_SPIRIT_MIN_HEIGHT=1.10*FIELD_SPIRIT_GROWTH,
-  FIELD_BOSS_SCALE=3.30, KLOSE_ITEM_SCALE=1.40;
+// Heights are world metres. Regular encounters use the catalogue and a floor;
+// bosses retain the desktop presentation, including its field growth factor.
+const FIELD_SPIRIT_SCALE=4.0,FIELD_SPIRIT_MIN_HEIGHT=1.50,KLOSE_ITEM_SCALE=1.40;
+const FIELD_SPIRIT_GROWTH=1.25,FIELD_BOSS_SCALE=3.30;
 function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
   const centimetres=SEER_SPIRIT_DATA.index.find(row=>row[0]===id)?.[3];
   const naturalHeight=centimetres>0?centimetres/100:extent.y;
-  const displayHeight=Math.max(FIELD_SPIRIT_MIN_HEIGHT,FIELD_SPIRIT_SCALE*naturalHeight);
-  const size=displayHeight*(boss?FIELD_BOSS_SCALE:1)/sceneScale;
-  // The measured skin landmark moves with the same floor normalization as the
-  // visible body. Ornament tips must not determine an elephant's body scale.
+  const units=Number.isFinite(sceneScale)&&sceneScale>0?sceneScale:1;
+  const displayHeight=boss?Math.max(1.10,3*naturalHeight)*FIELD_SPIRIT_GROWTH*FIELD_BOSS_SCALE:
+    Math.max(FIELD_SPIRIT_MIN_HEIGHT,FIELD_SPIRIT_SCALE*naturalHeight);
+  // Measure the elephant's shoulder from the feet, independently of its ornaments.
   const shoulderHeight=model.shoulderHeight>0?Math.max(0,model.shoulderHeight-bounds.min.y):0;
   const shoulderFactor=shoulderHeight>0&&model.fieldMinShoulderHeight>0?
-    model.fieldMinShoulderHeight*FIELD_SPIRIT_GROWTH/shoulderHeight/sceneScale:0;
-  const factor=Math.max(size/Math.max(.01,extent.y),shoulderFactor),root=new T.Group();
+    model.fieldMinShoulderHeight*FIELD_SPIRIT_GROWTH/shoulderHeight/units:0;
+  const factor=Math.max(displayHeight/units/Math.max(.01,extent.y),shoulderFactor),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
-  model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
+  model.root.scale.multiplyScalar(factor);model.root.position.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
   root.add(model.root);
   const radius=factor*Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z));
   return {...model,root,animal:root,size:factor*extent.y,radius,

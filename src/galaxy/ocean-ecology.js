@@ -157,41 +157,54 @@ function createOceanEcology(T,parent,definition,surface){
     ['ocean-shallows',108,16,6.1,5.8],['ocean-depths',108,16,-7.5,3.4],['ocean-floor',108,16,6.8,3.9]
   ];
   const names={30:'贝尔',33:'利牙鱼',34:'钢牙鲨',108:'布鲁'};
-  const nodes=schools.map(([siteId,id,level,x,z],i)=>{
+  const nodes=[];
+  for(const [i,[siteId,id,level,x,z]] of schools.entries()){
     const site=definition.sites.find(s=>s.id===siteId),model=createFieldSpirit(T,id,{boss:id===34});
     const anchor=new T.Group(),turn=new T.Group();anchor.add(turn);turn.add(model.root);parent.add(anchor);
     const key=siteId+'-'+id+'-'+i;anchor.userData.oceanSpirit=key;anchor.visible=false;
-    const at=surface.move(site.lat,site.lon,x,-z);
     const radius=id===34?2.6:id===30?1.15:1.68,t=1.69*i;
-    return {site,model,anchor,turn,key,id,level,radius,cx:x-radius*Math.sin(t),cz:z-radius*.65*Math.cos(t),
-      homeX:x,homeZ:z,ix:x,iz:z,at,yaw:.5*i,t,rest:0,sign:1,blocked:0,age:t,ready:false,retry:0};
-  });
+    const p={site,model,anchor,turn,key,id,level,radius,cx:x-radius*Math.sin(t),cz:z-radius*.65*Math.cos(t),
+      spawnX:x,spawnZ:z,ix:x,iz:z,at:surface.move(site.lat,site.lon,x,-z),yaw:.5*i,t,rest:0,
+      sign:1,blocked:0,age:t,ready:false,retry:0,retryDelay:2400+i*137};
+    nodes.push(p);
+  }
   const sites=Object.keys(OCEAN_HABITATS),interval=75,rareWindow=45;
   let lastVisitor=null;
   function wetDistance(a,b){return surfaceDisplacement(a,b,definition.radius).distance;}
-  function initialize(p){
-    const reach=Math.min(32,Math.max(5,p.model.radius*2.4+2)),rings=Math.ceil(reach/.50);
-    for(let ring=0;ring<=rings;ring++)for(let k=0,n=Math.max(1,ring*8);k<n;k++){
-      const a=k*Math.PI*2/n,x=p.homeX+ring*.50*Math.cos(a),z=p.homeZ+ring*.50*Math.sin(a);
-      const at=surface.move(p.site.lat,p.site.lon,x,-z);
-      if(!surface.canSwim(at.lat,at.lon,p.model.radius)||
-          lastVisitor&&wetDistance(at,lastVisitor)<p.model.radius+.36)continue;
-      if(nodes.some(other=>other!==p&&other.ready&&other.site===p.site&&wetDistance(at,other.at)<p.model.radius+other.model.radius+.18))continue;
-      p.ix=x;p.iz=z;p.at=at;p.cx=x-p.radius*Math.sin(p.t);p.cz=z-p.radius*.65*Math.cos(p.t);p.ready=true;
-      return true;
+  function clearPose(p,at,visitor=null){
+    const head=p.model.size+(p.id===30?.12:.86);
+    if(!surface.canSwim(at.lat,at.lon,p.model.radius,head))return false;
+    if(visitor&&wetDistance(visitor,at)<.36+p.model.radius)return false;
+    return nodes.every(other=>other===p||!other.ready||other.site!==p.site||
+      wetDistance(other.at,at)>=other.model.radius+p.model.radius+.08);
+  }
+  function findSpawn(p,visitor=null){
+    const spacing=Math.max(.65,p.model.radius*.45);
+    const rings=Math.max(12,Math.ceil(Math.min(32,Math.max(5,p.model.radius*2.4+2))/spacing));
+    for(let ring=0;ring<=rings;ring++){
+      const count=ring?ring*8:1;
+      for(let i=0;i<count;i++){
+        const a=i*Math.PI*2/count,x=p.spawnX+ring*spacing*Math.cos(a),z=p.spawnZ+ring*spacing*Math.sin(a);
+        const at=surface.move(p.site.lat,p.site.lon,x,-z);
+        if(!clearPose(p,at,visitor))continue;
+        p.at=at;p.ix=x;p.iz=z;p.cx=x-p.radius*Math.sin(p.t);p.cz=z-p.radius*.65*Math.cos(p.t);
+        p.ready=true;p.blocked=0;return true;
+      }
     }
-    return false;
+    // An oversized model never borrows a smaller collision radius to fit.
+    // Keep it absent until a later, staggered low-frequency placement attempt.
+    p.ready=false;p.anchor.visible=false;p.retry=Date.now()+p.retryDelay;return false;
   }
   function update(lat,lon,dt,walking=true){
     lastVisitor={lat,lon};
     const now=Date.now(),cycle=now/1000,rareSite=sites[Math.floor(cycle/interval)%sites.length];
     for(const p of nodes){
-      const active=walking&&wetDistance(p.site,lastVisitor)<46+p.model.radius&&p.rest<=now&&
+      const eligible=walking&&wetDistance(p.site,lastVisitor)<46+p.model.radius&&p.rest<=now&&
         (p.id!==108||(p.site.id===rareSite&&cycle%interval<rareWindow));
-      p.anchor.visible=active&&p.ready;if(!active)continue;
-      if(!p.ready){
-        p.retry=Math.max(0,p.retry-dt);
-        if(p.retry||!initialize(p)){if(!p.retry)p.retry=2;continue;}
+      if(!eligible){p.anchor.visible=false;continue;}
+      if(!p.ready){if(now>=p.retry)findSpawn(p,lastVisitor);if(!p.ready)continue;}
+      if(!clearPose(p,p.at,p.anchor.visible?null:lastVisitor)){
+        p.ready=false;p.anchor.visible=false;p.retry=now+p.retryDelay;continue;
       }
       p.anchor.visible=true;
       const cadence=p.id===34?.39:p.id===30?.47:.82,steps=Math.max(1,Math.ceil(dt/.06)),sub=dt/steps;
@@ -206,12 +219,7 @@ function createOceanEcology(T,parent,definition,surface){
         const nextX=p.cx+p.radius*Math.sin(t),nextZ=p.cz+p.radius*.65*Math.cos(t);
         const candidate=surface.move(p.site.lat,p.site.lon,nextX,-nextZ);
         const oldDistance=wetDistance(lastVisitor,p.at),newDistance=wetDistance(lastVisitor,candidate);
-        const clear=nodes.every(other=>{
-          if(other===p||!other.anchor.visible||other.site!==p.site)return true;
-          const distance=wetDistance(other.at,candidate);
-          return distance>=p.model.radius+other.model.radius||distance>wetDistance(other.at,p.at);
-        });
-        if(clear&&(newDistance>.36+p.model.radius||newDistance>=oldDistance)&&surface.canSwim(candidate.lat,candidate.lon,p.model.radius)){
+        if(clearPose(p,candidate)&&(newDistance>.36+p.model.radius||newDistance>=oldDistance)){
           distanceMoved+=Math.hypot(nextX-p.ix,nextZ-p.iz);
           p.ix=nextX;p.iz=nextZ;p.at=candidate;p.t=t;p.blocked=0;
         }else if((p.blocked+=sub)>.65){
@@ -258,7 +266,8 @@ function createOceanEcology(T,parent,definition,surface){
   function clearWalker(point,radius){
     for(const p of nodes){
       if(!p.anchor.visible)continue;
-      const centre=surface.chart(p.at.lat,p.at.lon),dx=point.x-centre.x,dz=point.z-centre.z;
+      const centre=surface.chart(p.at.lat,p.at.lon);if(centre.region!==point.region)continue;
+      const dx=point.x-centre.x,dz=point.z-centre.z;
       const d=Math.hypot(dx,dz),separation=(p.model.radius+radius)/(surface.sceneScale||1);
       if(d<separation){
         point.x=centre.x+separation*(d?dx/d:1);

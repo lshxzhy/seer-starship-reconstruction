@@ -62,7 +62,7 @@
     if(expedition.visitSurface(planetId,id,approachMushroom))return;
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:5,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
+    stagedExpedition={format:5,surfaceLayout:currentVoyageLayout,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
       vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,navTarget:current?.navTarget||parkedLanding?.navTarget,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
@@ -142,7 +142,7 @@
     if(parkedPlanetName()){cockpit.openMap('shuttle-ramp');return;}
     const target=PANO_NAVIGATION.flights.get(berth.landingSiteId);
     if(!target||target.planetId!==berth.destination)return;
-    stagedExpedition={format:5,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
+    stagedExpedition={format:5,surfaceLayout:currentVoyageLayout,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
       phase:'transfer',navTarget:target.id,vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -267,14 +267,21 @@
     const formerBoard=saved.board||saved.expedition?.origin?.board||saved.parkedLanding?.origin?.board;
     boarding.setExpression(saved.faceExpression??formerBoard?.expression??(formerBoard?.smiling?'smile':'neutral'));
     if(saved.pack)boarding.restorePack(saved.pack);
-    dockedVehicle=saved.dockedVehicle?.phase==='docked'?saved.dockedVehicle:null;
+    // The single-sector ocean preview wrote pack v2; the four-district
+    // desktop release wrote pack v3. New voyages identify their own geometry.
+    const inheritedLayout=saved.pack?.version===2?singleOceanLayout:currentVoyageLayout;
+    function markVehicle(vehicle){
+      return vehicle?.version===5&&!vehicle.surfaceLayout?{...vehicle,surfaceLayout:inheritedLayout}:vehicle;
+    }
+    dockedVehicle=saved.dockedVehicle?.phase==='docked'?markVehicle(saved.dockedVehicle):null;
     spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
-    if(parkedLanding&&parkedLanding.vehicle.version<5){
-      const definition=PANO_NAVIGATION.regions[parkedLanding.vehicle.planetId]?.definition||KLOSE_WORLD;
-      parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(parkedLanding.vehicle),
-        ramp:migrateSurfacePoint(parkedLanding.ramp,definition,parkedLanding.vehicle.version,parkedLanding.vehicle.planetRadius)};
+    if(parkedLanding){
+      const vehicle=markVehicle(parkedLanding.vehicle);
+      const definition=PANO_NAVIGATION.regions[vehicle.planetId]?.definition||KLOSE_WORLD;
+      parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(vehicle),
+        ramp:migrateSurfacePoint(parkedLanding.ramp,definition,vehicle.version,vehicle.planetRadius,vehicle.surfaceLayout)};
       if(!parkedLanding.vehicle)parkedLanding=null;
     }
     state.mode=saved.mode;
@@ -283,7 +290,8 @@
     state.room=(state.mode==='board'?habitat.byId.has(saved.room):regions[state.deck].rooms.some(r=>r.id===saved.room))?saved.room:'';
     stagedBoard=state.mode==='board' ? saved.board || {roomId:state.room} : null;
     if(state.mode==='planet'){
-      stagedExpedition=saved.expedition?.origin?saved.expedition:null;
+      const trip=saved.expedition;
+      stagedExpedition=trip?.origin?{...trip,surfaceLayout:trip.surfaceLayout||inheritedLayout,vehicle:markVehicle(trip.vehicle)}:null;
       if(!stagedExpedition){state.mode='board';stagedBoard={roomId:'teleport'};}
     }
     frameSelection();

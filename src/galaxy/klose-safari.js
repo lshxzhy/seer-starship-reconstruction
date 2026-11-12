@@ -165,10 +165,10 @@ function createKloseSafariModel(T,id){
 }
 
 function createKloseSafari(T,surface){
-  const {chart,move,groundCorrection,pools,sceneScale=1}=surface;
+  const {chart,groundCorrection,pools,sceneScale=1}=surface;
   const stations=[],actors=[],labels=new Map();
   let s=null,wet=null,clock=0,stepOrigin=null,strides=0,stepGoal=12,sequence=0,guest=null,guestKey='';
-  let fieldRetryAt=0,guestRetryAt=0,guestRetryKey='';
+  let fieldRetryAt=0,guestRetryAt=0,guestRetryKey='',visitorChart=null,boatChart=null;
   const fieldIds=[10,16,574,690,553,249,414,164,738];
   const anchors=[[3,-4],[-7,0],[9,4],[-3,-8],[1,-12],[-11,3],[12,-3],[-7,10],[4,9]];
   const cube=new T.BoxGeometry(1,1,1),round=new T.SphereGeometry(1,15,11);
@@ -198,11 +198,12 @@ function createKloseSafari(T,surface){
   }
   const enabled=()=>!!s?.active&&Number.isFinite(s.endsAt)&&s.endsAt>Date.now();
   function station(site,near,yAt,hazards,op,x,z,r){
-    const root=new T.Group();root.position.set(x,yAt(x,z),z);near.add(root);
+    const root=new T.Group();root.userData.kloseFixture=true;root.position.set(x,yAt(x,z),z);near.add(root);
     const scale=op==='register'?1:KLOSE_ITEM_SCALE;
     root.scale.setScalar(scale);r*=scale;
-    const item={root,site,near,x,z,op,r,reach:2.35+r};stations.push(item);
-    if(r>.05)hazards.push({x:site.x+x,z:site.z+z,r});
+    const space=surface.placement(site);space.project(root);
+    const item={root,site,near,space,x,z,op,r,reach:2.35/sceneScale+r};stations.push(item);
+    if(r>.05)hazards.push({...space.global(x,z),r});
     return item;
   }
   function register(site,near,yAt,hazards,x,z){
@@ -284,7 +285,7 @@ function createKloseSafari(T,surface){
     const start=stations.length;
     if(site.id==='grassland')register(site,near,yAt,hazards,-4,-14);
     else if(site.id==='wetland'&&!wet){
-      wet={site,near,yAt,hazards,cover};register(site,near,yAt,hazards,1.45,2.2);
+      wet={site,near,yAt,hazards,cover,space:surface.placement(site)};register(site,near,yAt,hazards,1.45,2.2);
       rodStation();treeStation();denStation();
       setState(s);
     }
@@ -303,32 +304,41 @@ function createKloseSafari(T,surface){
   }
   function clear(x,z,r,size,actor){
     if(!wet||Math.hypot(x,z)<1.05+r||Math.abs(x)+r>21.5||Math.abs(z)+r>21.5)return false;
-    const gx=wet.site.x+x,gz=wet.site.z+z;
-    if(wet.hazards.some(h=>Math.hypot(gx-h.x,gz-h.z)<r+h.r))return false;
-    if(pools.some(p=>Math.hypot((gx-p.x)/(p.rx+r),(gz-p.z)/(p.rz+r))<1.06))return false;
+    const global=wet.space.global(x,z),gx=global.x,gz=global.z;
+    if(wet.hazards.some(h=>h.region===global.region&&Math.hypot(gx-h.x,gz-h.z)<r+h.r))return false;
+    if(pools.some(p=>wet.space.region.ids.includes(p.id)&&Math.hypot((gx-p.x)/(p.rx+r),(gz-p.z)/(p.rz+r))<1.06))return false;
     if(!kloseClearsCover(wet.cover,x,z,r,size+.15))return false;
-    if(guest&&guest!==actor&&Math.hypot(guest.x-x,guest.z-z)<guest.r+r)return false;
-    return actors.every(p=>p===actor||Math.hypot(p.x-x,p.z-z)>=p.r+r);
+    function clearsVisitor(point,clearance){
+      if(!point||point.region!==global.region)return true;
+      const gap=Math.hypot(point.x-gx,point.z-gz);
+      if(gap>=r+clearance/sceneScale)return true;
+      if(!actor?.at||actor.spawnPending)return false;
+      const at=wet.space.global(actor.x,actor.z);
+      return gap>Math.hypot(point.x-at.x,point.z-at.z)+1e-6;
+    }
+    if(!clearsVisitor(visitorChart,.35)||!clearsVisitor(boatChart,9))return false;
+    if(guest&&guest!==actor&&!guest.spawnPending&&Math.hypot(guest.x-x,guest.z-z)<guest.r+r)return false;
+    return actors.every(p=>p===actor||p.spawnPending||Math.hypot(p.x-x,p.z-z)>=p.r+r);
   }
   function locate(x,z,model){
     const reach=Math.min(12,Math.max(5.32,model.radius*2.2+1.6)),rings=Math.ceil(reach/.38);
     for(let j=0;j<=rings;j++)for(let k=0,n=Math.max(1,8*j);k<n;k++){
       const a=k*2*Math.PI/n,dx=x+Math.cos(a)*j*.38,dz=z+Math.sin(a)*j*.38;
-      if(clear(dx,dz,model.radius,model.size,null))return {x:dx,z:dz};
+      if(clear(dx,dz,model.radius,model.size,model))return {x:dx,z:dz};
     }
     return null;
   }
   function createActor(id,originX,originZ,method,level){
     const model=createFieldSpirit(T,id,{sceneScale});if(!model)return null;
     const spot=locate(originX,originZ,model);
-    if(!spot){model.dispose();return null;}
-    const {x,z}=spot;
-    const actor={...model,id,key:'wetland-hunt-'+method+'-'+id,method,level:level||8,r:model.radius,x,z,homeX:x,homeZ:z,yaw:0};
+    const {x,z}=spot||{x:originX,z:originZ};
+    const actor={...model,id,key:'wetland-hunt-'+method+'-'+id,method,level:level||8,r:model.radius,x,z,homeX:x,homeZ:z,yaw:0,spawnPending:!spot,retryIn:1};
     model.root.userData.safariKey=actor.key;wet.near.add(model.root);place(actor,0);return actor;
   }
   function place(p,bob){
-    p.at=move(wet.site.lat,wet.site.lon,p.x,-p.z);
-    p.root.position.set(p.x,wet.yAt(p.x,p.z)+groundCorrection(p.at.lat,p.at.lon)+bob+.004,p.z);p.root.rotation.y=p.yaw;
+    p.at=wet.space.at(p.x,p.z);
+    wet.space.pose(p.root,p.x,wet.yAt(p.x,p.z)+groundCorrection(p.at.lat,p.at.lon)+bob+.004,p.z,p.yaw);
+    if(p.spawnPending)p.root.visible=false;
   }
   function buildField(){
     if(!wet||actors.length===fieldIds.length||clock<fieldRetryAt)return;
@@ -349,8 +359,9 @@ function createKloseSafari(T,surface){
     const key=method+'-'+pet.speciesId;if(guestKey===key)return;
     if(guestRetryKey===key&&clock<guestRetryAt)return;
     dropGuest();
+    const local=wet.space.local(viewer);
     const point=method==='fish'?[-6.6,-7.4]:method==='tree'?[5.0,-3.6]:method==='bear'?[-4.0,5.4]:
-      [viewer.x-wet.site.x+1.1,viewer.z-wet.site.z-1.6];
+      [local.x+1.1,local.z-1.6];
     guest=createActor(pet.speciesId,point[0],point[1],method,pet.level);
     if(guest)guestKey=key;else{guestRetryKey=key;guestRetryAt=clock+2;}
   }
@@ -367,28 +378,31 @@ function createKloseSafari(T,surface){
       }
     }
     if(enabled()){
-      buildField();
       for(const p of actors)if(s.fieldRest?.[p.id]>Date.now())p.root.visible=false;
     }else{for(const p of actors)p.root.visible=false;dropGuest();}
   }
-  function patrol(p,i,dt,viewer,boat){
+  function patrol(p,i,dt,viewer){
+    if(p.spawnPending){
+      p.root.visible=false;p.retryIn-=dt;if(p.retryIn>0)return;p.retryIn=1;
+      const spot=locate(p.homeX,p.homeZ,p);if(!spot)return;
+      p.x=spot.x;p.z=spot.z;p.spawnPending=false;
+    }
     if(s.fieldRest?.[p.id]>Date.now()){p.root.visible=false;return;}
     const visible=p.id!==164||clock%57<10||s?.encounter?.pet?.speciesId===164;
     p.root.visible=visible;if(!visible)return;
     const busy=s?.encounter?.method==='field'&&s.encounter.pet?.speciesId===p.id;
     const targetX=p.homeX+2.1*Math.sin(.26*clock+i*2.71),targetZ=p.homeZ+1.55*Math.sin(.34*clock+i*1.66);
-    const dx=busy?viewer.x-wet.site.x-p.x:targetX-p.x,dz=busy?viewer.z-wet.site.z-p.z:targetZ-p.z;
+    const local=wet.space.local(viewer);
+    const dx=busy?local.x-p.x:targetX-p.x,dz=busy?local.z-p.z:targetZ-p.z;
     const angular=Math.atan2(Math.sin(Math.atan2(dx,dz)-p.yaw),Math.cos(Math.atan2(dx,dz)-p.yaw));
     p.yaw+=T.MathUtils.clamp(angular,-dt*3.1,dt*3.1);
     const stride=Math.min(.52*dt,Math.hypot(dx,dz)),x=p.x+stride*Math.sin(p.yaw),z=p.z+stride*Math.cos(p.yaw);
-    const gx=wet.site.x+x,gz=wet.site.z+z;
-    const walk=!busy&&Math.abs(angular)<.19&&clear(x,z,p.r,p.size,p)&&Math.hypot(viewer.x-gx,viewer.z-gz)>p.r+.36&&
-      (!boat||Math.hypot(boat.x-gx,boat.z-gz)>9+p.r);
+    const walk=!busy&&Math.abs(angular)<.19&&clear(x,z,p.r,p.size,p);
     if(walk){p.x=x;p.z=z;}
     p.update(dt,walk?1:0);place(p,walk?.032*Math.abs(Math.sin(clock*6+i)):0);
   }
   function update(dt,viewer,boat){
-    clock+=dt;
+    clock+=dt;visitorChart=viewer;boatChart=boat;
     for(const row of stations){
       if(!row.near.visible)continue;
       if(row.keeper)seerRobots.animate(row.keeper,0,0,dt);
@@ -398,10 +412,16 @@ function createKloseSafari(T,surface){
     if(!wet||!wet.near.visible){stepOrigin=null;return;}
     if(!enabled()){for(const p of actors)p.root.visible=false;if(guest)dropGuest();return;}
     buildField();
-    const at=viewer||wet.site;syncGuest(at);
-    actors.forEach((p,i)=>patrol(p,i,dt,at,boat));
+    const at=viewer?.region===wet.space.region?viewer:wet.space.global(0,0);syncGuest(at);
+    actors.forEach((p,i)=>patrol(p,i,dt,at));
     if(guest){
-      const toward=Math.atan2(at.x-wet.site.x-guest.x,at.z-wet.site.z-guest.z)-guest.yaw;
+      if(guest.spawnPending){
+        guest.root.visible=false;guest.retryIn-=dt;
+        if(guest.retryIn<=0){const spot=locate(guest.homeX,guest.homeZ,guest);guest.retryIn=1;
+          if(spot){guest.x=spot.x;guest.z=spot.z;guest.spawnPending=false;guest.root.visible=true;}}
+        if(guest.spawnPending)return;
+      }
+      const local=wet.space.local(at),toward=Math.atan2(local.x-guest.x,local.z-guest.z)-guest.yaw;
       guest.yaw+=T.MathUtils.clamp(Math.atan2(Math.sin(toward),Math.cos(toward)),-3.2*dt,3.2*dt);
       guest.update(dt);
       place(guest,guest.method==='tree'?.21+.04*Math.sin(clock*3):0);
@@ -409,7 +429,7 @@ function createKloseSafari(T,surface){
   }
   function walked(lat,lon){
     const here=chart(lat,lon);
-    if(!enabled()||!wet||s.encounter||Math.hypot(here.x-wet.site.x,here.z-wet.site.z)>48){
+    if(!enabled()||!wet||here.region!==wet.space.region||s.encounter||Math.hypot(here.x-wet.site.x,here.z-wet.site.z)>48){
       stepOrigin=null;return null;
     }
     const step=stepOrigin?Math.hypot(here.x-stepOrigin.x,here.z-stepOrigin.z):0;
@@ -422,26 +442,27 @@ function createKloseSafari(T,surface){
   function choose(rows,caster,lat,lon,limit,personal=false){
     const at=chart(lat,lon);let best=null,score=Infinity;
     for(const a of rows){
-      if(!a.near.visible||!a.root.visible)continue;
-      const d=Math.hypot(at.x-a.site.x-a.x,at.z-a.site.z-a.z)*sceneScale;
-      if(d>limit||(!caster&&personal&&d>(a.reach?a.reach*sceneScale:3.25)))continue;
+      if(!a.near.visible||!a.root.visible||a.space.region!==at.region)continue;
+      const p=a.space.global(a.x,a.z),d=Math.hypot(at.x-p.x,at.z-p.z)*sceneScale;
+      const reach=personal&&a.p?a.p.r*sceneScale:0;
+      if(d>limit+reach||(!caster&&personal&&d>(a.reach?a.reach*sceneScale:3.25)))continue;
       const rank=caster?caster.intersectObject(a.root,true)[0]?.distance:d;
       if(rank!==undefined&&rank<score){best=a;score=rank;}
     }
     return best;
   }
   function activePets(){
-    return enabled()&&wet?[...actors,...(guest?[guest]:[])].filter(p=>p.root.visible):[];
+    return enabled()&&wet?[...actors,...(guest?[guest]:[])].filter(p=>p.root.visible&&!p.spawnPending):[];
   }
   function petRows(){
-    return activePets().map(p=>({p,site:wet.site,near:wet.near,x:p.x,z:p.z,root:p.root,reach:p.r+2.5/sceneScale}));
+    return activePets().map(p=>({p,site:wet.site,space:wet.space,near:wet.near,x:p.x,z:p.z,root:p.root,reach:p.r+2.5/sceneScale}));
   }
   function contact(p,lat,lon){
-    const at=chart(lat,lon);
+    const at=chart(lat,lon),location=wet.space.global(p.x,p.z);
     const species=SEER_SPIRIT_DATA.index.find(r=>r[0]===p.id);
     return {id:p.key,key:p.key,speciesId:p.id,name:species?.[1]||'捕猎场精灵',kind:'safari',method:p.method,siteId:'wetland',
       level:s?.encounter?.pet?.speciesId===p.id?s.encounter.pet.level:p.level,size:p.size*sceneScale,visible:true,lat:p.at.lat,lon:p.at.lon,
-      distance:Math.hypot(at.x-wet.site.x-p.x,at.z-wet.site.z-p.z)*sceneScale,focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.5,0))};
+      distance:Math.hypot(at.x-location.x,at.z-location.z)*sceneScale,focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.5,0))};
   }
   function observe(lat,lon,key){
     const p=choose(key?petRows().filter(r=>r.p.key===key):petRows(),null,lat,lon,22);
@@ -468,23 +489,24 @@ function createKloseSafari(T,surface){
   }
   function hint(lat,lon){
     const at=chart(lat,lon);
-    if(!wet||Math.hypot(at.x-wet.site.x,at.z-wet.site.z)>44)return '';
+    if(!wet||at.region!==wet.space.region||Math.hypot(at.x-wet.site.x,at.z-wet.site.z)>44)return '';
     if(!enabled())return '湿地捕猎场 · 在入口管理员旁报名';
     const here=action(null,lat,lon);
     if(here)return here.label+'　／　E';
     return '捕猎场 · 岸边垂钓，紫蓝果树下摇树，晶石巢可召来汤尼熊';
   }
   function obstacles(){
-    return activePets().map(p=>({x:wet.site.x+p.x,z:wet.site.z+p.z,r:p.r,top:surface.height(p.at.lat,p.at.lon)+p.size}));
+    return activePets().map(p=>({...wet.space.global(p.x,p.z),r:p.r,top:surface.height(p.at.lat,p.at.lon)+p.size}));
   }
-  function obstacleTop(x,z,r){
+  function obstacleTop(x,z,r,region){
     let top=-Infinity;
     for(const p of stations){
-      if(Math.hypot(x-p.site.x-p.x,z-p.site.z-p.z)>r+p.overhang)continue;
-      const coordinate=move(p.site.lat,p.site.lon,p.x,-p.z);
+      if(p.space.region!==region)continue;
+      const at=p.space.global(p.x,p.z);if(Math.hypot(x-at.x,z-at.z)>r+p.overhang)continue;
+      const coordinate=p.space.at(p.x,p.z);
       top=Math.max(top,surface.height(coordinate.lat,coordinate.lon)+p.top);
     }
-    for(const p of obstacles())if(Math.hypot(x-p.x,z-p.z)<r+p.r)top=Math.max(top,p.top);
+    for(const p of obstacles())if(p.region===region&&Math.hypot(x-p.x,z-p.z)<r+p.r)top=Math.max(top,p.top);
     return top;
   }
   return {instantiate,setState,update,walked,action,hint,observe,pick,obstacles,obstacleTop};

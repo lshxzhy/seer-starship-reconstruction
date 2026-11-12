@@ -59,19 +59,28 @@ function createOceanSurface(T,world){
     const ll=fromXZ(x,z,region);return floorAt(ll.lat,ll.lon);
   }
   const pierRadius=22,pierLevel=1.65;
-  const pierPlane=pierLevel-(pad.x*pad.x+pad.z*pad.z)*sceneScale*sceneScale/(2*radius);
-  const flatHeight=(x,z,y)=>(radius+y)/Math.cos(Math.hypot(x,z)*sceneScale/radius)-radius;
+  const pierPlane=(radius+pierLevel)*Math.cos(Math.hypot(pad.x,pad.z)*sceneScale/radius)-radius;
+  // The berth and access ramp are rigid tangent planes. Intersect the
+  // geographic ray with those same planes for landing, walking and camera height.
+  function planePoint(x,z,planeY){
+    const d=Math.hypot(x,z),arc=d*sceneScale/radius;
+    const factor=d>0?(radius+planeY)*Math.tan(arc)/(d*sceneScale):1;
+    return {x:x*factor,z:z*factor,height:(radius+planeY)/Math.cos(arc)-radius};
+  }
   const pierDistance=Math.hypot(pad.x,pad.z),acrossX=-pad.x/pierDistance,acrossZ=-pad.z/pierDistance;
+  const rampGradient=(seaFloor(0,0)-pierPlane)/(pierDistance-pierRadius);
+  const rampOrigin=seaFloor(0,0);
   function support(x,z,region=layout.source(x,z)){
-    const ground=seaFloor(x,z,region),dx=x-pad.x,dz=z-pad.z;
-    if(!region.ids.includes(pad.id))return ground;
-    if(dx*dx+dz*dz<=pierRadius*pierRadius)return flatHeight(x,z,pierPlane);
-    const along=dx*acrossX+dz*acrossZ,across=dx*acrossZ-dz*acrossX;
-    if(Math.abs(across)<=2.25&&along>=pierRadius-1&&along<=pierDistance+1){
-      const mix=clamp((along-pierRadius)/(pierDistance-pierRadius),0,1);
-      return Math.max(ground,flatHeight(x,z,T.MathUtils.lerp(pierPlane,seaFloor(0,0),mix)));
-    }
-    return ground;
+    const seabed=seaFloor(x,z,region);
+    if(!region.ids.includes(pad.id)||Math.hypot(x,z)>pierDistance+pierRadius+5)return seabed;
+    const deck=planePoint(x,z,pierPlane),dx=deck.x-pad.x,dz=deck.z-pad.z;
+    if(dx*dx+dz*dz<=pierRadius*pierRadius)return deck.height;
+    const zero=planePoint(x,z,0);
+    const alongAtZero=zero.x*acrossX+zero.z*acrossZ;
+    const rampY=(rampOrigin+rampGradient*alongAtZero)/(1-rampGradient*alongAtZero/radius);
+    const ramp=planePoint(x,z,rampY),rx=ramp.x-pad.x,rz=ramp.z-pad.z;
+    const along=rx*acrossX+rz*acrossZ,across=rx*acrossZ-rz*acrossX;
+    return Math.abs(across)<=2.2&&along>=pierRadius-.20&&along<=pierDistance+.60?Math.max(seabed,ramp.height):seabed;
   }
   function height(lat,lon){const {x,z,region}=chart(lat,lon);return support(x,z,region);}
   function point(lat,lon,above=0){
@@ -104,7 +113,6 @@ function createOceanSurface(T,world){
   };
   const globe=new T.Mesh(new T.SphereGeometry(radius,128,80),oceanPaint);root.add(globe);
   const fixedFrame=frame(origin.lat,origin.lon),anchor=fixedFrame.up.clone().multiplyScalar(radius);
-  district.position.copy(anchor);district.quaternion.copy(fixedFrame.quaternion);
   // Local geometry is surveyed in the same east/south chart as the collision model.
   function groundY(x,z){
     const region=layout.source(x,z),d=Math.hypot(x-region.x,z-region.z)*sceneScale;
@@ -112,7 +120,7 @@ function createOceanSurface(T,world){
   }
   const projection=createLayoutProjection(T,layout,frame,groundY,seaFloor);
   const pierTransform=new T.Matrix4().compose(anchor,fixedFrame.quaternion,v(sceneScale,sceneScale,sceneScale));
-  const blockers=[],shapes=new Map(),entries=new Map();
+  const blockers=[],overheads=[],shapes=new Map(),entries=new Map();
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
   const organic=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide});
@@ -160,8 +168,7 @@ function createOceanSurface(T,world){
       s.fragmentShader='varying vec3 reefPlace;uniform float seaClock;\n'+waterLightGLSL+s.fragmentShader.replace('#include <color_fragment>',
         `#include <color_fragment>
          float lightNet=reefLight(reefPlace.xz+.18*reefPlace.y,-reefPlace.y,seaClock);
-         diffuseColor.rgb*=vec3(1.)+vec3(.22,.36,.36)*lightNet*
-           (1.-smoothstep(-.18,0.,reefPlace.y));`);
+         diffuseColor.rgb*=vec3(1.)+vec3(.22,.36,.36)*lightNet*(1.-smoothstep(-.18,0.,reefPlace.y));`);
     };
   }
   function shape(name,g,m=painted){shapes.set(name,{g,m});}
@@ -278,6 +285,24 @@ function createOceanSurface(T,world){
   }
   function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
+  }
+  function recordCover(id,rows=0,sides=0){
+    const source=shapes.get(id).g.attributes.position,vertex=v();
+    const rendered=projection.matrix(temp.matrix.clone()),region=layout.source(temp.position.x,temp.position.z);
+    const step=rows?4:source.count;
+    for(let start=0;start<(rows?rows-1:1);start+=rows?step:1){
+      const box=new T.Box3(),first=rows?start*sides:0,last=rows?Math.min(rows,start+step+1)*sides:source.count;
+      // Use the same rigid placement as the visible arch. Bounds are in
+      // district X/Z, but their elevations are radial metres above sea level.
+      for(let i=first;i<last;i++){
+        vertex.fromBufferAttribute(source,i).applyMatrix4(rendered);
+        const elevation=vertex.length()-radius;
+        const p=chart(Math.atan2(vertex.y,Math.hypot(vertex.x,vertex.z)),Math.atan2(-vertex.z,vertex.x));
+        box.expandByPoint(vertex.set(p.x,elevation,p.z));
+      }
+      overheads.push({region,x:(box.min.x+box.max.x)/2,z:(box.min.z+box.max.z)/2,
+        halfX:(box.max.x-box.min.x)/2,halfZ:(box.max.z-box.min.z)/2,bottom:box.min.y,top:box.max.y});
+    }
   }
   const rodAxis=v(0,1,0);
   function rod(x,y,z,xx,yy,zz,r,tint,shapeId='rod'){
@@ -403,6 +428,7 @@ function createOceanSurface(T,world){
       const a=Math.PI*(i/8),xx=x+6.2*scale*Math.cos(a),yy=base+7.5*scale*Math.sin(a);
       stamp('rock',xx,yy,z,2.45*scale,2.75*scale,2.4*scale,i%2?dark:0x51657a,-.17,.17,a-.8);
       if(i<2||i>6)blockers.push({x:xx,z,r:1.65*scale,top:yy+2.5*scale});
+      else recordCover('rock');
     }
     stamp('lobe',x,base+2.1*scale,z-2.9*scale,5.6*scale,4.4*scale,1.5*scale,0x1b3244);
     for(let j=-2;j<=2;j++)blockers.push({x:x+j*1.95*scale,z:z-3*scale,r:1.5*scale,top:base+4.5*scale});
@@ -501,6 +527,9 @@ function createOceanSurface(T,world){
     for(const side of [-1,1]){
       const s=side===1?1.08:.93,az=side===1?-.045:Math.PI-.14;
       stamp('sanctumSpan',x,y,z,s,s,s,side===1?0x40799b:0x3b7396,0,az);
+      // Bound short successive pieces of the actual arch mesh. A single
+      // bounding box would incorrectly fill the two passable rock windows.
+      recordCover('sanctumSpan',65,8);
       const xx=x+s*(16.85*Math.cos(az)-.84*Math.sin(az)),zz=z+s*(-16.85*Math.sin(az)-.84*Math.cos(az));
       const base=groundY(xx,zz);
       stamp('sanctumSpur',xx,base-.26,zz,2.65,6.4,2.82,0x315674,0,az);
@@ -557,18 +586,20 @@ function createOceanSurface(T,world){
     if(railLast)rod(...railLast,x,pierY+.84,z,.065,0xdfcb8f,'rail');
     railLast=[x,pierY+.84,z];
   }
-  const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=(pierPlane-seaFloor(0,0))/sceneScale;
+  const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart;
+  const rampHeight=along=>(pierPlane+rampGradient*(along-pierRadius))/sceneScale;
+  const rampDrop=rampHeight(rampStart)-rampHeight(rampEnd);
   const rampMid=(rampStart+rampEnd)*.5;
   const rampOrientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(
     v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
     v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
-  temp.position.set(pad.x+acrossX*rampMid,(pierPlane+seaFloor(0,0))*.5/sceneScale-.13,pad.z+acrossZ*rampMid);
+  temp.position.set(pad.x+acrossX*rampMid,rampHeight(rampMid)-.115,rampMid*acrossZ+pad.z);
   temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('panel',0x7696a0);
   for(const sign of [-1,1]){
     let last=null;
     for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
       const x=pad.x+acrossX*along+acrossZ*2.04*sign,z=pad.z+acrossZ*along-acrossX*2.04*sign;
-      const y=T.MathUtils.lerp(pierPlane,seaFloor(0,0),(along-rampStart)/rampRun)/sceneScale;
+      const y=rampHeight(along);
       rod(x,y,z,x,y+1,z,.055,0x70868e,'rail');if(last)rod(...last,x,y+1,z,.062,0xffce74,'rail');
       last=[x,y+1,z];
     }
@@ -613,14 +644,18 @@ function createOceanSurface(T,world){
     batch.userData.surveyProjected=true;district.add(batch);
   }
   entries.clear();
-  for(const b of blockers)if(!b.radial){b.region=layout.source(b.x,b.z);b.top=seaFloor(b.x,b.z)+(b.top-groundY(b.x,b.z))*sceneScale;}
+  for(const b of blockers){
+    b.region??=layout.source(b.x,b.z);
+    b.bottom=seaFloor(b.x,b.z,b.region);
+    if(!b.radial)b.top=b.bottom+(b.top-groundY(b.x,b.z))*sceneScale;
+  }
   const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),springFlags=new Float32Array(bubbleCount),rise=[];
   for(let i=0;i<bubbleCount;i++){
-    const s=sites[i%4],spring=i%4===0&&i%3===0;
+    const s=sites[i%sites.length],spring=s===sites[0]&&i%3===0;
     const x=spring?12+random()*3-1.5:s.x+(random()-.5)*66,z=spring?4+random()*3-1.5:s.z+(random()-.5)*65;
     const y=groundY(x,z);
     springFlags[i]=spring?1:0;
-    rise.push({x,z,y,h:Math.max(4,-seaFloor(x,z)/sceneScale-.3),phase:random(),speed:.22+random()*.38});
+    rise.push({x,z,y,h:Math.max(.3,-seaFloor(x,z)/sceneScale-.3),phase:random(),speed:.22+random()*.38});
   }
   const bubblesAttr=new T.BufferAttribute(bubbles,3);lights.setAttribute('position',bubblesAttr);
   lights.setAttribute('spring',new T.BufferAttribute(springFlags,1));
@@ -647,11 +682,11 @@ function createOceanSurface(T,world){
   }
   groundGeo.setAttribute('color',new T.BufferAttribute(new Float32Array(coords.length*3),3));
   const waterColumn=new T.BufferAttribute(new Float32Array(coords.length),1);
-  seaGeo.setAttribute('waterColumn',waterColumn);
+  seaGeo.setAttribute('waterColumn',waterColumn);groundGeo.setAttribute('waterColumn',waterColumn);
   const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92});
   sandMat.onBeforeCompile=s=>{
     s.uniforms.tideTime=tideTime;
-    s.vertexShader='varying vec2 floorUV;varying float depthBelow;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;depthBelow=-position.y;');
+    s.vertexShader='attribute float waterColumn; varying vec2 floorUV;varying float depthBelow;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;depthBelow=waterColumn;');
     s.fragmentShader='uniform float tideTime;varying vec2 floorUV;varying float depthBelow;\n'+waterLightGLSL+s.fragmentShader.replace('#include <color_fragment>',
       `#include <color_fragment>
       float ripple=sin(floorUV.x*3.+sin(floorUV.y*1.14)+floorUV.y*.75);
@@ -741,53 +776,91 @@ function createOceanSurface(T,world){
     for(const attr of [gp,wp,chartUV,gc,waterColumn])attr.needsUpdate=true;
     groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(.95*patchReach/radius);
   }
-  function canSwim(lat,lon,margin=.4){
-    const {x,z,region}=chart(lat,lon);
-    return blockers.every(b=>b.region!==region||Math.hypot(x-b.x,z-b.z)>b.r+margin/sceneScale);
+  // The pier railing is a circle in its rigid deck plane. Its projection
+  // into the curved ground chart changes slightly towards the outer edge.
+  function railPoint(x,z,region){
+    if(!region.ids.includes(pad.id)||Math.hypot(x-pad.x,z-pad.z)>pierRadius+5)return null;
+    const deck=planePoint(x,z,pierPlane),dx=deck.x-pad.x,dz=deck.z-pad.z;
+    const d=Math.hypot(dx,dz);
+    return d>0&&(dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)?{dx,dz,d}:null;
+  }
+  function railLimit(p,oldX,oldZ,step){
+    const hit=railPoint(p.x,p.z,p.region),skin=.38/sceneScale;
+    if(!hit||Math.abs(hit.d-railRadius)>skin+step)return;
+    const previous=planePoint(oldX,oldZ,pierPlane);
+    const side=Math.hypot(previous.x-pad.x,previous.z-pad.z)<railRadius?-1:1;
+    if(side*(hit.d-railRadius)>=skin)return;
+    const edge=(railRadius+side*skin)/hit.d;
+    const x=pad.x+hit.dx*edge,z=pad.z+hit.dz*edge,distance=Math.hypot(x,z);
+    // Inverse of planePoint in this azimuthal equidistant district.
+    const factor=distance?radius*Math.atan2(distance*sceneScale,radius+pierPlane)/(distance*sceneScale):1;
+    p.x=x*factor;p.z=z*factor;
+  }
+  function canStand(lat,lon,bodyRadius=.28,bodyHeight=1.70){
+    if(![lat,lon,bodyRadius,bodyHeight].every(Number.isFinite)||bodyRadius<0||bodyHeight<0)return false;
+    const {x,z,region}=chart(lat,lon),floor=support(x,z,region),head=floor+bodyHeight,r=bodyRadius/sceneScale;
+    const rail=railPoint(x,z,region);
+    if(rail&&Math.abs(rail.d-railRadius)<r+.078&&head>planePoint(x,z,pierPlane).height-.03)return false;
+    if(blockers.some(b=>b.region===region&&floor<b.top-.03&&head>b.bottom+.03&&Math.hypot(x-b.x,z-b.z)<b.r+r))return false;
+    return !overheads.some(b=>b.region===region&&floor<b.top-.03&&head>b.bottom+.03&&
+      Math.abs(x-b.x)<b.halfX+r&&Math.abs(z-b.z)<b.halfZ+r);
+  }
+  function canSwim(lat,lon,bodyRadius=.4,bodyHeight=1.7){
+    // Fauna rest above the actual bottom. Both the hatch clearance and
+    // the water column must contain the model, including its highest bob.
+    return height(lat,lon)+bodyHeight<=0&&canStand(lat,lon,bodyRadius,bodyHeight);
   }
   function walk(lat,lon,east,north){
-    const at=move(lat,lon,east,north),p=chart(at.lat,at.lon);
-    const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
-    if(p.region.ids.includes(pad.id)&&dist>0&&Math.abs(dist-railRadius)<=.38/sceneScale+Math.hypot(east,north)/sceneScale&&
-        (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
-      const old=chart(lat,lon),side=Math.hypot(old.x-pad.x,old.z-pad.z)<railRadius?-1:1;
-      if(side*(dist-railRadius)<.38/sceneScale){const edge=railRadius+side*.38/sceneScale;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
+    const at=move(lat,lon,east,north),end=chart(at.lat,at.lon),p=chart(lat,lon);
+    if(end.region!==p.region)return at;
+    const steps=Math.max(1,Math.ceil(Math.hypot(east,north)/.20)),sx=(end.x-p.x)/steps,sz=(end.z-p.z)/steps;
+    for(let i=0;i<steps;i++){
+      const oldX=p.x,oldZ=p.z;p.x+=sx;p.z+=sz;
+      railLimit(p,oldX,oldZ,Math.hypot(sx,sz));
+      const floor=support(p.x,p.z,p.region);
+      for(const b of blockers){
+        if(b.region!==p.region||floor>=b.top-.03||floor+1.70<=b.bottom+.03)continue;
+        const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28/sceneScale;
+        if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
+      }
+      const coverFloor=support(p.x,p.z,p.region);
+      for(const b of overheads){
+        if(b.region!==p.region||coverFloor>=b.top-.03||coverFloor+1.70<=b.bottom+.03)continue;
+        const dx=p.x-b.x,dz=p.z-b.z,rx=b.halfX+.28/sceneScale,rz=b.halfZ+.28/sceneScale;
+        if(Math.abs(dx)<rx&&Math.abs(dz)<rz){
+          if(rx-Math.abs(dx)<rz-Math.abs(dz))p.x=b.x+(dx<0?-rx:rx);
+          else p.z=b.z+(dz<0?-rz:rz);
+        }
+      }
+      ecology.clearWalker(p,.28);
     }
-    for(const b of blockers){
-      if(b.region!==p.region)continue;
-      const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28/sceneScale;
-      if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
-    }
-    ecology.clearWalker(p,.28);
     return fromXZ(p.x,p.z,p.region);
   }
   function landingInfo(lat,lon,footprint=12){
-    const {x,z,region}=chart(lat,lon),onPier=region.ids.includes(pad.id)&&Math.hypot(x-pad.x,z-pad.z)+footprint/sceneScale<=pierRadius;
+    const {x,z,region}=chart(lat,lon),near=region.ids.includes(pad.id)&&Math.hypot(x-pad.x,z-pad.z)<pierRadius+5;
+    const deck=near?planePoint(x,z,pierPlane):null;
+    const onPier=near&&Math.hypot(deck.x-pad.x,deck.z-pad.z)+footprint/sceneScale<=pierRadius;
     const h=support(x,z,region),top=Math.max(0,h);
     return {ok:onPier,height:h,top,slope:0,water:!onPier,obstacle:false,
       reason:onPier?'':'下方是海水，请返回浅海登陆平台'};
   }
   function clipCamera(aim,eye){
-    // Clip the third-person boom at the near edge of any reef its line crosses.
-    const ll=p=>({lat:Math.atan2(p.y,Math.hypot(p.x,p.z)),lon:Math.atan2(-p.z,p.x)});
-    const a=ll(aim),b=ll(eye),here=chart(a.lat,a.lon),there=chart(b.lat,b.lon),sight=eye.clone().sub(aim);
-    const x=here.x,z=here.z,y=aim.length()-radius,dx=there.x-x,dz=there.z-z,dy=eye.length()-aim.length();
-    const length2=dx*dx+dz*dz;if(length2<.001)return;
-    let limit=1;
-    for(const b of blockers){
-      if(b.region!==here.region)continue;
-      const rx=x-b.x,rz=z-b.z,t=-(rx*dx+rz*dz)/length2,r=b.r+.24/sceneScale;
-      if(t<0||t>1+r/Math.sqrt(length2))continue;
-      const chord2=r*r-(rx+t*dx)**2-(rz+t*dz)**2;
-      if(chord2<=0)continue;
-      const entry=Math.max(.06,t-Math.sqrt(chord2/length2)-.035);
-      if(entry<limit&&y+dy*entry<=b.top+.18)limit=entry;
+    // A boom is a world-space ray; sample its actual radial height. A line
+    // beneath either rock window stays clear of the spans recorded above it.
+    const sight=eye.clone().sub(aim),length=sight.length();if(length<.20)return;
+    const steps=Math.ceil(length/.25),sample=v(),skin=.12/sceneScale;
+    for(let i=1;i<=steps;i++){
+      sample.copy(aim).addScaledVector(sight,i/steps);
+      const p=chart(Math.atan2(sample.y,Math.hypot(sample.x,sample.z)),Math.atan2(-sample.z,sample.x)),h=sample.length()-radius;
+      if(h<support(p.x,p.z,p.region)+.12||
+         blockers.some(b=>b.region===p.region&&h>b.bottom-.12&&h<b.top+.12&&Math.hypot(p.x-b.x,p.z-b.z)<b.r+skin)||
+         overheads.some(b=>b.region===p.region&&h>b.bottom-.12&&h<b.top+.12&&Math.abs(p.x-b.x)<b.halfX+skin&&Math.abs(p.z-b.z)<b.halfZ+skin)){
+        eye.copy(aim).addScaledVector(sight,(i-1)/steps);return;
+      }
     }
-    if(limit<1)eye.copy(aim).addScaledVector(sight,limit);
   }
   let mode='hidden',elapsed=0,last=null;
-  placeSurfaceDistrict(T,district,projection);
-  const body={root,sites,radius,sceneScale,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
+  const body={root,sites,radius,sceneScale,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canStand,canSwim,clipCamera,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),groundCorrection:()=>0,waterDepth:(lat,lon)=>Math.max(0,-height(lat,lon)),
     landingInfo,flightHeight:(lat,lon,footprint=0)=>{
       const {x,z,region}=chart(lat,lon);
