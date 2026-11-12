@@ -1,6 +1,6 @@
   // The radar plots the installed metric layout. Passage endpoints, doors and
   // lift stops are shared with the walking controller and cabin builders.
-  function createShipMap({container,getState,onTravel,onPlanetTravel,parkedRamp,drawSystemChart,surfaceNavigation,onGuide}) {
+  function createShipMap({container,getState,onTravel,onPlanetTravel,parkedRamp,drawSystemChart,surfaceNavigation,onGuide,onCancelGuide}) {
     const plan=habitat.plan;
     const decks=new Map(plan.levels.map(deck=>[deck.id,deck]));
     const targets=new Map();
@@ -56,13 +56,14 @@
         <div class="sm-chart"><svg role="img" aria-label="舰内平面图"></svg></div>
         <div class="sm-keys"><span><i class="sm-crew-dot"></i>当前位置</span><span><i class="sm-stop-dot"></i>升降站</span><span><i class="sm-route-dash"></i>步行路线</span></div>
         <div class="sm-choices" role="group" aria-label="本层舱室与升降站"></div>
-        <div class="sm-controls"><strong class="sm-target"></strong><span><button type="button" class="ship-key" data-sm-walk hidden>步行引导</button> <button type="button" class="ship-key" data-sm-travel hidden>传送到此</button></span></div>
+        <div class="sm-controls"><strong class="sm-target"></strong><span><button type="button" class="ship-key" data-sm-cancel hidden>取消当前路线</button> <button type="button" class="ship-key" data-sm-walk hidden>步行引导</button> <button type="button" class="ship-key" data-sm-travel hidden>传送到此</button></span></div>
         <p class="sm-route" aria-live="polite"></p>
       </section>`;
     const panel=container.querySelector('.sm-radar'),chart=panel.querySelector('svg');
     const picker=panel.querySelector('[data-sm-deck]'),choices=panel.querySelector('.sm-choices');
     const travel=panel.querySelector('[data-sm-travel]'),text=panel.querySelector('.sm-route');
     const guide=panel.querySelector('[data-sm-walk]'),fieldTools=root.querySelector('[data-field-tools]');
+    const cancel=panel.querySelector('[data-sm-cancel]');
     const horizon=fieldTools.querySelector('[data-twin-horizon]');
     const areaPicker=panel.querySelector('[data-sm-area]'),sitePicker=panel.querySelector('[data-sm-site]');
     const {regions}=PANO_NAVIGATION;
@@ -194,6 +195,7 @@
       const state=getState(),pose=state.active?state.pose:null;
       const visitor=surfaceNavigation(),remote=Boolean(visitor),area=areaPicker.value,planet=area!=='ship';
       const view=[area,remote,sitePicker.value,level,selected,pose?.level,pose?.x.toFixed(1),pose?.z.toFixed(1),
+        visitor?.planetId,visitor?.targetId,visitor?.position.lat,visitor?.position.lon,state.tracking,
         chart.clientWidth,chart.clientHeight].join('|');
       if(view===lastView)return;
       lastView=view;
@@ -201,6 +203,7 @@
       panel.querySelector('[data-sm-site-label]').hidden=!planet;
       panel.querySelector('.sm-keys').hidden=choices.hidden=planet;
       guide.hidden=true;fieldTools.hidden=!visitor||area!==visitor.planetId;
+      cancel.hidden=!(visitor?.targetId||state.active&&state.tracking);
       horizon.hidden=!visitor?.canLookNorth;
       if(planet){
         if(area==='system'){
@@ -277,6 +280,7 @@
       const visitor=surfaceNavigation();if(visitor?.planetId!==areaPicker.value||guide.hidden)return;
       onGuide(visitor.targetId===sitePicker.value?null:sitePicker.value);
     });
+    cancel.addEventListener('click',()=>{if(!cancel.hidden)onCancelGuide();});
     panel.addEventListener('click',select);
     travel.addEventListener('click',()=>{
       if(areaPicker.value==='system'){selectArea(systemDestination);return;}

@@ -34,16 +34,17 @@ function finishSpiritPart(mesh,kind,palette){
   mesh.material=spiritCoating(mesh.material,kind,palette);return mesh;
 }
 function createCompanionFigure(T,id){
-  return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
+  return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createTwinSpiritFigure(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
 // World presentation uses catalogue height once, regardless of the sculpt's native units.
-// Keep the attachment at unit scale: encounter focus points and shadows are in metres.
-const FIELD_SPIRIT_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
-function createFieldSpirit(T,id){
+// A scaled scene receives local dimensions; records convert them back to metres.
+// Keep the attachment at unit scale so its local focus point matches its geometry.
+const FIELD_SPIRIT_SCALE=1.65, FIELD_BOSS_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
+function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
   const centimetres=SEER_SPIRIT_DATA.index.find(row=>row[0]===id)?.[3];
-  const size=FIELD_SPIRIT_SCALE*(centimetres>0?centimetres/100:extent.y);
+  const size=FIELD_SPIRIT_SCALE*(boss?FIELD_BOSS_SCALE:1)*(centimetres>0?centimetres/100:extent.y)/sceneScale;
   const factor=size/Math.max(.01,extent.y),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
   model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
@@ -100,9 +101,10 @@ function createPartnerFigure(T,id){
   function bloom(stage){
     const tall=stage===3,bulb=stage===1,green=0x548544,pale=0xc1d578,pink=0xf48bae;
     oval(0,.55,0,tall?.27:.34,tall?.52:.35,.29,green);
-    oval(0,.73,.22,.24,tall?.29:.25,.16,0xffe3a1);face(.76,.368,.108,.059);
+    oval(0,.73,.22,.24,tall?.29:.25,.16,0xffe3a1);face(.76,.368,.108,bulb?.078:.059);
     for(const s of [-1,1]){
-      oval(s*.17,.18,.02,.105,.215,.12,pale,-s*.16);
+      if(bulb)leaf(s*.17,.015,.02,.063,.35,.054,pale,-s*.17,.09);
+      else oval(s*.17,.18,.02,.105,.215,.12,pale,-s*.16);
       if(bulb){
         const start=[s*.25,.54,.04],end=[s*.54,.67,.08];
         limb(start,end,.081,0xe68aaf);
@@ -116,6 +118,15 @@ function createPartnerFigure(T,id){
         }
         const g=new T.TubeGeometry(new T.CatmullRomCurve3(thread),44,.009,7,false);
         geometries.add(g);body.add(new T.Mesh(g,material(0xae557b)));
+        // The original pink cuffs finish in a folded spiral instead of a round fist.
+        const curl=[];
+        for(let i=0;i<=48;i++){
+          const t=i/48,a=t*Math.PI*4,rad=.060*(1-.89*t);
+          curl.push(new T.Vector3(...end).addScaledVector(axis,.018)
+            .addScaledVector(tangent,rad*Math.cos(a)).addScaledVector(binormal,rad*Math.sin(a)));
+        }
+        const cuff=new T.TubeGeometry(new T.CatmullRomCurve3(curl),48,.0065,7,false);
+        geometries.add(cuff);body.add(new T.Mesh(cuff,material(0x9e4c76)));
       }
       else if(!tall)petals(s*.36,.56,.01,.20,pink,0xffdd7c);
       else leaf(s*.18,.25,-.04,.13,.53,.09,green,-s*.45);
@@ -134,7 +145,29 @@ function createPartnerFigure(T,id){
       }
       g.setAttribute('color',new T.Float32BufferAttribute(colour,3));g.computeVertexNormals();
       const m=material(0xffffff).clone();m.vertexColors=true;geometries.add(g);mats.set('seed-cap',m);bud.geometry=g;bud.material=m;
-      for(const s of [-1,1])oval(s*.20,1.004,.18,.27,.113,.19,0xa4c26d,s*.44);
+      // A continuous slanted leaf brim replaces the two intersecting oval lobes.
+      // Its upturned left edge and hanging right corner follow the classic #001 art.
+      const vertices=[],indices=[],segments=64,rows=10;
+      for(let side=0;side<2;side++)for(let j=0;j<=rows;j++)for(let k=0;k<segments;k++){
+        const a=k*Math.PI*2/segments,t=j/rows,r=.52+.48*t;
+        const x=.48*r*Math.sin(a),z=.34*r*Math.cos(a)+.022;
+        const y=1.035-.135*Math.sin(a)+.095*Math.cos(a)+.065*Math.sin(t*Math.PI)-.095*t*t*t;
+        vertices.push(x,y-side*.022,z);
+        if(j<rows){const p=side*(rows+1)*segments+j*segments+k,q=side*(rows+1)*segments+j*segments+(k+1)%segments;
+          if(side)indices.push(p,q,p+segments,q,q+segments,p+segments);
+          else indices.push(p,p+segments,q,q,p+segments,q+segments);
+        }
+      }
+      const layer=(rows+1)*segments;
+      for(let k=0;k<segments;k++){const a=rows*segments+k,b=rows*segments+(k+1)%segments;indices.push(a,b,a+layer,b,b+layer,a+layer);}
+      const brim=new T.BufferGeometry();brim.setAttribute('position',new T.Float32BufferAttribute(vertices,3));brim.setIndex(indices);brim.computeVertexNormals();
+      geometries.add(brim);
+      const leafHat=new T.Mesh(brim,material(0xb2ce78));finishSpiritPart(leafHat,'petal',mats);body.add(leafHat);
+      for(const a of [-2.1,-.70,.74,2.25]){
+        const seam=[];
+        for(let i=0;i<=22;i++){const t=.20+i/22*1.19;seam.push(new T.Vector3(Math.sin(t)*Math.sin(a)*1.004,Math.cos(t)*1.004,Math.sin(t)*Math.cos(a)*1.004));}
+        const vein=new T.TubeGeometry(new T.CatmullRomCurve3(seam),24,.008,6,false);geometries.add(vein);bud.add(new T.Mesh(vein,material(0x94ac54)));
+      }
       petals(.24,1.35,0,.095,pink,0xf4bdd0);
     }else{
       const top=tall?1.24:1.19;

@@ -517,32 +517,7 @@ function createByronSurface(T,world){
       k.box(pale,x+nx*.41,1.11,z+nz*.41,.17,.21,1.94,0,yaw);
     }
   }
-  for(let j=0;j<4;j++){
-    const x=3.5+j*8.7,z=-58.8+(j===0||j===3?2.0:0);
-    k.disk(purple,x,.62,z,3.27,1.25);k.ring(pale,x,1.32,z,2.79);obstruct(x,z,2.95);
-    if(j===0){
-      k.box(iron,x,3.9,z,3.7,6.6,3.3,-.18,0,-.19,true);k.box(amber,x-.22,3.62,z+1.61,.78,4.7,.52,-.18,0,-.19);
-      k.pipe(pale,[[x-1.9,1.3,z+1.1],[x-2.7,2.22,z+1.21],[x-2.55,4.18,z+.1],[x-1.6,5.6,z-.33]],.43);
-      for(let n=0;n<6;n++)k.box(n%3?cyan:jade,x-1.17+n*.28,6.21,z+.82,.16,.30,.18,-.18,0,-.19);
-    }else if(j===1){
-      k.ball(jade,x,3.72,z,2.7,3.46,2.30,true);k.ring(pale,x,3.75,z+1.87,1.21,1.13,0);k.ball(red,x,3.75,z+2.12,.52,.57,.26);
-      for(const h of [2.29,5.04])k.ring(iron,x,h,z,2.50,2.07);
-      for(let n=0;n<12;n++){const a=tau*n/12;k.ball(green,x+2.73*Math.cos(a),3.1,z+2.27*Math.sin(a),.19,.23,.19);}
-      k.disk(iron,x,6.65,z,1.57,.49);k.disk(green,x,6.93,z,.93,.08);
-    }else if(j===2){
-      k.ball(glass,x,3.82,z,3.05,3.08,2.72,true);k.ring(cyan,x,2.0,z,2.53);k.disk(jade,x,2.45,z,1.05,.45);
-      for(const side of [-1,1])k.pipe(jade,[[x+side*2.96,2.0,z],[x+side*3.01,3.9,z-.2],[x+side*2.27,5.64,z-.6],[x+side*.94,6.61,z-.9]],.27);
-      for(const h of [1.74,1.94,6.52])k.ring(pale,x,h,z,h<2?2.45:1.31,h<2?2.21:1.05);
-      for(let n=0;n<7;n++){
-        const a=n*2.4,h=2.5+n*.38;
-        k.ball(glass,x+1.13*Math.cos(a),h,z+.72*Math.sin(a),.19,.25,.19);
-      }
-    }else{
-      k.box(jade,x,3.36,z,4.63,4.65,4.21,-.16,0,0,true);k.box(iron,x,3.59,z+2.16,2.63,2.4,.23);k.box(cyan,x,3.59,z+2.32,1.98,1.64,.12);
-      for(let n=0;n<4;n++)k.box(iron,x-.44,5.47,z-1.37+n*.79,3.78,.21,.25,-.16);
-      for(const xx of [x-1.95,x+1.95])k.box(pale,xx,3.66,z+1.88,.23,2.95,.26,-.16);
-    }
-  }
+  buildByronTrainingHold(T,k,obstruct);
   const machineX=3.7,machineZ=-36.5;k.disk(hull,machineX,.8,machineZ,2.24,1.58);obstruct(machineX,machineZ,2.12);
   for(let j=0;j<3;j++){
     const a=j*2.1;k.pipe(jade,[[machineX,1.52,machineZ],[machineX+.47*Math.cos(a),2.38,machineZ+.47*Math.sin(a)],[machineX+1.33*Math.cos(a),3.0,machineZ+1.33*Math.sin(a)]],.23);

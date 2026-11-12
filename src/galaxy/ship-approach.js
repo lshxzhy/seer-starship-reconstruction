@@ -17,7 +17,7 @@ function createShipApproach(T,body,saved){
     if(phase!=='landed')return false;
     phase='flying';leg='rise';stage='离开接驳坪';return true;
   }
-  function manual(){auto=null;leg='';stage='舷侧手动驾驶';}
+  function manual(){auto=null;if(leg!=='rise')leg='';stage=leg==='rise'?'离开接驳坪':'舷侧手动驾驶';}
   function departSystem(){if(phase==='landed')launch();auto='outbound';stage='离开拜伦号';}
   function autopilot(destination,site){
     if(destination!=='surface'||(site?.id&&site.id!==berth.id))return false;
@@ -72,7 +72,7 @@ function createShipApproach(T,body,saved){
         stage=overPad?'垂直接驳':'对准拜伦号接驳坪';
       }
       desired.subVectors(mark,position);const gap=desired.length();
-      if(gap)desired.setLength(Math.min(speedLimit,gap*.82,Math.sqrt(1.2*accel*gap)));
+      if(gap)desired.setLength(Math.min(shuttleCruiseSpeed(speedLimit),gap*.82,Math.sqrt(1.2*accel*gap)));
       if(auto==='surface'&&Math.hypot(position.x-socket.x,position.z-socket.z)<1.2){
         desired.x=(socket.x-position.x)*.8;desired.z=(socket.z-position.z)*.8;
       }
@@ -86,7 +86,7 @@ function createShipApproach(T,body,saved){
       roll+=(-(input.turn||0)*.2-roll)*(1-Math.exp(-3*dt));
       attitude.setFromEuler(euler.set(pitch,yaw,0));
       desired.set(input.strafe||0,0,-(input.forward||0)).applyQuaternion(attitude);
-      desired.y+=input.lift||0;desired.clampLength(0,1).multiplyScalar(speedLimit*(input.boost?1:.48));
+      desired.y+=input.lift||0;desired.clampLength(0,1).multiplyScalar(shuttleCruiseSpeed(speedLimit,input.boost));
       if(input.brake)desired.set(0,0,0);
     }
     quaternion.slerp(attitude.setFromEuler(euler.set(pitch,yaw,roll)),1-Math.exp(-5*dt));
@@ -106,8 +106,11 @@ function createShipApproach(T,body,saved){
     position.copy(next);range=position.distanceTo(socket);
   }
   function tick(dt,input={}){
+    if(!Number.isFinite(dt)||dt<=0)return 0;
+    dt=Math.min(dt,.25);
     if(phase==='landed')return dt;
-    timeScale=auto?1.5+4*T.MathUtils.smoothstep(nearestHullDistance(),70,1200):1;
+    if(auto&&hasShuttleControlInput(input))manual();
+    timeScale=1;
     const elapsed=dt*timeScale;let left=elapsed;
     while(phase==='flying'&&left>1e-7){const sub=Math.min(left,.035);step(sub,input);left-=sub;}
     return elapsed;

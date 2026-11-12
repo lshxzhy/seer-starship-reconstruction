@@ -2,7 +2,8 @@
 // X/Z describe one survey in metres. Reverse sides, distances and ramps connect
 // the original stage views without moving the visitor between separate maps.
 const BETA_WORLD=defineTwinWorld({
-  id:'beta',name:'双子贝塔星',radius:35000,lat:.19,lon:-.47,
+  id:'beta',name:'双子贝塔星',radius:7000,previousRadius:35000,lat:.19,lon:-.47,
+  districts:[[['beta-plain'],.19,-.47],[['beta-waste','beta-training','beta-hall'],.37,1.64],[['beta-ruins'],-.40,-2.55]],
   sites:[
     {id:'beta-plain',name:'双子贝塔星',x:0,z:0,mapId:47,lookAt:[4,-32],lookPitch:.22,description:'红褐色巨型掘进机。单目绿灯下方是红色进气口，两条节臂垂下三枚锥钻。'},
     {id:'beta-waste',name:'贝塔星荒原',x:-105,z:-60,mapId:49,lookAt:[-109,-83],lookPitch:.24,description:'青光裂谷贯穿六角电能石层。隔岸可以看见成组的玻璃罩勘察站；左侧圆台通往双子阿尔法星海盗能源站。'},
@@ -11,7 +12,9 @@ const BETA_WORLD=defineTwinWorld({
     {id:'beta-hall',name:'精灵召唤场',x:-258,z:-134.8,mapId:502,lookAt:[-254.3,-153.0],lookPitch:-.14,description:'从入口坡道可见中央黄盘、左蓝右红与后方绿座。穿过嵌有倒三角的中门，即可走进检修通道。'}
   ],
   routes:[['beta-plain','beta-waste'],['beta-plain','beta-ruins'],['beta-waste','beta-training'],['beta-training','beta-hall']],
-  landingSites:[{id:'beta-landing',name:'重机坪',x:1,z:39,description:'巨型掘进机南面的平坦泊点。'}],
+  landingSites:[{id:'beta-landing',name:'重机坪',x:1,z:39,description:'巨型掘进机南面的平坦泊点。'},
+    {id:'beta-waste-landing',name:'荒原北侧泊坪',x:-83,z:-19,description:'避开裂谷的北侧硬地，可步行前往训练场和召唤场。'},
+    {id:'beta-ruins-landing',name:'要塞废墟东侧泊坪',x:145,z:22,description:'残骸区外侧的开放泊坪。'}],
   palette:{soil:0x87726e,rock:0x61575e,highlight:0xaea68a,horizon:0xffbec7,zenith:0x5f5388,haze:0xc4a2a8},
   terrainHeight(x,z){
     const waves=1.15*Math.sin(.025*x+.008*z)+.68*Math.sin(.043*z-.016*x);

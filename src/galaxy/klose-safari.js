@@ -164,7 +164,7 @@ function createKloseSafariModel(T,id){
 }
 
 function createKloseSafari(T,surface){
-  const {chart,move,groundCorrection,pools}=surface;
+  const {chart,move,groundCorrection,pools,sceneScale=1}=surface;
   const stations=[],actors=[],labels=new Map();
   let s=null,wet=null,clock=0,stepOrigin=null,strides=0,stepGoal=12,sequence=0,guest=null,guestKey='';
   const fieldIds=[10,16,574,690,553,249,414,164,738];
@@ -316,7 +316,7 @@ function createKloseSafari(T,surface){
     return null;
   }
   function createActor(id,originX,originZ,method,level){
-    const model=createFieldSpirit(T,id);if(!model)return null;
+    const model=createFieldSpirit(T,id,{sceneScale});if(!model)return null;
     const spot=locate(originX,originZ,model);
     if(!spot){model.dispose();return null;}
     const {x,z}=spot;
@@ -417,8 +417,8 @@ function createKloseSafari(T,surface){
     const at=chart(lat,lon);let best=null,score=Infinity;
     for(const a of rows){
       if(!a.near.visible||!a.root.visible)continue;
-      const d=Math.hypot(at.x-a.site.x-a.x,at.z-a.site.z-a.z);
-      if(d>limit||(!caster&&personal&&d>(a.reach||3.25)))continue;
+      const d=Math.hypot(at.x-a.site.x-a.x,at.z-a.site.z-a.z)*sceneScale;
+      if(d>limit||(!caster&&personal&&d>(a.reach?a.reach*sceneScale:3.25)))continue;
       const rank=caster?caster.intersectObject(a.root,true)[0]?.distance:d;
       if(rank!==undefined&&rank<score){best=a;score=rank;}
     }
@@ -428,14 +428,14 @@ function createKloseSafari(T,surface){
     return enabled()&&wet?[...actors,...(guest?[guest]:[])].filter(p=>p.root.visible):[];
   }
   function petRows(){
-    return activePets().map(p=>({p,site:wet.site,near:wet.near,x:p.x,z:p.z,root:p.root,reach:p.r+2.5}));
+    return activePets().map(p=>({p,site:wet.site,near:wet.near,x:p.x,z:p.z,root:p.root,reach:p.r+2.5/sceneScale}));
   }
   function contact(p,lat,lon){
     const at=chart(lat,lon);
     const species=SEER_SPIRIT_DATA.index.find(r=>r[0]===p.id);
     return {id:p.key,key:p.key,speciesId:p.id,name:species?.[1]||'捕猎场精灵',kind:'safari',method:p.method,siteId:'wetland',
-      level:s?.encounter?.pet?.speciesId===p.id?s.encounter.pet.level:p.level,size:p.size,visible:true,lat:p.at.lat,lon:p.at.lon,
-      distance:Math.hypot(at.x-wet.site.x-p.x,at.z-wet.site.z-p.z),focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.5,0))};
+      level:s?.encounter?.pet?.speciesId===p.id?s.encounter.pet.level:p.level,size:p.size*sceneScale,visible:true,lat:p.at.lat,lon:p.at.lon,
+      distance:Math.hypot(at.x-wet.site.x-p.x,at.z-wet.site.z-p.z)*sceneScale,focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.5,0))};
   }
   function observe(lat,lon,key){
     const p=choose(key?petRows().filter(r=>r.p.key===key):petRows(),null,lat,lon,22);

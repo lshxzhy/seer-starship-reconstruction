@@ -60,12 +60,11 @@ function drawSurfaceMap(chart,{region,selected,ramp,observer,route=[],onSelect})
   const home=definition.sites[0],places=ramp?[...sites,ramp]:sites;
   const offset=p=>navigationDisplacement(home,p,definition);
   const points=new Map(places.map(p=>[p.id,offset(p)]));
-  const regional=points.get(selected)?.distance>800;
+  const focus=places.find(p=>p.id===selected)||observer||home;
   const entries=places.filter(p=>{
     if(p.id===selected||p.id===home.id||route.includes(p.id))return true;
-    const d=points.get(p.id).distance;
-    if(p.id==='shuttle-ramp')return regional||d<=800;
-    return regional?d>800:!p.area;
+    if(!p.area)return true;
+    return navigationDisplacement(focus,p,definition).distance<800;
   });
   const bounds=entries.map(p=>points.get(p.id));
   if(observer)bounds.push(offset(observer));
@@ -80,7 +79,7 @@ function drawSurfaceMap(chart,{region,selected,ramp,observer,route=[],onSelect})
     el.textContent=label;chart.append(el);return el;
   }
   chart.setAttribute('viewBox',`0 0 ${width} ${height}`);chart.replaceChildren();
-  if(!regional)for(const [a,b] of definition.routes){
+  for(const [a,b] of definition.routes){
     const [x1,y1]=xy(points.get(a)),[x2,y2]=xy(points.get(b));
     mark('line',{x1,y1,x2,y2,stroke:'#69a69e','stroke-width':2,'stroke-dasharray':a==='vineway'||b==='vineway'?'4 3':'none'});
   }

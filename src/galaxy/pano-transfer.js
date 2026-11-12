@@ -119,7 +119,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     const end=approachPoint(route),next=limbWaypoint(end);
     range=globalP.distanceTo(end);
     wanted.subVectors(next,globalP);const distance=wanted.length();
-    if(distance>.001)wanted.setLength(Math.min(cruiseLimit,Math.sqrt(2*8000*distance),distance*.72));
+    if(distance>.001)wanted.setLength(Math.min(shuttleCruiseSpeed(cruiseLimit),Math.sqrt(2*8000*distance),distance*.72));
     wanted.add(pano.velocity(route.planet,time,orbitalV));
     stage=next===end?(range<160000?'转移轨道 · 进近':'星际巡航 · '+PANO_ORBITS[route.planet].name):'沿星体边缘绕行';
     along.copy(wanted).sub(pano.velocity(reference,time,orbitalV));
@@ -144,7 +144,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
       limit=Math.min(limit,Math.sqrt(900*900+2*8000*Math.max(0,fromBerth-4200)));
     }
     wanted.set(value('strafe')*.68,value('lift'),-value('forward')).clampLength(0,1);
-    wanted.applyQuaternion(quaternion).multiplyScalar(input.boost?limit:limit*.38);
+    wanted.applyQuaternion(quaternion).multiplyScalar(shuttleCruiseSpeed(limit,input.boost));
     if(input.brake)wanted.set(0,0,0);
     wanted.add(pano.velocity(reference,time,orbitalV));
     stage='星际手动驾驶';range=0;
@@ -219,6 +219,11 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   function tick(dt,input={}){
     if(!Number.isFinite(dt)||!(dt>0))return;
     dt=Math.min(.25,dt);
+    if(hasShuttleControlInput(input)&&(route||(!transit&&local.status().auto))){
+      route=null;
+      if(!transit)local.manual();
+      else{stage='星际手动驾驶';range=0;}
+    }
     if(!transit){
       time+=local.tick(dt,input);
       const s=local.status();syncLocal();
@@ -228,7 +233,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
       if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer();
       return;
     }
-    scale=route?8:1;
+    scale=1;
     let left=dt*scale;
     while(left>1e-7&&transit){
       const step=Math.min(left,.09,3200/Math.max(1,globalV.length()));transferStep(step,input);left-=step;
@@ -258,12 +263,12 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   function snapshot(){
     const record=transit?{phase:'flying',auto:route?.destination||null,p:position.toArray(),v:velocity.toArray(),
       q:quaternion.toArray(),heading:localHeading.copy(forward).applyQuaternion(quaternion).toArray()}:local.snapshot();
-    return {...record,version:3,planetId:reference,orbitTime:time,inTransit:transit,route:route?{...route,site:route.site?
+    return {...record,version:4,planetId:reference,orbitTime:time,inTransit:transit,route:route?{...route,site:route.site?
       {id:route.site.id,name:route.site.name,lat:route.site.lat,lon:route.site.lon}:null}:null};
   }
   function restore(rec){
     rec=compactVehicleRecord(rec,dock);
-    if(rec?.version!==3)return false;
+    if(rec?.version!==4)return false;
     const id=available(rec.planetId)?rec.planetId:'klose';
     const validTime=Number.isFinite(rec.orbitTime)&&rec.orbitTime>=0;
     if(rec.inTransit&&(!tuple(rec.p,3)||!tuple(rec.v,3)||!tuple(rec.q,4)||!validTime))return false;
@@ -273,7 +278,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     if(rec.inTransit){
       reference=id;position.fromArray(rec.p);velocity.fromArray(rec.v);quaternion.fromArray(rec.q).normalize();
       globalP.copy(position).add(pano.center(reference,time,centre));globalV.copy(velocity).add(pano.velocity(reference,time,orbitalV));
-      transit=true;scale=route?8:1;stage=route?'星际巡航续航':'星际手动驾驶';range=route?globalP.distanceTo(approachPoint(route)):0;return true;
+      transit=true;scale=1;stage=route?'星际巡航续航':'星际手动驾驶';range=route?globalP.distanceTo(approachPoint(route)):0;return true;
     }
     createLocal(rec.phase==='docked'?'klose':id,{...rec,version:1});return true;
   }

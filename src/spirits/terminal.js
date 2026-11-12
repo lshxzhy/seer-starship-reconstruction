@@ -19,6 +19,9 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   for(const habitat of Object.values(OCEAN_HABITATS)){
     for(const id of habitat.animals)addOrigin(id,habitat.name+' · '+(id===34?'SPT 首领':'野生'));
   }
+  for(const habitat of Object.values(TWIN_HABITATS)){
+    for(const id of habitat.animals)addOrigin(id,habitat.name+' · 栖地观察');
+  }
   addOrigin(108,'海洋星 · 三层轮换的历史稀有遭遇');
   const safariMethods={field:'场内可见',random:'步行遭遇',fish:'垂钓',tree:'摇树',bear:'闪光晶石'};
   for(const [key,list] of Object.entries(SEER_SPIRIT_DATA.safari)){
@@ -205,18 +208,18 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   function fieldPage(host,state){
     if(!encounter){el(host,'p','spirit-sub','靠近地表的精灵后，可以接触它。');return;}
     const info=game.species(encounter.speciesId);if(!info)return;
-    const role={wild:'野生',rare:'稀有',boss:'首领',event:'活动观察'}[encounter.kind]||'野生';
+    const role=encounter.boss?'首领观察':{wild:'野生',rare:'稀有',boss:'首领',event:'活动观察',observation:'栖地观察'}[encounter.kind]||'野生';
     const columns=el(host,'div','spirit-columns'),art=el(columns,'div'),detail=el(columns,'div');
     figure(art,[{id:info.id,name:info.name}]);el(detail,'span','spirit-catalog-number',number(info.id)+'　'+types(info));
-    el(detail,'h3','spirit-name',info.name);el(detail,'p','',role+'　Lv.'+encounter.level);
-    el(detail,'p','spirit-sub',(OCEAN_HABITATS[encounter.siteId]?.name||KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||locationName())+
-      (encounter.kind==='boss'?'　·　首领挑战':encounter.kind==='event'?'　·　历史活动观察':'　·　可使用精灵胶囊'));
+    el(detail,'h3','spirit-name',info.name);el(detail,'p','',role+(encounter.level?'　Lv.'+encounter.level:''));
+    el(detail,'p','spirit-sub',(TWIN_HABITATS[encounter.siteId]?.name||OCEAN_HABITATS[encounter.siteId]?.name||KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||locationName())+
+      (encounter.kind==='boss'?'　·　首领挑战':encounter.kind==='event'?'　·　历史活动观察':encounter.kind==='observation'?'　·　观察与交流':'　·　可使用精灵胶囊'));
     const row=el(detail,'div','spirit-actions');
     if(encounter.fieldLock){
       el(detail,'p','spirit-sub',encounter.fieldLock);
       if(encounter.speciesId===47&&!state.flameTool)button(row,'去实验室领取喷射器',()=>travelSpt('laboratory'),{action:'spt-lab'});
     }
-    if(encounter.kind!=='event'&&!encounter.fieldLock){
+    if(!['event','observation'].includes(encounter.kind)&&!encounter.fieldLock){
       if(state.party.length)button(row,encounter.kind==='boss'?'挑战首领':'进入对战',()=>act({type:'encounter',encounter:{key:encounter.key,speciesId:info.id,level:encounter.level,kind:encounter.kind,siteId:encounter.siteId}}),{primary:true,action:'encounter'});
       else button(row,'先选择初始伙伴',()=>{page='party';render();},{primary:true,action:'choose'});
     }

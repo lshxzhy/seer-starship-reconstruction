@@ -1,7 +1,10 @@
 // Taomee maps 105, 106, 46 and 407. Walkable distances, hidden backs and the
 // meandering connection between these painted scenes are authored for this world.
+const ALPHA_THERMAL_VENTS=[[-7,-12,3.05],[5,-21,2.75],[-18,-27,2.65],[7,-6,1.95],[-15,3,2.2],[.5,-37,2.35],[-32,-7,2.1],[18,-29,1.8]];
 const ALPHA_WORLD=defineTwinWorld({
-  id:'alpha',name:'双子阿尔法星',radius:38000,lat:.29,lon:-.95,
+  id:'alpha',name:'双子阿尔法星',radius:7600,previousRadius:38000,lat:.29,lon:-.95,
+  districts:[[['alpha-springs'],.29,-.95],[['alpha-rock','alpha-station'],.34,1.16],[['alpha-forest'],-.43,-3.02]],
+  waterAreas:ALPHA_THERMAL_VENTS,
   sites:[
     {id:'alpha-springs',name:'双子阿尔法星 · 温泉群',mapId:105,x:0,z:0,lookAt:[-4,-23],lookPitch:.24,description:'矿物环托住碧色温泉，蒸汽从金色菌台与孔树之间升起。'},
     {id:'alpha-rock',name:'阿尔法星岩地',mapId:106,x:65,z:-103,lookAt:[106,-190],lookPitch:.18,description:'紫色盘根穿过开裂的银灰板岩；巨型豆豆果树与能源高塔分立岩地两侧。'},
@@ -9,7 +12,9 @@ const ALPHA_WORLD=defineTwinWorld({
     {id:'alpha-forest',name:'黑白森林',mapId:407,x:-88,z:-45,lookAt:[-92,-73],lookPitch:.025,horizon:0x9bc797,zenith:0x557d70,haze:0x7d9479,description:'赭色石径通向林间亮处，左侧石标与右侧暖光树洞分守道路两边。'}
   ],
   routes:[['alpha-springs','alpha-rock'],['alpha-springs','alpha-forest'],['alpha-rock','alpha-station']],
-  landingSites:[{id:'alpha-landing',name:'温泉东侧高台',x:29,z:36,description:'温泉盆地东南侧为 L-01 留出的平坦着陆高地。'}],
+  landingSites:[{id:'alpha-landing',name:'温泉东侧高台',x:29,z:36,description:'温泉盆地东南侧为 L-01 留出的平坦着陆高地。'},
+    {id:'alpha-rock-landing',name:'岩地东侧泊坪',x:159,z:-138,description:'岩地与能源站的共同泊坪。'},
+    {id:'alpha-forest-landing',name:'黑白森林西侧泊坪',x:-139,z:-12,description:'林缘开放泊坪，步行进入黑白森林。'}],
   palette:{soil:0xb0b9aa,rock:0x91879d,highlight:0xc2dfca,horizon:0xc0dfcd,zenith:0x536c92,haze:0x9eb9ba},
   terrainHeight(x,z){
     const knoll=(cx,cz,rx,rz)=>Math.exp(-(((x-cx)/rx)**2+((z-cz)/rz)**2));
@@ -161,7 +166,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       stamp(twist,teal,x+size*1.65*Math.cos(a),y,z+size*1.65*Math.sin(a),1.67*size,2.30*size,1.2*size,0,Math.PI-a,0);
     }
   }
-  const ventData=[[-7,-12,3.05],[5,-21,2.75],[-18,-27,2.65],[7,-6,1.95],[-15,3,2.2],[.5,-37,2.35],[-32,-7,2.1],[18,-29,1.8]];
+  const ventData=ALPHA_THERMAL_VENTS;
   const water=new T.ShaderMaterial({uniforms:{clock:{value:0}},vertexShader:`
     varying vec2 disk;varying vec3 eye;void main(){disk=position.xz;mat4 pose=modelViewMatrix;
     #ifdef USE_INSTANCING

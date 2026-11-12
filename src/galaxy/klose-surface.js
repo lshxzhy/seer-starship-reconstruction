@@ -1,7 +1,59 @@
 // Latitude and longitude are radians. One scene unit is one metre. East, up,
 // south form a right-handed local frame everywhere, including at the poles.
+// A district keeps its authored metre chart. Its anchor, rather than its
+// meshes, chooses where it belongs on the globe. Connected underground rooms
+// share an anchor so their entrance, slope and roof remain continuous.
+function createSurfaceLayout(radius,sites,groups,scale=1.7){
+  const wrap=x=>Math.atan2(Math.sin(x),Math.cos(x));
+  const regions=groups.map(([ids,lat,lon])=>{
+    const members=ids.map(id=>sites.find(s=>s.id===id)).filter(Boolean),origin=members[0];
+    return {ids,members,x:origin.x,z:origin.z,lat,lon};
+  });
+  function source(x,z){
+    let best=Infinity,result=regions[0];
+    for(const region of regions)for(const site of region.members){
+      const d=Math.hypot(x-site.x,z-site.z);if(d<best){best=d;result=region;}
+    }
+    return result;
+  }
+  function move(lat,lon,east,north){
+    const d=Math.hypot(east,north);if(!d)return {lat,lon};
+    const a=d/radius,s=Math.sin(a),c=Math.cos(a),cl=Math.cos(lat),sl=Math.sin(lat);
+    const x=cl*c-sl*north/d*s,y=east/d*s;
+    return {lat:Math.atan2(sl*c+cl*north/d*s,Math.hypot(x,y)),lon:wrap(lon+Math.atan2(y,x))};
+  }
+  function displacement(region,lat,lon){
+    const d=wrap(lon-region.lon),c=Math.cos(lat),s=Math.sin(lat);
+    const east=c*Math.sin(d),north=Math.cos(region.lat)*s-Math.sin(region.lat)*c*Math.cos(d);
+    const dot=Math.sin(region.lat)*s+Math.cos(region.lat)*c*Math.cos(d),length=Math.hypot(east,north);
+    if(length<1e-10&&dot<0)return {x:Math.PI*radius,z:0,distance:Math.PI*radius};
+    const factor=length>1e-10?radius*Math.atan2(length,dot)/length:radius;
+    return {x:east*factor,z:-north*factor,distance:radius*Math.atan2(length,dot)};
+  }
+  function fromXZ(x,z,region=source(x,z)){
+    return move(region.lat,region.lon,(x-region.x)*scale,-(z-region.z)*scale);
+  }
+  function chart(lat,lon){
+    let best=null;
+    for(const region of regions){const p=displacement(region,lat,lon);if(!best||p.distance<best.distance)best={...p,region};}
+    return {x:best.region.x+best.x/scale,z:best.region.z+best.z/scale,region:best.region,distance:best.distance};
+  }
+  function detail(p){
+    if(!p.region)return 1;
+    let own=Infinity,other=Infinity;
+    for(const region of regions)for(const site of region.members){
+      const d=Math.hypot(p.x-site.x,p.z-site.z);
+      if(region===p.region)own=Math.min(own,d);else other=Math.min(other,d);
+    }
+    const edge=Math.max(0,Math.min(1,(other-own)/24));
+    const extent=Math.max(0,Math.min(1,(360-own)/100));
+    return edge*edge*(3-2*edge)*extent*extent*(3-2*extent);
+  }
+  return {radius,scale,regions,source,move,chart,fromXZ,detail,displacement};
+}
+
 const KLOSE_WORLD = (() => {
-  const radius = 48000, latitude = .32, longitude = .54;
+  const radius = 9600, latitude = .32, longitude = .54;
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
@@ -29,7 +81,13 @@ const KLOSE_WORLD = (() => {
     ['ridge','蓝脊山鞍部',2880,-1480],['delta','金河口高岸',-2720,-2940],
     ['grove','绯叶林台',4500,1980]
   ].map(([id,name,x,z])=>({id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude))}));
-  return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites};
+  const layout=createSurfaceLayout(radius,[...sites,...landingSites.filter(p=>!sites.some(s=>s.id===p.id))],[
+    [['grassland'],latitude,longitude],[['swamp'],.16,2.12],[['forest'],.65,-2.48],
+    [['vineway','core'],-.52,-.92],[['wetland'],1.02,.91],[['flame'],-.64,2.36],
+    [['sanctuary'],-.47,-2.69],[['ridge'],.63,-.65],[['delta'],-1.00,.33],[['grove'],.08,-1.60]
+  ]);
+  for(const site of [...sites,...landingSites])Object.assign(site,layout.fromXZ(site.x,site.z));
+  return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites,layout,previousRadius:48000};
 })();
 
 function createKloseTerrain(T, definition = KLOSE_WORLD) {
@@ -56,9 +114,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     return {lat:Math.atan2(s*cosA+c*forward*sinA,Math.hypot(radial,side*sinA)),
       lon:unwrap(lon+Math.atan2(side*sinA,radial))};
   }
-  function chart(lat,lon) {
-    return {x:unwrap(lon-origin.lon)*radius*Math.cos(origin.lat),z:(origin.lat-lat)*radius};
-  }
+  function chart(lat,lon) {return definition.layout.chart(lat,lon);}
   function section(x,z,a,b) {
     const dx=b.x-a.x,dz=b.z-a.z,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz));
     return {distance:Math.hypot(x-a.x-t*dx,z-a.z-t*dz),t};
@@ -178,6 +234,8 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     out.height=h;out.water=water;out.rock=rock;out.forest=forest;
     return out;
   }
+  const districtHeights=new Map((definition.layout.regions||[]).map(region=>
+    [region,landform(region.lat,region.lon,region.x,region.z,{}).height]));
   const pads=landingSites.map(s=>({...s,elevation:landform(s.lat,s.lon,s.x,s.z,{}).height}));
   function closestPad(x,z,limit){
     let best=null,bestDistance=limit;
@@ -190,8 +248,19 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   }
   function sample(lat,lon,x,z,out){
     landform(lat,lon,x,z,out);
+    const projected=chart(lat,lon),detail=definition.layout.detail(projected);
+    if(detail<1){
+      const c=Math.cos(lat),field=fractal(c*Math.cos(lon)*9,Math.sin(lat)*9,-c*Math.sin(lon)*9);
+      // The old inter-map road can become the edge of a new district. Match
+      // its plateau first, then descend over a broad belt into the wilderness;
+      // fading directly to the global datum made a 50 m wall at that seam.
+      const plateau=districtHeights.get(projected.region)??out.height;
+      const outer=T.MathUtils.lerp(plateau,68+42*field,smooth(600,2200,projected.distance||0));
+      out.height=T.MathUtils.lerp(outer,out.height,detail);
+      out.water*=detail;out.rock*=detail;out.forest*=detail;
+    }
     const pad=closestPad(x,z,54);
-    if(pad){
+    if(pad&&detail>.5){
       const blend=smooth(20,54,Math.hypot(pad.x-x,pad.z-z));
       out.height=T.MathUtils.lerp(pad.elevation,out.height,blend);
       out.water*=blend;out.rock*=blend;out.forest*=blend;
@@ -208,11 +277,11 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     return new T.Vector3(r*c*Math.cos(lon),r*Math.sin(lat),-r*c*Math.sin(lon));
   }
   function siteAt(lat,lon) {
-    const {x,z}=chart(lat,lon);
+    const p=chart(lat,lon),{x,z}=p;
     let result=null,best=58;
     for (const site of sites) {
       const d=Math.hypot(x-site.x,z-site.z);
-      if (d<best) {best=d; result=site;}
+      if (d<best&&p.region.ids.includes(site.id)) {best=d; result=site;}
     }
     return result;
   }
@@ -223,6 +292,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
 
 function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createKloseTerrain(T,definition)) {
   const {radius,landingSites}=definition;
+  const sceneScale=definition.layout.scale,sceneGroups=[];
   const {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
     closestPad,sample,heightSample,height,point,siteAt,sandstone}=ground;
   const root = new T.Group(), orbital = new T.Group(), local = new T.Group();
@@ -510,7 +580,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       const phase=i*2.39996+zone*.91,ring=spread*Math.sqrt(i/density),x=cx+ring*Math.cos(phase),z=cz+ring*.49*Math.sin(phase);
       const size=3.4+(1-ring/spread)*3.0+1.55*Math.sin(i*2.37+zone*.41)**2,reach=size*(.73+.13*Math.cos(i));
       if(trail(x,z)<reach+4||closestPad(x,z,30+reach)||sites.some(s=>Math.hypot(x-s.x,z-s.z)<40+reach))continue;
-      const lat=origin.lat-z/radius,lon=origin.lon+x/(radius*Math.cos(origin.lat)),land=sample(lat,lon,x,z,{});
+      const {lat,lon}=definition.layout.fromXZ(x,z),land=sample(lat,lon,x,z,{});
       const row=tileRow(lat),col=tileCol(lon,tileCols(row)),key=row+'/'+col;
       const item=vegetation(lat,lon,land,size,true,reach,size*(1.42+.47*Math.sin(phase)**2),phase,
         standPaint[Math.min(standPaint.length-1,tint+(i%3===0?1:0))]);
@@ -693,7 +763,11 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   function padClear(x,z,margin=0){return Boolean(closestPad(x,z,30+margin));}
   function ensureScenery(){
     if(!details){
-      details=createKloseScenery(T,local,{sites,pools,radius,point,frame,move,chart,trail,height,padClear,groundCorrection});
+      const container={add(group){group.scale.setScalar(sceneScale);sceneGroups.push(group);local.add(group);}};
+      details=createKloseScenery(T,container,{sites,pools,radius:radius/sceneScale,sceneScale,point,frame,
+        move:(lat,lon,e,n)=>move(lat,lon,e*sceneScale,n*sceneScale),chart,trail,
+        height:(lat,lon)=>height(lat,lon)/sceneScale,padClear,
+        groundCorrection:(lat,lon)=>groundCorrection(lat,lon)/sceneScale});
       details.setSafariState(safariState);
     }
     return details;
@@ -775,15 +849,19 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     }
     shellCut.value=mode==='flight'?Math.cos(.95*diskRadius/radius):2;
     details.update(lat,lon,dt,altitude,mode==='surface',shuttleStatus);updateGroves(lat,lon,altitude);
+    const viewer=point(lat,lon);
+    for(const group of sceneGroups)group.visible=group.visible&&group.position.distanceTo(viewer)<1200;
   }
   // The flight solver samples the entire footprint before setting the gear
   // down. Keep the lidar envelope separate from the underlying foot height:
   // the centre of a pond is flyable, but is not a place to park the shuttle.
   for(const pool of pools){
-    const lat=origin.lat-pool.z/radius,lon=origin.lon+pool.x/(radius*Math.cos(origin.lat));
+    const {lat,lon}=definition.layout.fromXZ(pool.x,pool.z);
     pool.surface=height(lat,lon)+(pool.id==='core'?.99:.75)+.13;
   }
   function footprintAt(lat,lon,footprint){
+    const physicalFootprint=footprint;
+    footprint/=sceneScale;
     const {x,z}=chart(lat,lon),land=sample(lat,lon,x,z,{}),pad=closestPad(x,z,20);
     let maximum=land.height,slope=0,water=land.water>.49;
     if(pad&&Math.hypot(x-pad.x,z-pad.z)+footprint<20){
@@ -791,10 +869,10 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     }
     for(let i=0;footprint>0&&i<8;i++){
       const angle=tau*i/8;
-      const corner=move(lat,lon,footprint*Math.cos(angle),footprint*Math.sin(angle)),c=chart(corner.lat,corner.lon);
+      const corner=move(lat,lon,physicalFootprint*Math.cos(angle),physicalFootprint*Math.sin(angle)),c=chart(corner.lat,corner.lon);
       const edge=sample(corner.lat,corner.lon,c.x,c.z,heightSample);
       maximum=Math.max(maximum,edge.height);water ||= edge.water>.49;
-      slope=Math.max(slope,Math.atan2(Math.abs(edge.height-land.height),footprint));
+      slope=Math.max(slope,Math.atan2(Math.abs(edge.height-land.height),physicalFootprint));
     }
     let waterLevel=-Infinity;
     for(const pool of pools){
@@ -802,9 +880,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
         water=true;waterLevel=Math.max(waterLevel,pool.surface);
       }
     }
-    let solids=scatterTop(lat,lon,footprint);
+    let solids=scatterTop(lat,lon,physicalFootprint);
     if(Math.abs(x)<470&&Math.abs(z)<370)
-      solids=Math.max(solids,ensureScenery().obstacleTop(x,z,footprint));
+      solids=Math.max(solids,ensureScenery().obstacleTop(x,z,footprint)*sceneScale);
     return {height:land.height,top:Math.max(maximum,waterLevel,solids),slope,water,
       obstacle:solids>land.height+.38};
   }
@@ -816,7 +894,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     return {...result,ok:!reason,reason};
   }
   function walk(lat,lon,east,north){
-    let dest=details?details.walk(lat,lon,east,north):move(lat,lon,east,north);
+    const p=chart(lat,lon),end=move(lat,lon,east,north),q=chart(end.lat,end.lon);
+    let dest=details&&p.region===q.region&&definition.layout.detail(p)>.8?
+      details.walk(lat,lon,east/sceneScale,north/sceneScale):end;
     const cos=Math.max(.000001,Math.cos(lat));
     visitTiles(dest.lat,dest.lon,1,items=>{
       for(const it of items){
@@ -834,6 +914,30 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     ensureScenery().prepareWalk(lat,lon);
     return walk(lat,lon,0,0);
   }
+  function resolveMigration(lat,lon){
+    const start=chart(lat,lon),district=start.region;
+    const stable=at=>{
+      const p=chart(at.lat,at.lon);if(p.region!==district||definition.layout.detail(p)<.86)return false;
+      const base=height(at.lat,at.lon);
+      for(const distance of [1,3])for(const [e,n] of [[distance,0],[-distance,0],[0,distance],[0,-distance]]){
+        const q=move(at.lat,at.lon,e,n);
+        if(Math.abs(height(q.lat,q.lon)-base)>distance*.48)return false;
+      }
+      return true;
+    };
+    const original={lat,lon};
+    if(stable(original))return resolveArrival(lat,lon);
+    const anchors=[...district.members].sort((a,b)=>Math.hypot(start.x-a.x,start.z-a.z)-Math.hypot(start.x-b.x,start.z-b.z));
+    for(const site of anchors){
+      const distance=Math.hypot(site.x-start.x,site.z-start.z),steps=Math.min(128,Math.max(1,Math.ceil(distance/3)));
+      for(let i=1;i<=steps;i++){
+        const t=i/steps,at=definition.layout.fromXZ(start.x+(site.x-start.x)*t,start.z+(site.z-start.z)*t,district);
+        if(!stable(at))continue;
+        const clear=resolveArrival(at.lat,at.lon);if(stable(clear))return clear;
+      }
+    }
+    const home=anchors[0];return resolveArrival(home.lat,home.lon);
+  }
   function dispose() {
     const geometry=new Set(),materials=new Set(),textures=new Set();
     if(terrain)textures.add(terrain.paint);
@@ -843,9 +947,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
   setMode('hidden');
-  return {root,sites,radius,frame,height,groundCorrection,point,move,walk,resolveArrival,siteAt,update,setMode,dispose,
+  return {root,sites,radius,frame,height,groundCorrection,point,move,chart,walk,resolveArrival,resolveMigration,siteAt,update,setMode,dispose,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
-    nearestPipi:(lat,lon,id)=>details?details.nearestPipi(lat,lon,id):null,
+    nearestPipi:(lat,lon,id)=>details?.nearestPipi(lat,lon,id)||null,
     nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,
     spiritObservation:(lat,lon,key)=>details?.spiritObservation(lat,lon,key)||null,
     withdrawSpirit:key=>details?.withdrawSpirit(key)||false,

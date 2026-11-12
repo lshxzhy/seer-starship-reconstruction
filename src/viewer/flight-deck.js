@@ -26,6 +26,7 @@
     root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
     const map=createShipMap({container:pages.get('map').querySelector('[data-navigation-map]'),getState,parkedRamp,drawSystemChart,surfaceNavigation,
       onGuide:id=>{close(false);onGuide(id);canvas.focus({preventScroll:true});},
+      onCancelGuide:()=>{close(false);if(surfaceNavigation())onGuide(null);else boarding.cancelGuide();canvas.focus({preventScroll:true});},
       onTravel:(id,pose)=>{close(false);onTravel(id,pose);canvas.focus({preventScroll:true});},
       onPlanetTravel:(id,planetId)=>{close(false);onPlanetTravel(id,false,planetId);canvas.focus({preventScroll:true});}});
     root.querySelector('[data-twin-horizon]').addEventListener('click',()=>{
@@ -43,7 +44,7 @@
       map.close();inventory.close();exchange.close();current=null;
       overlay.hidden=true;delete stage.dataset.consoleOpen;
       for(const trigger of triggers)trigger.setAttribute('aria-expanded','false');
-      if(focus)(opener||triggers[0]).focus({preventScroll:true});
+      if(focus)canvas.focus({preventScroll:true});
       opener=null;requestFrame();
     }
     function open(key,target=null,fromSurface=false){

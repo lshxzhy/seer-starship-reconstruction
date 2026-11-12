@@ -4,7 +4,7 @@ function createLandingShuttle(T) {
   const root=new T.Group();
   root.name='SEER L-01 · 载人登陆艇';
   const layout=Object.freeze({
-    floorY:1.05,entrance:[0,1.05,4.85],seat:[0,1.05,-2.75],eye:[0,2.12,-2.75],
+    floorY:1.05,entrance:[0,1.05,4.85],seat:[0,1.05,-2.75],eye:[0,2.52,-2.90],cockpitFov:78,
     rampEnd:[0,0,8.65],companion:[1.02,1.05,-1.40],
     feet:[[0,0,-4.3],[-2.93,0,2.75],[2.93,0,2.75]]
   });
@@ -96,8 +96,8 @@ function createLandingShuttle(T) {
   // Cross-sections leave the cockpit canopy and the cabin's side windows
   // transparent. The rear frame is built around an open, human-sized doorway.
   const stations=[
-    [-6.48,.28,.97,1.20,1.38,1.47],[-5.22,1.02,.78,1.14,1.48,1.61],
-    [-4.90,1.20,.70,1.11,1.52,1.72],[-2.16,1.81,.63,1.13,1.79,3.46],
+    [-6.48,.28,.97,1.20,1.38,1.47],[-5.22,1.25,.78,1.14,1.42,2.10],
+    [-4.90,1.52,.70,1.11,1.48,2.72],[-2.16,1.90,.63,1.13,1.70,3.46],
     [-1.76,1.92,.60,1.15,1.88,3.65],[-.22,2.02,.58,1.16,1.90,3.72],
     [1.18,2.02,.59,1.16,1.90,3.72],[2.92,1.94,.61,1.15,1.89,3.68],
     [4.48,1.77,.67,1.16,1.87,3.61],[5.55,1.55,.75,1.16,1.84,3.38]
@@ -109,7 +109,7 @@ function createLandingShuttle(T) {
   for(let i=0;i<rings.length-1;i++){
     for(let j=0;j<10;j++){
       const k=(j+1)%10;
-      const canopy=i===2&&j>=3&&j<=7;
+      const canopy=i>=1&&i<=3&&j>=3&&j<=7;
       const window=(i===4||i===5||i===6)&&(j===3||j===7);
       const m=canopy||window?glass:j===0?edge:j===1||j===8?blue:j===2||j===9?white:cream;
       panel(m,[rings[i][j],rings[i+1][j],rings[i+1][k],rings[i][k]],canopy?'windscreen':window?j:null);
@@ -123,7 +123,9 @@ function createLandingShuttle(T) {
       rod(staticBody,i===2?gold:edge,vector(...r[j]),vector(...r[j+1]),i===3?.058:.038);
     }
   }
-  for(const j of [3,4,7,8])rod(staticBody,edge,vector(...rings[2][j]),vector(...rings[3][j]),.044);
+  // Keep the pressure frame at the edges of the enlarged forward canopy.
+  // The pilot's raised eye has a clear horizon above the low nose and coaming.
+  for(const j of [3,4,7,8])rod(staticBody,edge,vector(...rings[1][j]),vector(...rings[3][j]),.036);
   for(const side of [-1,1]){
     const j=side<0?8:3;
     for(let i=4;i<8;i++)rod(staticBody,gold,vector(...rings[i][j]),vector(...rings[i+1][j]),.045);
@@ -297,10 +299,10 @@ function createLandingShuttle(T) {
     }
   }
   const ctx=display.getContext('2d');
-  const actionPanel=box(staticBody,edge,0,1.373,-4.012,1.40,.084,.17);actionPanel.rotation.x=-.30;
+  const actionPanel=box(staticBody,edge,0,1.373,-4.012,1.62,.084,.17);actionPanel.rotation.x=-.30;
   for(const [i,[act,name,m]] of keys.entries()){
-    const x=(i-1)*.435,angle=-.66;
-    const key=box(root,m,x,1.464,-3.932,.356,.123,.085);
+    const x=(i-1)*.49,angle=-.66;
+    const key=box(root,m,x,1.464,-3.932,.42,.17,.11);
     key.rotation.x=angle;key.name=name;
     key.userData.shuttleAction=act;controls.push(key);
     const print=put(printTile(i*170,370,170,124),printMaterial,staticBody,x,1.464-.044*Math.sin(angle),

@@ -6,7 +6,10 @@
       <div><small>SEER <span>／ SE–A015</span></small><strong data-tag>传送舱</strong></div>
     </header>
     <div class="ship-telemetry"><i aria-hidden="true"></i><span data-status>玩家 SE-00001</span></div>
-    <div class="ship-route-hint" data-route-hint hidden></div>
+    <div class="ship-route">
+      <div class="ship-route-hint" data-route-hint hidden></div>
+      <button type="button" class="ship-key route-cancel" data-route-cancel hidden>取消路线 · Esc</button>
+    </div>
     <div class="ship-car-display" data-lift-readout hidden><span data-car-message></span><span data-car-height></span><progress data-car-progress max="1" value="0" aria-label="升降行程"></progress></div>
     <div class="ship-actions">
       <button type="button" class="ship-key" data-embark hidden>乘廊车去登陆艇</button>
@@ -50,8 +53,10 @@
       </section>
     </div>
     <div class="shuttle-hand" data-shuttle-hand hidden aria-label="登陆艇飞行操纵">
-      <button type="button" data-flight-key="Space">升</button><button type="button" data-flight-key="KeyC">降</button>
-      <button type="button" data-flight-key="ShiftLeft">加力</button><button type="button" data-flight-key="KeyX">制动</button>
+      <button type="button" data-flight-key="ArrowUp" title="方向键 ↑">抬头 ↑</button><button type="button" data-flight-key="ArrowDown" title="方向键 ↓">低头 ↓</button>
+      <button type="button" data-flight-key="Space">升 · 空格</button><button type="button" data-flight-key="KeyC">降 · C</button>
+      <button type="button" data-flight-key="ShiftLeft">加力 · Shift</button><button type="button" data-flight-key="KeyX">制动 · X</button>
+      <button type="button" data-flight-center>正视 · H</button><button type="button" data-flight-unseat>离席 · J</button>
     </div>
     <div class="ship-notice" data-notice role="status" hidden></div>
     <div class="ship-overlay spirit-overlay" data-spirit-overlay hidden>
@@ -67,7 +72,7 @@
         <header class="console-head"><div><small>SE–A015</small><h2 id="ship-panel-title" data-panel-title></h2></div><button type="button" class="ship-dismiss" data-dismiss aria-label="关闭窗口">×</button></header>
         <div data-page="map" hidden><div data-navigation-map></div>
           <div class="ship-row map-field-tools" data-field-tools hidden>
-            <button class="ship-key" type="button" data-twin-horizon hidden>望向双星</button>
+            <button class="ship-key" type="button" data-twin-horizon hidden>望向伴星</button>
             <label>面屏表情 <select data-face-expression="planet"></select></label>
           </div>
         </div>

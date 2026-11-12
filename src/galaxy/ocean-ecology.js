@@ -158,7 +158,7 @@ function createOceanEcology(T,parent,definition,surface){
   ];
   const names={30:'贝尔',33:'利牙鱼',34:'钢牙鲨',108:'布鲁'};
   const nodes=schools.map(([siteId,id,level,x,z],i)=>{
-    const site=definition.sites.find(s=>s.id===siteId),model=createFieldSpirit(T,id);
+    const site=definition.sites.find(s=>s.id===siteId),model=createFieldSpirit(T,id,{boss:id===34});
     const anchor=new T.Group(),turn=new T.Group();anchor.add(turn);turn.add(model.root);parent.add(anchor);
     const key=siteId+'-'+id+'-'+i;anchor.userData.oceanSpirit=key;anchor.visible=false;
     // Reserve a real footprint for the first pose as well as its patrol.
@@ -249,7 +249,7 @@ function createOceanEcology(T,parent,definition,surface){
     for(const p of nodes){
       if(!p.anchor.visible)continue;
       const centre=surface.chart(p.at.lat,p.at.lon),dx=point.x-centre.x,dz=point.z-centre.z;
-      const d=Math.hypot(dx,dz),separation=p.model.radius+radius;
+      const d=Math.hypot(dx,dz),separation=(p.model.radius+radius)/(surface.sceneScale||1);
       if(d<separation){
         point.x=centre.x+separation*(d?dx/d:1);
         point.z=centre.z+separation*(d?dz/d:0);

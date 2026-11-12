@@ -59,6 +59,7 @@
     const routeButton=root.querySelector('[data-delivery-track]');
     const jobRecord=root.querySelector('[data-delivery-record]');
     const routeHint=root.querySelector('[data-route-hint]');
+    const routeCancel=root.querySelector('[data-route-cancel]');
     const guide=createDeliveryGuide();
     const notice=root.querySelector('[data-notice]');
     let noticeTimer=0,drillOwned=false,drillEquipped=false,samples=0,tracking=false;
@@ -117,6 +118,8 @@
       locker.write(pack());flightControls();requestFrame();persist();
     }
     routeButton.addEventListener('click',()=>trackRoute(!tracking));
+    function cancelGuide(){if(active){clearInputs();trackRoute(false);canvas.focus({preventScroll:true});}}
+    routeCancel.addEventListener('click',cancelGuide);
     function useBench(){
       if(!atBench())return;
       if(!drillOwned){drillOwned=true;notifyPlayer('已领取挖矿钻头。在背包中选择钻头即可装备。');}
@@ -613,6 +616,7 @@
       const direction=atPort||(goal()?guide.hint:'')||(ports.length&&!flight.mounted?portGuide:'');
       if(routeHint.textContent!==direction)routeHint.textContent=direction;
       routeHint.hidden=!direction||lifts.riding;
+      routeCancel.hidden=!goal()||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
       if(time-lastLiftReadout>90||arrival){showLift(station);lastLiftReadout=time;}
       const animate=moving||flight.inMotion||lifts.moving;
@@ -622,7 +626,7 @@
     function beginPassengerView(s){
       clearInputs();crewDialogue.close();flight.leave();
       escort.hide();
-      population.setActive(false);guide.hide();routeHint.hidden=true;
+      population.setActive(false);guide.hide();routeHint.hidden=routeCancel.hidden=true;
       stage.dataset.liftTravel='true';
       habitat.updateLiftLOD(s.lineId,s.center.y);
       showLift(s);requestFrame();
@@ -784,7 +788,7 @@
     function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,expression,smiling:expression==='smile',berthRoute,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
-      clearInputs,pack,restorePack,deliver,setExpression,get expression(){return expression;},
+      clearInputs,cancelGuide,pack,restorePack,deliver,setExpression,get expression(){return expression;},
       setEscortSpecies(id){escort.setSpecies(id);requestFrame();},
       setFlameTool(value){
         const equipped=Boolean(value);

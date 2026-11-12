@@ -40,7 +40,7 @@ function kloseCanopyGeometry(T,near){
 }
 
 function createKloseScenery(T, parent, surface) {
-  const {sites,pools,height,frame,move,point,chart,trail,radius,padClear,groundCorrection}=surface;
+  const {sites,pools,height,frame,move,point,chart,trail,radius,padClear,groundCorrection,sceneScale=1}=surface;
   const color=hex=>new T.Color(hex).convertSRGBToLinear();
   const shapes=new Map(),tau=Math.PI*2;
   const rough=new T.MeshStandardMaterial({color:0xffffff,roughness:.84,side:T.DoubleSide});
@@ -544,6 +544,14 @@ function createKloseScenery(T, parent, surface) {
             leaves[(i+j)%leaves.length],.05,turn);
         }
         if(i%2===0)leafFan(x+.12,ground+rise+.32,z-1.2,.62,leaves,7);
+        // Broad stone strata and turf hanging over the lip carry map 10's
+        // terrace shape down to eye level, rather than adding surface noise.
+        if(i%3===0){
+          stamp('boulder',x-.28,ground+rise*.36,z+1.20,1.04,.17,.28,'#d4a578',.02,turn);
+          stamp('boulder',x+.42,ground+rise*.66,z+1.08,.83,.13,.23,'#8b603f',-.02,turn);
+          for(let j=0;j<3;j++)stamp('leaf',x-.60+j*.48,ground+rise-.06,z+.54,
+            .52,.48,.70,leaves[j],.78,Math.PI+.12*(j-1));
+        }
       }
     }
     if(site.id==='swamp') {
@@ -555,6 +563,13 @@ function createKloseScenery(T, parent, surface) {
         tendril([v(x+2.7*dx,g+.65,z+1.5*dz),v(x+3.25*dx,g+.26,z+1.92*dz),
           v(x+3.8*dx,yAt(x+3.8*dx,z+2.38*dz),z+2.38*dz)],.065,'#756849');
       }
+      // Distinct segmented shoulders surround the pale green inner lip.
+      // Keep the visible recess shallow: the source does not show a tunnel.
+      for(let i=0;i<11;i++){
+        const a=.13+i*Math.PI/10,dx=3.10*Math.cos(a),dy=1.44*Math.sin(a);
+        tendril([v(x+dx*.88,g+1.28+dy*.89,z+.65),v(x+dx,g+1.28+dy,z+.90),
+          v(x+dx*1.04,g+1.28+dy*.96,z+.27)],.075,'#e0bc80');
+      }
       for(let i=0;i<14;i++){const a=i*tau/14;obstacle(x+3.47*Math.cos(a),z+2.59*Math.sin(a),.72);}
       obstacle(x,z,2.0);
       for(const side of [-1,1])for(let j=0;j<7;j++){
@@ -562,6 +577,7 @@ function createKloseScenery(T, parent, surface) {
         const y=yAt(xx,zz)+.62,scale=1.5+1.65*Math.sin(f*Math.PI)+.30*f;
         stamp('swampRib',xx,y,zz,1.55,scale,1.35,'#c4a25b',0,side*Math.PI/2-.12,-.11);
         stamp('round',xx,y,zz,1.0,.50,.65,'#8c874c');obstacle(xx,zz,.53);
+        link(v(xx+.12,y+.05,zz),v(xx+.16,y+.18,zz-side*.48),.10,'#b3a169');
       }
       // The rooted opening sits across the bearing of the trail to map 12.
       const rx=-17,rz=-13,ux=.62,uz=-.78,fx=.78,fz=.62;
@@ -582,18 +598,19 @@ function createKloseScenery(T, parent, surface) {
             tendril([knee,coord(side*(foot+.21),.66,toe*.38),tip],.34,'#ac8d55',true);
             obstacle(tip.x,tip.z,.29);
           }
+          const split=coord(side*(foot-.36),3.08,.05),low=coord(side*(foot+.12),.84,.36);
+          tendril([split,coord(side*(foot-.18),2.10,.20),low],.115,'#706a37');
         }
       }
     }
     if(site.id==='forest') {
       for(let i=0;i<6;i++) {
         const x=-14-seed()*5,z=-11+4*i,y=yAt(x,z),s=3.8+seed();
-        stamp('boulder',x,y+.48*s,z,s,s*.72,s*1.2,'#cdad84',0,seed());
+        const az=seed();
+        stamp('boulder',x,y+.19*s,z,s*.97,s*.44,s*1.17,'#95734f',0,az);
+        stamp('porousShelf',x,y+.56*s,z,s,s*.63,s*1.18,'#ffffff',0,az);
+        stamp('porousShelf',x-.25*s,y+.88*s,z-.17*s,s*.73,s*.54,s*.85,'#ffffff',-.025,az+.045);
         obstacle(x,z,s*.79);
-        for(let j=0;j<7;j++) {
-          const a=tau*j/7;
-          stamp('round',x+.72*s*Math.cos(a),y+s*1.02,z+.7*s*Math.sin(a),s*.16,s*.037,s*.25,'#432f28',0,a);
-        }
       }
       for(let i=0;i<18;i++){const a=seed()*tau,r=3+seed()*5;spore(7+r*Math.cos(a),-11+r*Math.sin(a),.29+.43*seed(),'#baa283','#a97d5e');}
       for(let j=0;j<11;j++){
@@ -605,6 +622,10 @@ function createKloseScenery(T, parent, surface) {
         for(let j=0;j<4;j++) {
           const dx=x+j*.43;const g=yAt(dx,z);
           tendril([v(dx+.3,g+12,z),v(dx-.3,g+7.1,z+.4),v(dx,g+.2,z)],.14,j%2?'#777c34':'#9d9d37');
+          // The long green roots remain a separate right-hand silhouette,
+          // with exposed buttress toes instead of a generic tree trunk.
+          for(const side of [-1,1])tendril([v(dx,g+.73,z),v(dx+side*.24,g+.28,z+.16),
+            v(dx+side*.46,yAt(dx+side*.46,z+.37)+.025,z+.37)],.065,'#898f37');
         }
       }
     }
@@ -627,6 +648,14 @@ function createKloseScenery(T, parent, surface) {
       for(let j=0;j<9;j++){
         const a=j*tau/9;
         stamp('rock',x+1.97*Math.cos(a),g+.48,z+1.86*Math.sin(a),.42,.22,.27,'#b0a164',0,-a);
+      }
+      // A low stepped blue shoreline separates the golden wetland water
+      // from the stone island in map 550; keep the approach stones exposed.
+      for(let j=0;j<11;j++){
+        const a=.10+j*.26,px=x+3.27*Math.cos(a),pz=z+2.82*Math.sin(a);
+        if(trail(site.x+px,site.z+pz)<1.6)continue;
+        stamp('boulder',px,yAt(px,pz)+.12,pz,.72,.21,.43,'#806486',.01,-a);
+        stamp('sod',px,yAt(px,pz)+.25,pz,.80,.46,.54,'#6297c7',0,-a);
       }
     }
     for(const p of pools.filter(p=>p.id===site.id)) {
@@ -656,6 +685,17 @@ function createKloseScenery(T, parent, surface) {
         }
         stamp('rock',x,waterLevel+.16,z,1.7,.49,1.35,'#6d7647');
         stamp('rock',x,waterLevel+.49,z,1.32,.17,1.05,'#bd9c5f');
+        // Horn-shaped banks lean into the cyan pool. Their tips stop above
+        // the water, leaving the small central island visible from the entry.
+        for(const [a,length] of [[.35,2.15],[1.75,1.65],[2.72,2.3],[3.90,1.8],[5.20,2.25]]){
+          const c=Math.cos(a),s=Math.sin(a),px=x+(p.rx+.65)*c,pz=z+(p.rz+.65)*s;
+          const gy=Math.max(yAt(px,pz),waterLevel+.03);
+          tendril([v(px,gy-.08,pz),v(px-.45*c,gy+.79,pz-.45*s),
+            v(px-length*.66*c,gy+1.23,pz-length*.66*s),
+            v(px-length*c,waterLevel+.26,pz-length*s)],.33,'#ca82b2',true);
+          tendril([v(px-.10*s,gy+.12,pz+.10*c),v(px-.54*c-.10*s,gy+.83,pz-.54*s+.10*c),
+            v(px-length*.66*c,gy+1.24,pz-length*.66*s)],.045,'#ecc0da');
+        }
       }
     }
     if(site.id==='vineway') {
@@ -678,6 +718,13 @@ function createKloseScenery(T, parent, surface) {
         }
         const edge=x+w-2.7;
         tendril([v(edge,g+2,z-3.7),v(edge-.5,g+1.3,z),v(edge+.35,g+1.8,z+3.7)],.36,rootColor);
+        if(i%2===0){
+          // Exposed red seams stay below the blue growth at the ravine edge.
+          stamp('rock',edge+1.35,g+.48,z,1.12,.41,2.28,'#543242',.09,.18);
+          stamp('lamp',edge+1.24,g+.61,z,.12,.045,1.38,'#bc493e',.03,.12);
+          for(let j=0;j<4;j++)stamp('leaf',edge+.55+j*.27,g+.74,z-.72+j*.41,
+            .63,.48,.91,'#397da3',.32,1.25+j*.35);
+        }
       }
     }
     if(site.id==='core') {
@@ -700,6 +747,13 @@ function createKloseScenery(T, parent, surface) {
       }
       stamp('rock',0,floor+18,0,24,4.1,25,'#4d3c27',.03,.19);
       for(const [x,z,s] of [[9,-16,3.3],[13,-13,4],[14,-10,2.4],[11,-20,3.4],[-17,7,1.85]])crystals(x,z,s);
+      // Layered matrix beneath the upper-right crystal bank makes the
+      // deposit read as a single outcrop rather than scattered gems.
+      for(const [x,z,s] of [[10,-17,1.65],[13,-15,1.85],[14,-12,1.48]]){
+        const g=yAt(x,z);
+        stamp('boulder',x,g+.13,z,s,.34,s*.72,'#775f66',.04,.27);
+        stamp('boulder',x-.18,g+.36,z-.12,s*.79,.16,s*.59,'#b493b5',-.03,.27);
+      }
       for(let j=0;j<13;j++){
         const x=10+j*.38,z=-16+Math.sin(j*.76)*1.1;
         stamp('coreCrystal',x,yAt(x,z)-.035,z,.19,.21+.14*Math.sin(j)**2,.22,'#42bdab',.26,j*.53);
@@ -715,6 +769,21 @@ function createKloseScenery(T, parent, surface) {
         const x=-17.9+i*.78,h=4.85+.32*Math.sin(i*.7);
         tendril([v(x-.32,g+h,-3.95),v(x,g+h+.35,-3.73),v(x+.36,g+h+.54,-4.03)],.077,'#b36744');
       }
+      // The right side of map 10053 has a fallen hollow trunk. Its open
+      // bore and broken branch retain that landmark from the low camera.
+      const logPlace=[[15,16],[15,24],[24,30]].find(([x,z])=>!blocked(x,z,4.5));
+      if(logPlace){
+        const [lx,lz]=logPlace,ly=yAt(lx,lz);
+        stamp('hollowRoot',lx,ly+1.08,lz,1.10,3.35,1.10,'#ffffff',.17,.26,Math.PI/2);
+        for(let j=0;j<5;j++)obstacle(lx-2.7+j*1.35,lz,.74);
+        tendril([v(lx-.50,ly+1.74,lz-.13),v(lx-.98,ly+2.43,lz-.45),v(lx-1.26,ly+2.65,lz-.82)],.22,'#70406a');
+        const coil=[];
+        for(let j=0;j<=24;j++){
+          const t=j/24,a=t*tau*1.6;
+          coil.push(v(lx-2.5+5*t,ly+1.08+.97*Math.cos(a),lz+.96*Math.sin(a)));
+        }
+        tendril(coil,.075,'#2379bd');
+      }
     }
     if(site.id==='sanctuary') {
       const x=0,z=-14,g=yAt(x,z);
@@ -728,6 +797,8 @@ function createKloseScenery(T, parent, surface) {
       for(const [px,pz,s] of [[-7,-15,3.7],[7,-16,3.1],[-8,-21,2.5],[9,-23,4.1]]) {
         const y=yAt(px,pz);stamp('boulder',px,y+s*.57,pz,s*.34,s,s*.31,'#a77861',.16,.26,-.18);
         stamp('facet',px-.05,y+s*.67,pz+.21,s*.24,s*1.5,s*.20,'#e6b792',.16,.26,-.18);
+        for(let j=0;j<3;j++)stamp('boulder',px-.04*j,y+s*(.27+.31*j),pz+.14,
+          s*(.34-.035*j),s*.065,s*.29,j%2?'#99714f':'#d2ab7e',.07,.26,-.18);
         obstacle(px,pz,s*.26);
       }
     }
@@ -797,7 +868,7 @@ function createKloseScenery(T, parent, surface) {
     if(site.id==='grassland'){
       const perches=[[2,-5],[-2,-8],[3,1],[-4,5],[-10,10]];
       for(const [index,[x,z]] of perches.entries()){
-        const pet={...createFieldSpirit(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
+        const pet={...createFieldSpirit(T,10,{sceneScale}),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
           random:randFrom(15831+pipi.length*931),yaw:0,hop:null,goal:null,idle:0,clock:0,at:null};
         // A scenery edit can shift a bed over a traditional perch. Search
         // outwards on open soil instead of instantiating inside its mesh.
@@ -961,7 +1032,7 @@ function createKloseScenery(T, parent, surface) {
       const d=Math.hypot(observer.x-pet.x,observer.z-pet.z);
       if(d<distance){closest=pet;distance=d;}
     }
-    return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:closest.size,visible:true,distance,lat:closest.at.lat,lon:closest.at.lon,
+    return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:closest.size*sceneScale,visible:true,distance:distance*sceneScale,lat:closest.at.lat,lon:closest.at.lon,
       focusPoint:closest.root.localToWorld(v(0,closest.size*.45,.02))}:null;
   }
   function spiritObservation(lat,lon,key){
@@ -978,7 +1049,7 @@ function createKloseScenery(T, parent, surface) {
     if(hunting)return hunting;
     const viewer=chart(lat,lon),roots=[];
     for(const p of [...pipi,...wildlife.inhabitants]){
-      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)<=22)roots.push(p.root);
+      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale<=22)roots.push(p.root);
     }
     const hit=raycaster.intersectObjects(roots,true)[0];
     if(!hit)return null;

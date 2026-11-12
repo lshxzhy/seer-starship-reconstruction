@@ -2,9 +2,9 @@
 // kept their metre layouts, while the three Klose survey pads moved inward.
 const previousPlanetRadius={klose:480000,ocean:410000};
 
-function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
+function compactLegacyPoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
   if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon))return location;
-  const current=definition.radius;
+  const current=definition.previousRadius||definition.radius;
   if(!Number.isFinite(oldRadius)||current===oldRadius)return location;
   const home=definition.sites[0],cos=Math.cos(home.lat);
   const lonDelta=location.lon-home.lon;
@@ -37,14 +37,51 @@ function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[
   return {...location,lat:home.lat-south/current,lon:home.lon+east/(current*cos)};
 }
 
+// Version 4 records retain the old stable place ids. Only physical positions
+// move: a visitor's offset within a district is carried into that district's
+// new spherical anchor. Arbitrary wilderness positions retain their angles.
+function migrateSurfacePoint(location,definition,format=3){
+  if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon)||!definition.layout||format>=4)return location;
+  if(format<3)return compactSurfacePoint(location,definition);
+  const oldRadius=definition.previousRadius,home=definition.sites[0];
+  if(!oldRadius)return location;
+  let x,z;
+  if(definition.id==='alpha'||definition.id==='beta'){
+    const d=surfaceDisplacement(home,location,oldRadius);x=d.east;z=-d.north;
+  }else{
+    const delta=location.lon-home.lon;x=Math.atan2(Math.sin(delta),Math.cos(delta))*oldRadius*Math.cos(home.lat);
+    z=(home.lat-location.lat)*oldRadius;
+  }
+  const region=definition.layout.source(x,z),distance=Math.min(...region.members.map(s=>Math.hypot(x-s.x,z-s.z)));
+  if(distance>550)return {...location};
+  return {...location,...definition.layout.fromXZ(x,z,region)};
+}
+
+function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
+  return migrateSurfacePoint(compactLegacyPoint(location,definition,oldRadius),definition,3);
+}
+
+let formerKloseTerrain=null;
+function previousKloseHeight(lat,lon){
+  if(!formerKloseTerrain){
+    const oldRadius=KLOSE_WORLD.previousRadius,home=KLOSE_WORLD.sites[0];
+    const fromXZ=(x,z)=>({lat:home.lat-z/oldRadius,lon:home.lon+x/(oldRadius*Math.cos(home.lat))});
+    const chart=(a,b)=>({x:Math.atan2(Math.sin(b-home.lon),Math.cos(b-home.lon))*oldRadius*Math.cos(home.lat),z:(home.lat-a)*oldRadius});
+    formerKloseTerrain=createKloseTerrain(T,{...KLOSE_WORLD,radius:oldRadius,
+      sites:KLOSE_WORLD.sites.map(s=>({...s,...fromXZ(s.x,s.z)})),
+      landingSites:KLOSE_WORLD.landingSites.map(s=>({...s,...fromXZ(s.x,s.z)})),layout:{chart,fromXZ,detail:()=>1}});
+  }
+  return formerKloseTerrain.height(lat,lon);
+}
+
 function compactVehicleRecord(record,dock){
-  if(!record||![1,2].includes(record.version))return record;
+  if(!record||![1,2,3].includes(record.version))return record;
   const definition=PANO_NAVIGATION.regions[record.planetId]?.definition||KLOSE_WORLD;
-  const updated={...record,version:3,planetId:definition.id};
+  const updated={...record,version:4,planetId:definition.id};
   const site=(value,body)=>{
     if(!value)return value;
-    const named=body.landingSites.find(s=>s.id===value.id);
-    return named?{...value,lat:named.lat,lon:named.lon}:compactSurfacePoint(value,body);
+    const named=body.landingSites.find(s=>s.id===value.id)||body.sites.find(s=>s.id===value.id);
+    return named?{...value,lat:named.lat,lon:named.lon}:migrateSurfacePoint(value,body,record.version);
   };
   updated.target=site(record.target,definition);
   if(record.route?.site){
@@ -52,10 +89,11 @@ function compactVehicleRecord(record,dock){
     updated.route={...record.route,site:site(record.route.site,body)};
   }
   // Interstellar coordinates are relative to the same moving planet centre.
-  if(record.inTransit||previousPlanetRadius[definition.id]===undefined||
+  if(record.inTransit||!definition.layout||
      !Array.isArray(record.p)||record.p.length!==3||!record.p.every(Number.isFinite))return updated;
-  const position=new T.Vector3().fromArray(record.p),oldRadius=previousPlanetRadius[definition.id];
-  if(position.length()<oldRadius*.99)return null;
+  const position=new T.Vector3().fromArray(record.p),oldRadius=record.version===3?
+    definition.previousRadius:previousPlanetRadius[definition.id]||definition.previousRadius;
+  if(position.length()<oldRadius*.94)return null;
   const altitude=position.length()-oldRadius;
   const ll={lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
   const radial=(lat,lon)=>new T.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon));
@@ -63,18 +101,24 @@ function compactVehicleRecord(record,dock){
   if(definition.id==='klose'&&dock&&altitude>140000&&altitude<150000){
     // The terrain sampler in v0.12 placed the carrier and meadow at these heights.
     const home=definition.sites[0];
-    const formerCentre=radial(home.lat+.18,home.lon+.05).multiplyScalar(oldRadius+145000+795.707971);
+    const formerHeight=record.version===3?previousKloseHeight(home.lat+.18,home.lon+.05):795.707971;
+    const formerCentre=radial(home.lat+.18,home.lon+.05).multiplyScalar(oldRadius+145000+formerHeight);
     if(position.distanceTo(formerCentre)<3500){
-      const formerHome=radial(home.lat,home.lon).multiplyScalar(oldRadius+120.350081);
+      const formerHome=radial(home.lat,home.lon).multiplyScalar(oldRadius+(record.version===3?previousKloseHeight(home.lat,home.lon):120.350081));
       rotation=dock.quaternion.clone().multiply(carrierOrientation(T,formerCentre,formerHome).invert());
       updated.p=position.sub(formerCentre).applyQuaternion(rotation).add(dock.root.position).toArray();
     }
   }
   if(updated.p===record.p){
-    const mapped=compactSurfacePoint(ll,definition);
+    const mapped=migrateSurfacePoint(ll,definition,record.version);
     const weight=record.phase==='landed'?1:1-T.MathUtils.smoothstep(altitude,1500,30000);
-    const up=radial(ll.lat+(mapped.lat-ll.lat)*weight,ll.lon+(mapped.lon-ll.lon)*weight);
-    rotation.setFromUnitVectors(position.clone().normalize(),up);
+    const delta=Math.atan2(Math.sin(mapped.lon-ll.lon),Math.cos(mapped.lon-ll.lon));
+    const to={lat:ll.lat+(mapped.lat-ll.lat)*weight,lon:ll.lon+delta*weight},up=radial(to.lat,to.lon);
+    const tangent=(lat,lon)=>{
+      const east=new T.Vector3(-Math.sin(lon),0,-Math.cos(lon)),normal=radial(lat,lon),south=east.clone().cross(normal);
+      return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(east,normal,south));
+    };
+    rotation.copy(tangent(to.lat,to.lon)).multiply(tangent(ll.lat,ll.lon).invert());
     updated.p=up.multiplyScalar(definition.radius+altitude).toArray();
   }
   for(const field of ['v','heading'])

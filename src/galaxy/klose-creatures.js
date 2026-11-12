@@ -159,21 +159,31 @@ function createKloseSpiritModel(T,id){
       const arm=joint(side*.13,.34,.12,.10,'x',side);
       strand(green,[[0,0,0],[side*.095,-.07,.03],[side*.04,-.10,.12],[-side*.05,-.10,.14]],[.060,.071,.063,.025],arm);
       for(let k=0;k<2;k++)spike('#efcb57',[-side*.035,-.097+.031*k,.125],[-side*(.084+.015*k),-.09+.035*k,.133],.016,arm);
-      oval(green,side*.060,.155,0,.065,.15,.060);
+      strand(green,[[side*.055,.29,0],[side*.052,.18,.01],[side*.022,.065,.02],[0,.012,.02]],[.058,.061,.030,.004]);
       eye(side*.085,.53,.171,.70);
     }
     strand('#526e22',[[-.045,.439,.177],[0,.455,.194],[.045,.435,.175]],[.009,.013,.005]);
     const brow=joint(0,.64,0,.045,'x');
-    strand('#8eae32',[[.14,-.02,.08],[-.03,.02,.14],[-.17,.20,.1],[-.11,.36,.01]], [.12,.146,.117,.085],brow);
-    for(const dx of [-.045,.025,.082]){
-      strand(shade,[[dx+.07,-.08,.17],[dx-.04,.03,.24],[dx-.18,.18,.19],[dx-.12,.32,.10]],[.006,.012,.012,.004],brow);
+    // #016 has one broad, folded cactus blade above the face, with a flattened
+    // front and longitudinal ribs. A round tube obscured this distinctive hook.
+    const crest=new T.Shape();crest.moveTo(.14,-.02);
+    crest.bezierCurveTo(-.10,-.04,-.32,.08,-.29,.32);
+    crest.bezierCurveTo(-.28,.48,-.23,.56,-.13,.55);
+    crest.bezierCurveTo(-.03,.54,-.08,.39,-.105,.27);
+    crest.bezierCurveTo(-.12,.19,-.04,.145,.085,.18);
+    crest.bezierCurveTo(.22,.20,.27,.15,.255,.07);
+    crest.bezierCurveTo(.23,-.015,.17,-.035,.14,-.02);
+    const crestGeo=new T.ExtrudeGeometry(crest,{depth:.105,bevelEnabled:true,bevelSize:.032,bevelThickness:.027,bevelSegments:4,steps:1,curveSegments:20});
+    finishSpiritPart(mesh(crestGeo,'#91b438',[0,0,.095],[1,1,1],brow),'petal',colors);
+    for(const dx of [-.067,0,.067]){
+      strand(shade,[[dx-.15,.52,.232],[dx-.22,.31,.232],[dx-.18,.12,.232],[dx+.06,.055,.232]],[.005,.007,.007,.003],brow);
     }
     for(let i=0;i<19;i++){
       const a=i*2.39996,y=.36+(i%5)*.10;const x=.22*Math.sin(a),z=.154*Math.cos(a);
       if(z>.10&&Math.abs(x)<.155)continue;
       spike('#f2cd58',[x,y,z],[x*1.38,y+.065,z*1.40],.030);
     }
-    for(let j=0;j<3;j++)spike(gold,[-.12+.032*j,.37,.015],[-.17+.068*j,.48+.034*(j%2),.018],.026,brow);
+    for(let j=0;j<3;j++)spike(gold,[-.17+.036*j,.54,.15],[-.23+.090*j,.65+.065*(j%2),.15],.028,brow);
     strand('#87a832',[[.08,.82,-.02],[.22,.75,.0],[.25,.58,.01],[.20,.38,.07]],[.072,.101,.082,.043]);
     strand(shade,[[.10,.86,.035],[.235,.76,.068],[.275,.57,.052],[.214,.39,.096]],[.005,.009,.007,.002]);
   }
@@ -477,7 +487,7 @@ const KLOSE_TERRITORIES={
     sanctuary:[[2197,2,-9,40,'event']]
 };
 function createKloseWildlife(T,surface,meadowBirds){
-  const {move,chart,groundCorrection,pools}=surface;
+  const {move,chart,groundCorrection,pools,sceneScale=1}=surface;
   const inhabitants=[],byKey=new Map(),switches=[];
   let coreStep=0;
   const shieldWindowMs=6500;
@@ -518,13 +528,13 @@ function createKloseWildlife(T,surface,meadowBirds){
   function install(site,near,yAt,hazards,cover){
     if(site.id==='core')installCore(site,near,yAt,hazards);
     for(const [index,row] of (KLOSE_TERRITORIES[site.id]||[]).entries()){
-      const [speciesId,homeX,homeZ,level,kind]=row,model=createFieldSpirit(T,speciesId);
+      const [speciesId,homeX,homeZ,level,kind]=row,model=createFieldSpirit(T,speciesId,{boss:kind==='boss',sceneScale});
       const seed=(speciesId*37+index*19)%97;
       const p={...model,key:site.id+'-'+speciesId+'-'+(index+1),speciesId,level,kind,
         site,near,yAt,hazards,cover,homeX,homeZ,x:homeX,z:homeZ,bodyRadius:model.radius,
         clock:0,yaw:-.3+seed*.031,distance:0,wait:.3+seed*.02,cooldown:0,path:null,walker:null,hits:0};
       if(speciesId===47){
-        p.shieldRadius=Math.max(1.1*FIELD_SPIRIT_SCALE,model.radius*1.30);
+        p.shieldRadius=Math.max(1.1*FIELD_SPIRIT_SCALE/sceneScale,model.radius*1.30);
         p.radius=p.shieldRadius;p.shieldHeight=p.size*1.21;
       }
       let placed=false;
@@ -690,12 +700,12 @@ function createKloseWildlife(T,surface,meadowBirds){
     }
   }
   function record(p,viewer){
-    const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z);
+    const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale;
     const lock=p.shield?.visible?'装备火焰喷射器，连续照射护膜（'+p.hits+'/3）':
       p.speciesId===83&&p.hits<3?'向探头的依依照射三次（'+p.hits+'/3）':
       p.speciesId===442&&!p.hits?'对探头的闪光依依照射一次':'';
     return {key:p.key,id:p.key,speciesId:p.speciesId,name:KLOSE_SPECIMENS[p.speciesId][0],siteId:p.site.id,fieldLock:lock,
-      size:p.size,level:p.level,kind:p.kind,visible:true,lat:p.at.lat,lon:p.at.lon,distance,
+      size:p.size*sceneScale,level:p.level,kind:p.kind,visible:true,lat:p.at.lat,lon:p.at.lon,distance,
       focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.48,0))};
   }
   function observation(lat,lon,key){
@@ -703,7 +713,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     const options=key?[byKey.get(key)]:inhabitants;
     for(const p of options){
       if(!p||!p.root.visible||!p.near.visible)continue;
-      const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z);
+      const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale;
       if((!best||distance<best.distance)&&distance<=40)best=record(p,viewer);
     }
     return best;

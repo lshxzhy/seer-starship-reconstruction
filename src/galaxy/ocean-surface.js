@@ -1,7 +1,7 @@
 // Taomei's map table connects 20 → 21 → 22 and, in a later chapter, 22 → 737.
 // The floating L-01 berth is expedition equipment. All natural ground is submerged.
 const OCEAN_WORLD=(()=>{
-  const radius=41000,lat=.24,lon=-.43;
+  const radius=8200,lat=.24,lon=-.43;
   const at=(id,name,x,z,description,mapId)=>({id,name,x,z,description,mapId,
     lat:lat-z/radius,lon:lon+x/(radius*Math.cos(lat))});
   const sites=[
@@ -13,11 +13,13 @@ const OCEAN_WORLD=(()=>{
   ];
   const routes=sites.slice(1).map((site,i)=>[sites[i].id,site.id]);
   const landingSites=[at('ocean-shallows','浅海登陆平台',24,-37,'海洋星水面上的 L-01 人工泊台',null)];
-  return {id:'ocean',name:'海洋星',radius,sites,landingSites,routes};
+  const layout=createSurfaceLayout(radius,sites,[[sites.map(s=>s.id),lat,lon]]);
+  for(const site of [...sites,...landingSites])Object.assign(site,layout.fromXZ(site.x,site.z));
+  return {id:'ocean',name:'海洋星',radius,sites,landingSites,routes,layout,previousRadius:41000};
 })();
 
 function createOceanSurface(T,world){
-  const {radius,sites,landingSites}=OCEAN_WORLD,origin=sites[0],pad=landingSites[0];
+  const {radius,sites,landingSites,layout}=OCEAN_WORLD,origin=sites[0],pad=landingSites[0],sceneScale=layout.scale;
   const tau=2*Math.PI,clamp=T.MathUtils.clamp,smooth=T.MathUtils.smoothstep;
   const root=new T.Group(),district=new T.Group(),terrain=new T.Group(),fauna=new T.Group();
   root.name='海洋星';root.add(terrain,district,fauna);world.add(root);
@@ -36,8 +38,7 @@ function createOceanSurface(T,world){
     const radial=c*cz-s*north/dist*sz,side=east/dist*sz;
     return {lat:Math.atan2(s*cz+c*north/dist*sz,Math.hypot(radial,side)),lon:wrap(lon+Math.atan2(side,radial))};
   }
-  const chart=(lat,lon)=>({x:wrap(lon-origin.lon)*radius*Math.cos(origin.lat),z:(origin.lat-lat)*radius});
-  const fromXZ=(x,z)=>({lat:origin.lat-z/radius,lon:origin.lon+x/(radius*Math.cos(origin.lat))});
+  const chart=(lat,lon)=>layout.chart(lat,lon),fromXZ=(x,z)=>layout.fromXZ(x,z);
   const depthMarks=[6,27,49,64];
   function seaFloor(x,z){
     const rough=.46*Math.sin(x*.095+z*.041)*Math.cos(z*.08)+.18*Math.sin(x*.27-z*.10);
@@ -54,14 +55,16 @@ function createOceanSurface(T,world){
     return T.MathUtils.lerp(local,-89+12*Math.sin(x*.00038)*Math.cos(z*.00051),smooth(reach,285,520));
   }
   const pierRadius=22,pierLevel=1.65;
+  const pierPlane=pierLevel-(pad.x*pad.x+pad.z*pad.z)*sceneScale*sceneScale/(2*radius);
+  const flatHeight=(x,z,y)=>(radius+y)/Math.cos(Math.hypot(x,z)*sceneScale/radius)-radius;
   const pierDistance=Math.hypot(pad.x,pad.z),acrossX=-pad.x/pierDistance,acrossZ=-pad.z/pierDistance;
   function support(x,z){
     const ground=seaFloor(x,z),dx=x-pad.x,dz=z-pad.z;
-    if(dx*dx+dz*dz<=pierRadius*pierRadius)return pierLevel;
+    if(dx*dx+dz*dz<=pierRadius*pierRadius)return flatHeight(x,z,pierPlane);
     const along=dx*acrossX+dz*acrossZ,across=dx*acrossZ-dz*acrossX;
     if(Math.abs(across)<=2.25&&along>=pierRadius-1&&along<=pierDistance+1){
       const mix=clamp((along-pierRadius)/(pierDistance-pierRadius),0,1);
-      return Math.max(ground,T.MathUtils.lerp(pierLevel,seaFloor(0,0),mix));
+      return Math.max(ground,flatHeight(x,z,T.MathUtils.lerp(pierPlane,seaFloor(0,0),mix)));
     }
     return ground;
   }
@@ -113,7 +116,7 @@ function createOceanSurface(T,world){
   const fixedFrame=frame(origin.lat,origin.lon),anchor=fixedFrame.up.clone().multiplyScalar(radius);
   district.position.copy(anchor);district.quaternion.copy(fixedFrame.quaternion);
   // Local geometry is surveyed in the same east/south chart as the collision model.
-  function groundY(x,z){return seaFloor(x,z)-(x*x+z*z)/(2*radius);}
+  function groundY(x,z){return seaFloor(x,z)/sceneScale-(x*x+z*z)*sceneScale/(2*radius);}
   const blockers=[],shapes=new Map(),entries=new Map();
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
@@ -534,7 +537,7 @@ function createOceanSurface(T,world){
     for(let j=0;j<4;j++)stamp('tube',x+sign*(2.7+j*.38),groundY(x,z),z+j*.30,.32,.78+j*.23,.34,j%2?0x8ed568:0xa8e28e);
   }
   // An over-water platform, landing stripe and descending access ramp share the support function.
-  const pierY=pierLevel-(pad.x*pad.x+pad.z*pad.z)/(2*radius);
+  const pierY=pierPlane/sceneScale;
   stamp('disk',pad.x,pierY-.44,pad.z,pierRadius,.88,pierRadius,0x567982);
   stamp('disk',pad.x,pierY-.026,pad.z,pierRadius-.15,.052,pierRadius-.15,0x9caaa5);
   stamp('ring',pad.x,pierY+.04,pad.z,12.2,12.2,.20,0xf0db8f,Math.PI/2);
@@ -548,18 +551,18 @@ function createOceanSurface(T,world){
     if(railLast)rod(...railLast,x,pierY+.84,z,.065,0xdfcb8f);
     railLast=[x,pierY+.84,z];
   }
-  const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=pierLevel-seaFloor(0,0);
+  const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=(pierPlane-seaFloor(0,0))/sceneScale;
   const rampMid=(rampStart+rampEnd)*.5;
   const rampOrientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(
     v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
     v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
-  temp.position.set(pad.x+acrossX*rampMid,(pierLevel+seaFloor(0,0))*.5-.13,pad.z+acrossZ*rampMid);
+  temp.position.set(pad.x+acrossX*rampMid,(pierPlane+seaFloor(0,0))*.5/sceneScale-.13,pad.z+acrossZ*rampMid);
   temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('box',0x7696a0);
   for(const sign of [-1,1]){
     let last=null;
     for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
       const x=pad.x+acrossX*along+acrossZ*2.04*sign,z=pad.z+acrossZ*along-acrossX*2.04*sign;
-      const y=T.MathUtils.lerp(pierLevel,seaFloor(0,0),(along-rampStart)/rampRun);
+      const y=T.MathUtils.lerp(pierPlane,seaFloor(0,0),(along-rampStart)/rampRun)/sceneScale;
       rod(x,y,z,x,y+1,z,.055,0x70868e);if(last)rod(...last,x,y+1,z,.062,0xffce74);
       last=[x,y+1,z];
     }
@@ -659,33 +662,34 @@ function createOceanSurface(T,world){
   }
   function canSwim(lat,lon,margin=.4){
     const {x,z}=chart(lat,lon);
-    return blockers.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+margin);
+    return blockers.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+margin/sceneScale);
   }
   function walk(lat,lon,east,north){
     const at=move(lat,lon,east,north),p=chart(at.lat,at.lon);
     const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
-    if(dist>0&&Math.abs(dist-railRadius)<=.38+Math.hypot(east,north)&&
+    if(dist>0&&Math.abs(dist-railRadius)<=.38/sceneScale+Math.hypot(east,north)/sceneScale&&
         (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
       const old=chart(lat,lon),side=Math.hypot(old.x-pad.x,old.z-pad.z)<railRadius?-1:1;
-      if(side*(dist-railRadius)<.38){const edge=railRadius+side*.38;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
+      if(side*(dist-railRadius)<.38/sceneScale){const edge=railRadius+side*.38/sceneScale;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
     }
     for(const b of blockers){
-      const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28;
+      const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28/sceneScale;
       if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
     }
     ecology.clearWalker(p,.28);
     return fromXZ(p.x,p.z);
   }
   function landingInfo(lat,lon,footprint=12){
-    const {x,z}=chart(lat,lon),onPier=Math.hypot(x-pad.x,z-pad.z)+footprint<=pierRadius;
+    const {x,z}=chart(lat,lon),onPier=Math.hypot(x-pad.x,z-pad.z)+footprint/sceneScale<=pierRadius;
     const h=support(x,z),top=Math.max(0,h);
     return {ok:onPier,height:h,top,slope:0,water:!onPier,obstacle:false,
       reason:onPier?'':'下方是海水，请返回浅海登陆平台'};
   }
   function clipCamera(aim,eye){
     // Clip the third-person boom at the near edge of any reef its line crosses.
-    const here=aim.clone().sub(anchor),sight=eye.clone().sub(aim),x=here.dot(fixedFrame.east),z=here.dot(fixedFrame.south);
-    const y=here.dot(fixedFrame.up),dx=sight.dot(fixedFrame.east),dz=sight.dot(fixedFrame.south),dy=sight.dot(fixedFrame.up);
+    const here=aim.clone().sub(anchor).divideScalar(sceneScale),sight=eye.clone().sub(aim);
+    const localSight=sight.clone().divideScalar(sceneScale),x=here.dot(fixedFrame.east),z=here.dot(fixedFrame.south);
+    const y=here.dot(fixedFrame.up),dx=localSight.dot(fixedFrame.east),dz=localSight.dot(fixedFrame.south),dy=localSight.dot(fixedFrame.up);
     const length2=dx*dx+dz*dz;if(length2<.001)return;
     let limit=1;
     for(const b of blockers){
@@ -699,11 +703,12 @@ function createOceanSurface(T,world){
     if(limit<1)eye.copy(aim).addScaledVector(sight,limit);
   }
   let mode='hidden',elapsed=0,last=null;
-  const body={root,sites,radius,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
+  placeSurfaceDistrict(T,district,layout,frame,radius);
+  const body={root,sites,radius,sceneScale,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),groundCorrection:()=>0,waterDepth:(lat,lon)=>Math.max(0,-height(lat,lon)),
     landingInfo,flightHeight:(lat,lon,footprint=0)=>{
       const {x,z}=chart(lat,lon);
-      return Math.hypot(x-pad.x,z-pad.z)<=pierRadius+footprint?pierLevel:Math.max(0,support(x,z));
+      return Math.max(0,support(x,z));
     },setMode,update,dispose,forestBossPosition:()=>null,nearestPipi:()=>null,setSafariState(){},
     safariAction:()=>null,safariWalk:()=>null,safariHint:()=>'',interactSpiritSite:()=>'',
     spiritSiteHint:(lat,lon)=>height(lat,lon)>.4?'浅海登陆平台 · 沿西南侧黄色护栏斜坡步行下水':

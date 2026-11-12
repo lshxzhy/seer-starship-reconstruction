@@ -1,5 +1,14 @@
 // In the planet-fixed frame distances are metres, velocities are m/s. The
 // vehicle origin is the plane through the three deployed landing feet.
+function hasShuttleControlInput(input={}){
+  return Boolean(input.brake)||['forward','turn','pitch','strafe','lift'].some(
+    key=>Number.isFinite(Number(input[key]))&&Math.abs(Number(input[key]))>.001);
+}
+
+function shuttleCruiseSpeed(limit,boost=false){
+  return boost?limit:Math.min(limit,Math.max(16,limit*.76));
+}
+
 function createShuttleFlight(T,body,dock,saved){
   const clamp=T.MathUtils.clamp,R=body.radius,highSpeed=8000;
   const position=dock.position.clone(),quaternion=dock.quaternion.clone(),velocity=new T.Vector3();
@@ -153,10 +162,10 @@ function createShuttleFlight(T,body,dock,saved){
     return autopilot('surface',{lat:latitude,lon:longitude,name:'当前着陆点'});
   }
   function manualLimit(agl){
-    if(agl<12)return 10+Math.max(0,agl);
-    if(agl<120)return 22+1.65*(agl-12);
-    if(agl<1400)return 200.2+.79*(agl-120);
-    return Math.min(highSpeed,1211.4+.41*(agl-1400));
+    if(agl<12)return 16+Math.max(0,agl)*1.5;
+    if(agl<120)return 34+1.85*(agl-12);
+    if(agl<1400)return 233.8+.79*(agl-120);
+    return Math.min(highSpeed,1245+.41*(agl-1400));
   }
   // Limit both commanded speed and braking distance. Fine approach speed
   // tends continuously to zero when the position error vanishes.
@@ -249,7 +258,7 @@ function createShuttleFlight(T,body,dock,saved){
     pitch=clamp(pitch+value('pitch')*dt*.67,-1.1,1.1);
     roll+=(-turn*.23-roll)*(1-Math.exp(-3*dt));
     const forward=value('forward'),side=value('strafe'),lift=value('lift');
-    const cruise=input.boost?limit:Math.min(limit,Math.max(12,limit*.36));
+    const cruise=shuttleCruiseSpeed(limit,input.boost);
     desired.copy(heading).multiplyScalar(forward*Math.cos(pitch)).addScaledVector(right,side*.64)
       .addScaledVector(up,lift+forward*Math.sin(pitch)).clampLength(0,1).multiplyScalar(cruise);
     if(input.brake)desired.set(0,0,0);
@@ -345,7 +354,7 @@ function createShuttleFlight(T,body,dock,saved){
     const frame=currentFrame();
     levelHeading(frame);
     const agl=Math.max(0,altitude-ground),limit=manualLimit(agl),near=position.distanceTo(dock.position);
-    let accel=clamp(18+agl*.18,18,420);
+    let accel=clamp(26+agl*.24,26,520);
     let dockPose=false;
     if(leg==='undock'){
       const end=dock.position.clone().addScaledVector(dockForward,corridor+5);
@@ -360,10 +369,10 @@ function createShuttleFlight(T,body,dock,saved){
       if(near<2000){
         const exit=probe.copy(dock.position).addScaledVector(dockForward,2400);
         seek(exit,near<180?35:Math.min(limit,480),32);stage='离开母舰航道';
-      }else{desired.copy(up).multiplyScalar(limit);stage='爬升至转移轨道';}
+      }else{desired.copy(up).multiplyScalar(shuttleCruiseSpeed(limit));stage='爬升至转移轨道';}
     }else if(auto==='dock'&&((near<2400&&velocity.length()<132)||leg)){
       dockGuidance(dt);accel=leg==='latch'?5:28;dockPose=leg==='latch'||leg==='gate';
-    }else if(auto)planetaryGuidance(limit,accel);
+    }else if(auto)planetaryGuidance(shuttleCruiseSpeed(limit),accel);
     else{
       const dockLimit=Math.min(22+near*.27,Math.sqrt(22*22+2*.63*accel*near));
       manualGuidance(input,dt,Math.min(limit,dockLimit));
@@ -382,11 +391,10 @@ function createShuttleFlight(T,body,dock,saved){
     if(!(realDt>0)||!Number.isFinite(realDt))return 0;
     realDt=Math.min(realDt,.25);
     if(phase!=='flying')return realDt;
-    const near=position.distanceTo(dock.position);
-    // Guided time compression increases the number of ordinary physics
-    // steps. The acceleration, sweep and landing checks are identical.
-    const space=T.MathUtils.smoothstep(Math.min(altitude-ground,near),140,1900);
-    timeScale=auto?1.5+4.9*space:1;
+    if(auto&&hasShuttleControlInput(input))manual();
+    // Guidance and the pilot share one clock. Autopilot no longer accelerates
+    // the scene, ship turn rate and planet rotation by an invisible time warp.
+    timeScale=1;
     const rate=timeScale,budget=realDt*rate;
     let remaining=budget;
     while(remaining>1e-7&&phase==='flying'){
@@ -421,6 +429,7 @@ function createShuttleFlight(T,body,dock,saved){
     leg=['undock','rise','outer','gate','latch'].includes(s.leg)?s.leg:'';
     if(!auto&&['outer','gate','latch'].includes(leg))leg='';
     riseLevel=Number.isFinite(s.riseLevel)?s.riseLevel:altitude+10;
+    if(leg==='rise')riseLevel=Math.max(riseLevel,ground+10);
     stage=auto?'续航中':'手动驾驶';range=0;power=0;detour=null;detourClock=0;timeScale=1;return true;
   }
   function status(){

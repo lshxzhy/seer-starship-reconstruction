@@ -47,6 +47,9 @@ scripts.append(viewer/'explore.js')
 galaxy=root/'src'/'galaxy'
 scripts.insert(scripts.index(galaxy/'klose-scenery.js'),galaxy/'klose-meadow.js')
 scripts.insert(scripts.index(galaxy/'byron-ship.js'),galaxy/'byron-clearance.js')
+scripts.insert(scripts.index(galaxy/'byron-ship.js'),galaxy/'byron-training-hold.js')
+scripts.insert(scripts.index(galaxy/'twin-surface.js'),galaxy/'twin-ecology.js')
+scripts.insert(scripts.index(spirits/'partner-figures.js'),spirits/'twin-figures.js')
 images = {'byron-blackstone.webp':'BYRON_COATING_URL','survey-albedo.webp':'SURVEY_ALBEDO_URL'}
 image_dir = root / 'src' / 'galaxy' / 'assets'
 slot = scripts.index(root/'src'/'galaxy'/'surface-finish.js')

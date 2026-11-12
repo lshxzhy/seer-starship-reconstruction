@@ -60,7 +60,7 @@
     if(expedition.visitSurface(planetId,id,approachMushroom))return;
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:3,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
+    stagedExpedition={format:4,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
       vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,navTarget:current?.navTarget||parkedLanding?.navTarget,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
@@ -131,7 +131,7 @@
     if(parkedPlanetName()){cockpit.openMap('shuttle-ramp');return;}
     const target=PANO_NAVIGATION.flights.get(berth.landingSiteId);
     if(!target||target.planetId!==berth.destination)return;
-    stagedExpedition={format:3,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
+    stagedExpedition={format:4,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
       phase:'transfer',navTarget:target.id,vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -259,9 +259,10 @@
     spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
-    if(parkedLanding&&parkedLanding.vehicle.version<3){
-      const definition=parkedLanding.vehicle.planetId==='ocean'?OCEAN_WORLD:KLOSE_WORLD;
-      parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(parkedLanding.vehicle),ramp:compactSurfacePoint(parkedLanding.ramp,definition)};
+    if(parkedLanding&&parkedLanding.vehicle.version<4){
+      const definition=PANO_NAVIGATION.regions[parkedLanding.vehicle.planetId]?.definition||KLOSE_WORLD;
+      parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(parkedLanding.vehicle),
+        ramp:migrateSurfacePoint(parkedLanding.ramp,definition,parkedLanding.vehicle.version)};
       if(!parkedLanding.vehicle)parkedLanding=null;
     }
     state.mode=saved.mode;
@@ -402,7 +403,9 @@
   root.addEventListener('keydown',e=>{
     if(expedition.active||cockpit.isOpen||spiritTerminal.active||boarding.commsOpen||e.target.tagName==='SELECT')return;
     if(state.mode==='board'){
-      if(e.key==='Escape'){e.preventDefault();applySelection('section');}
+      if(e.key==='Escape'){
+        e.preventDefault();if(boarding.consoleState().tracking)boarding.cancelGuide();else applySelection('section');
+      }
       return;
     }
     switch(e.key){
