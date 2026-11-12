@@ -75,6 +75,30 @@ function createBirdEvolutionFigure(T,id){
     }
     return mesh(surface(p,ix,innerFace?rgb:null),colour,parent,'horn');
   }
+  function pointedBill(){
+    // #012/#166 have a closed, rigid wedge with a broad root and a central
+    // ridge. A thin bent oval strip read as a drooping feather in front view.
+    const rows=[[.236,1.292,.104,.090,.060],[.348,1.195,.081,.075,.048],
+      [.478,1.074,.049,.044,.029]],tip=[0,.925,.638],p=[],ix=[],rgb=[];
+    const upper=new T.Color(bill).convertSRGBToLinear();
+    const lower=new T.Color(shiny?0xb85079:0x125891).convertSRGBToLinear();
+    for(const [z,y,w,top,bottom] of rows){
+      const ring=[[w,0],[w*.58,top*.68],[0,top],[-w*.58,top*.68],
+        [-w,0],[-w*.62,-bottom*.65],[0,-bottom],[w*.62,-bottom*.65]];
+      for(const [x,h] of ring){p.push(x,y+h,z);const colour=h<0?lower:upper;rgb.push(colour.r,colour.g,colour.b);}
+    }
+    for(let j=0;j<rows.length-1;j++)for(let i=0;i<8;i++){
+      const a=j*8+i,b=j*8+(i+1)%8;ix.push(a,b,a+8,b,b+8,a+8);
+    }
+    const end=p.length/3;p.push(...tip);rgb.push(upper.r,upper.g,upper.b);
+    for(let i=0;i<8;i++)ix.push(16+i,16+(i+1)%8,end);
+    const cap=p.length/3;p.push(0,rows[0][1],rows[0][0]);rgb.push(lower.r,lower.g,lower.b);
+    for(let i=0;i<8;i++)ix.push(cap,(i+1)%8,i);
+    const joined=surface(p,ix,rgb),faceted=joined.toNonIndexed();joined.dispose();faceted.computeVertexNormals();
+    mesh(faceted,bill,body,'horn');
+    for(const side of [-1,1])stroke(shiny?0x74324d:0x123d68,
+      rows.map(([z,y,w])=>[side*(w+.001),y,z]).concat([tip]),.0028);
+  }
   let lowerBill=null;
   if(!grown){
     oval(pink,0,.51,-.015,.235,.303,.205);oval(light,0,.48,.15,.16,.225,.079);
@@ -106,8 +130,7 @@ function createBirdEvolutionFigure(T,id){
     oval(pink,0,1.02,.02,.268,.402,.223);oval(pink,0,1.39,.055,.226,.247,.218);
     eyesAt(1.39,.237,.105,.045);
     for(const s of [-1,1])oval(shiny?0xf09ca7:0xf27799,s*.169,1.298,.219,.080,.052,.025);
-    beak([[.235,.076,1.337,1.222],[.41,.077,1.255,1.136],[.60,.039,1.066,.998],
-      [.75,.001,.904,.902]],bill);
+    pointedBill();
     // Hanging crests loop high above the head and return towards the shoulders.
     for(const s of [-1,1]){
       feather(light,[[s*.10,1.50,-.026],[s*.17,1.82,-.08],[s*.34,1.83,-.098],
@@ -121,7 +144,8 @@ function createBirdEvolutionFigure(T,id){
     feather(shiny?0x513c67:0xee7198,[[0,1.26,.226],[0,1.02,.291],[0,.86,.337]],.143,.026);
     for(const s of [-1,1]){
       const ruff=shiny?0xf5e798:0xfffaf0;
-      feather(ruff,[[s*.19,1.37,.172],[s*.30,1.12,.237],[s*.22,.85,.354],[0,.54,.389]],.117,.043,ruff);
+      // The V ruff grows from the neck below the cheeks, not from the eye line.
+      feather(ruff,[[s*.205,1.29,.145],[s*.30,1.08,.237],[s*.22,.85,.354],[0,.54,.389]],.100,.030,ruff);
       const wing=new T.Group();wing.position.set(s*.28,.84,-.065);body.add(wing);wings.push({g:wing,side:s});
       const upper=oval(pink,s*.030,-.082,.015,.127,.211,.208,wing);upper.rotation.z=-s*.18;
       for(let k=0;k<4;k++)feather(light,[[s*.010,-.056,-.032],[s*(.08+.016*k),-.17,-.112-.035*k],

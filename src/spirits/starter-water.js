@@ -173,24 +173,82 @@ function createStarterWaterFigure(T,id){
     skin(torso);
     // The chest's two lower lobes follow the body, with blue rising between them.
     facePatch(torso,a=>.30+.10*Math.exp(-((a/.22)**2)),.951,.70,white);
+    // In the original three-quarter art the forehead rises backwards into a
+    // rounded, swept crown. A stack of nearly concentric shrinking rings made
+    // the previous sculpt a vertical cone and left its eyes on the bottom rim.
+    // The lower face is now a broad cranium: a flat muzzle, full temples and
+    // cheeks extending behind the eyes, followed by the receding crown.
     const headRows=[
-      [.838,.025,.027,.125],[.872,.241,.165,.103],[1.004,.446,.258,.048],
-      [1.151,.411,.261,.004],[1.368,.302,.222,-.045],[1.602,.175,.144,-.075],
-      [1.802,.063,.070,-.085],[1.858,.002,.003,-.080]
+      [.815,.008,.012,.155],[.842,.190,.157,.154],[.908,.350,.270,.124],
+      [1.030,.474,.365,.048],[1.160,.478,.365,-.046],[1.310,.408,.320,-.163],
+      [1.490,.304,.269,-.318],[1.660,.184,.213,-.442],[1.746,.127,.165,-.469],
+      [1.797,.066,.105,-.461],[1.819,.025,.055,-.442],[1.825,.002,.005,-.424]
     ];
     headPivot=new T.Group();headPivot.position.set(0,.92,.02);body.add(headPivot);
-    const head=new T.Group();head.position.set(0,-.92,-.02);headPivot.add(head);skin(headRows,head);
-    facePatch(headRows,.848,a=>1.038+.792*Math.exp(-((a/.20)**2))+.064*Math.exp(-(((Math.abs(a)-1.17)/.30)**2)),1.57,white,head);
-    const mouth=[];for(let k=0;k<=30;k++)mouth.push(surfacePoint(headRows,-1.02+2.04*k/30,.885+.015*Math.cos(k/30*Math.PI*2),.006));
+    const head=new T.Group();head.position.set(0,-.92,-.02);headPivot.add(head);
+    function headPoint(a,y,lift=0){
+      const [rx,rz,cz]=profile(headRows,y),sin=Math.sin(a),cos=Math.cos(a);
+      const cheek=Math.exp(-(((y-1.083)/.155)**2))*sin**4;
+      const muzzle=Math.exp(-(((y-.972)/.170)**2));
+      return v((rx+lift+.040*cheek)*sin,y,
+        cz+(rz+lift)*Math.sign(cos)*Math.abs(cos)**(1-.22*muzzle)-.048*cheek);
+    }
+    {
+      const positions=[],indices=[],rows=100,sides=80;
+      for(let j=0;j<=rows;j++)for(let k=0;k<sides;k++){
+        const p=headPoint(tau*k/sides,T.MathUtils.lerp(.815,1.825,j/rows));positions.push(p.x,p.y,p.z);
+        if(j<rows){const n=j*sides+k,next=j*sides+(k+1)%sides;indices.push(n,next,n+sides,next,next+sides,n+sides);}
+      }
+      mesh(geometry(positions,indices),blue,head);
+    }
+    // White cheeks and the central blaze are sampled from the same surface.
+    // The blaze stays broad up the forehead and wraps the rounded crown; it is
+    // no longer a thin triangle terminating at the tip of a cone.
+    {
+      const positions=[],indices=[],rows=34,sides=76;
+      for(let k=0;k<=sides;k++){
+        const a=(k/sides*2-1)*1.69,top=1.047+.095*Math.exp(-(((Math.abs(a)-1.26)/.32)**2));
+        for(let j=0;j<=rows;j++){
+          const p=headPoint(a,T.MathUtils.lerp(.829,top,j/rows),.0035);positions.push(p.x,p.y,p.z);
+          if(k<sides&&j<rows){const n=k*(rows+1)+j;indices.push(n,n+rows+1,n+1,n+1,n+rows+1,n+rows+2);}
+        }
+      }
+      mesh(geometry(positions,indices),white,head);
+    }
+    {
+      const positions=[],indices=[],rows=74,sides=34;
+      for(let j=0;j<=rows;j++){
+        const y=T.MathUtils.lerp(1.036,1.825,j/rows);
+        const width=.29+.20*T.MathUtils.smoothstep(y,1.08,1.68)+.62*T.MathUtils.smoothstep(y,1.70,1.825);
+        for(let k=0;k<=sides;k++){
+          const p=headPoint((k/sides*2-1)*width,y,.0040);positions.push(p.x,p.y,p.z);
+          if(j<rows&&k<sides){const n=j*(sides+1)+k;indices.push(n,n+1,n+sides+1,n+1,n+sides+2,n+sides+1);}
+        }
+      }
+      mesh(geometry(positions,indices),white,head);
+    }
+    const mouth=[];for(let k=0;k<=30;k++)mouth.push(headPoint(-1.03+2.06*k/30,.881+.013*Math.cos(k/30*Math.PI*2),.006));
     stroke(0x658a9d,mouth,.0045,head);
     for(const side of [-1,1]){
-      eye(head,surfacePoint(headRows,side*.68,1.058,.006),side,.101);
-      // Narrow turquoise forehead leaves point downward, rather than eyebrows.
+      const a=side*.665,y=1.123,eyeGroup=eye(head,headPoint(a,y,.010),side,.108);
+      const angular=headPoint(a+.003,y).sub(headPoint(a-.003,y));
+      const upright=headPoint(a,y+.003).sub(headPoint(a,y-.003));
+      const normal=angular.cross(upright).normalize(),facing=normal.clone();
+      // The eye looks forward beneath the swept forehead. Limit the upward
+      // tilt and lift its rim along the true surface normal to avoid embedding.
+      facing.y=Math.min(facing.y,Math.hypot(facing.x,facing.z)*Math.tan(.32));facing.normalize();
+      const alignment=T.MathUtils.clamp(normal.dot(facing),-1,1);
+      const clearance=.010+.108*1.10*Math.sqrt(Math.max(0,1-alignment*alignment));
+      eyeGroup.position.copy(headPoint(a,y)).addScaledVector(normal,clearance);
+      eyeGroup.quaternion.setFromUnitVectors(v(0,0,1),facing);
+      eyeGroup.rotateZ(-side*.16);
+      // Forehead leaves follow the slope of the widened face, above the eyes.
       const spot=[];
-      for(const [a,y] of [[.59,1.354],[.49,1.472],[.58,1.553],[.75,1.575],[.85,1.516],[.78,1.407]])spot.push(surfacePoint(headRows,side*a,y,.005));
+      for(const [a,y] of [[.70,1.330],[.53,1.445],[.59,1.541],[.76,1.571],[.98,1.525],[.94,1.409]])spot.push(headPoint(side*a,y,.008));
       panel(spot,mint,head,.004);stroke(shade,[...spot,spot[0]],.007,head);
-      sweep(blue,[[side*.319,1.12,-.027],[side*.332,1.267,-.026],[side*.317,1.324,-.045]],
-        [.035,.027,.001],[.030,.025,.001],head);
+      const temple=headPoint(side*1.36,1.175);
+      sweep(blue,[[temple.x,temple.y,temple.z],[temple.x+side*.022,1.270,temple.z-.010],
+        [temple.x+side*.012,1.294,temple.z-.034]],[.034,.030,.008],[.028,.025,.007],head);
       const arm=new T.Group();arm.position.set(side*.155,.79,-.01);body.add(arm);arms.push(arm);
       sweep(blue,[[0,0,0],[side*.117,-.084,.028],[side*.155,-.181,.123],[side*.120,-.182,.185]],
         [.088,.096,.078,.055],[.074,.081,.066,.054],arm);

@@ -87,7 +87,7 @@ function createSpiritStage(T){
           arranged.add(model.root);holder.add(arranged);
         }
         anchor.position.x=entries.length===1?0:(i===0?-1.25:1.25);
-        const bearing=entries.length===1?([6,11,12,165,166].includes(entry.id)?-.68:entry.id===4?-.55:-.28):(i===0?.66:-.66);
+        const bearing=entries.length===1?([6,11,12,165,166].includes(entry.id)?-.68:[4,5].includes(entry.id)?-.55:-.28):(i===0?.66:-.66);
         anchor.rotation.y=bearing;cast.push({anchor,holder,model,bearing});
       }
     }

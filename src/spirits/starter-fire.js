@@ -237,10 +237,45 @@ function createStarterFireFigure(T,id){
       [.225,.005],[.265,-.015],[.198,-.06],[.224,-.096],[.12,-.15],[0,-.17],
       [-.12,-.15],[-.224,-.096],[-.198,-.06],[-.265,-.015],[-.225,.005]],.055,head,.011);
     face.position.z=.183;
+    // The adult has a slanted eye slit under the flame brow, not the juvenile
+    // round eyeballs. Thin amber regions sit within the face; only a small
+    // pale-yellow crescent catches light. There is no white sclera or lens rim.
+    function adultEyeLayer(side,colour,z,inset=1,highlight=false){
+      const shape=new T.Shape();
+      if(highlight){
+        shape.moveTo(.103,.085);
+        shape.bezierCurveTo(.108,.105,.127,.123,.143,.128);
+        shape.bezierCurveTo(.157,.132,.165,.121,.156,.106);
+        shape.bezierCurveTo(.143,.086,.121,.078,.103,.085);
+      }else{
+        shape.moveTo(.036,.092);
+        shape.bezierCurveTo(.092,.117,.173,.165,.229,.209);
+        shape.bezierCurveTo(.232,.148,.207,.087,.170,.056);
+        shape.bezierCurveTo(.119,.027,.063,.038,.036,.092);
+      }
+      shape.closePath();
+      const g=new T.ShapeGeometry(shape,28),positions=g.attributes.position;
+      for(let i=0;i<positions.count;i++){
+        const x=.130+(positions.getX(i)-.130)*inset,y=.112+(positions.getY(i)-.112)*inset;
+        positions.setXYZ(i,side*x,y,z+.002*Math.sin((x-.036)/.193*Math.PI));
+      }
+      // Mirroring the left shape reverses its winding; restore the +Z face.
+      if(side<0){const ix=g.index;for(let i=0;i<ix.count;i+=3){const b=ix.getX(i+1);ix.setX(i+1,ix.getX(i+2));ix.setX(i+2,b);}}
+      g.computeVertexNormals();
+      const part=mesh(g,colour,head,null,highlight?.10:inset<1?.10:0);part.castShadow=false;
+      return part;
+    }
     for(const s of [-1,1]){
-      const e=eye(head,s*.125,.078,.230,.088,.073,s*.24,true);
-      e.scale.y=.89;
-      stroke(brown,[[s*.030,.169,.250],[s*.13,.167,.244],[s*.235,.210,.184]],.025,head);
+      adultEyeLayer(s,0x7f321d,.236);
+      adultEyeLayer(s,0xf6ad23,.239,.93);
+      adultEyeLayer(s,0xffd834,.242,.75);
+      adultEyeLayer(s,0xffef8a,.246,1,true);
+      // The rising outer corner joins the head mantle. Its lower edge covers
+      // the upper iris and drops toward the bridge, giving the original V brow.
+      const brow=plate(shade,[[s*.015,.118],[s*.069,.130],[s*.159,.187],[s*.235,.245],
+        [s*.263,.240],[s*.244,.216],[s*.161,.165],[s*.077,.116],[s*.031,.108]],.022,head,.005);
+      brow.position.z=.232;
+      stroke(brown,[[s*.031,.111,.249],[s*.077,.118,.249],[s*.16,.169,.249],[s*.228,.218,.246]],.006,head);
       const ear=plate(shade,[[0,.07],[s*.105,.095],[s*.13,.018],[s*.08,-.078],[0,-.066]],.085,head,.013);
       ear.position.set(s*.247,.04,-.015);ear.rotation.y=s*.50;
       // Joint roots remain inside the shoulder and elbow volumes.
@@ -276,7 +311,7 @@ function createStarterFireFigure(T,id){
     const nose=plate(brown,[[-.041,.015],[.025,.002],[.010,-.043]],.021,head,.004);nose.position.set(0,-.022,.239);
     stroke(dark,[[-.089,-.105,.234],[-.024,-.091,.246],[.031,-.092,.246],[.092,-.109,.233]],.006,head);
     stroke(light,[[-.051,-.109,.242],[.015,-.105,.251],[.056,-.113,.240]],.007,head);
-    flame(head,0,.19,.15,.49,.72,.12);
+    flame(head,0,.235,.15,.49,.72,.12);
     // Tall red-orange shoulder/back tongues stay behind the yellow crown.
     for(const [x,lean,h,w] of [[-.33,-.09,.59,.18],[.11,-.06,.72,.22],[.37,.07,.56,.19]]){
       tongue(body,[[x,1.16,-.23],[x+lean*.3,1.43,-.28],[x+lean,1.58+h*.26,-.30],[x+lean*.7,1.35+h,-.34]],
