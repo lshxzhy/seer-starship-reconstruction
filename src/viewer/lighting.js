@@ -1,11 +1,11 @@
-  // A linear data tile stores surface height in R and roughness in G.
-  // The four tiles belong to the viewer; meshes and material clones share them.
+  // Each finish shares its roughness and tangent-space normal across instances.
+  // Normal tilt stays consistent between the miniature ship and metre-scale planets.
   const manufacturedTiles = new Map();
   const manufacturedProfiles = {
-    paint:   {repeat: 2, mean: .83, height: .0024},
-    metal:   {repeat: 3, mean: .78, height: .0018},
-    rubber:  {repeat: 3, mean: .88, height: .0045},
-    ceramic: {repeat: 2, mean: .85, height: .0011}
+    paint:   {repeat: 2, mean: .83, relief: .65},
+    metal:   {repeat: 3, mean: .78, relief: 1.05},
+    rubber:  {repeat: 3, mean: .88, relief: 1.35},
+    ceramic: {repeat: 2, mean: .85, relief: .40}
   };
 
   function makeManufacturedTile(kind, profile) {
@@ -49,16 +49,30 @@
       data[i+1]=Math.round(255*T.MathUtils.clamp(roughness,0,1));
       data[i+3]=255;
     }
-    const texture = new T.DataTexture(data,size,size,T.RGBAFormat,T.UnsignedByteType);
-    texture.name='Workshop '+kind;
-    texture.wrapS=texture.wrapT=T.RepeatWrapping;
-    texture.repeat.set(profile.repeat,profile.repeat);
-    texture.generateMipmaps=true;
-    texture.minFilter=T.LinearMipmapLinearFilter;
-    texture.magFilter=T.LinearFilter;
-    texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
-    texture.needsUpdate=true;
-    return texture;
+    const normals=new Uint8Array(data.length);
+    const heightAt=(x,y)=>data[4*(((y+size)%size)*size+(x+size)%size)]/255;
+    for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+      const dx=(heightAt(x-1,y)-heightAt(x+1,y))*profile.relief;
+      const dy=(heightAt(x,y-1)-heightAt(x,y+1))*profile.relief;
+      const inv=1/Math.hypot(dx,dy,1),i=(y*size+x)*4;
+      normals[i]=Math.round(127.5*(1+dx*inv));
+      normals[i+1]=Math.round(127.5*(1+dy*inv));
+      normals[i+2]=Math.round(127.5*(1+inv));
+      normals[i+3]=255;
+    }
+    function texture(pixels,channel){
+      const map=new T.DataTexture(pixels,size,size,T.RGBAFormat,T.UnsignedByteType);
+      map.name='Workshop '+kind+' '+channel;
+      map.wrapS=map.wrapT=T.RepeatWrapping;
+      map.repeat.set(profile.repeat,profile.repeat);
+      map.generateMipmaps=true;
+      map.minFilter=T.LinearMipmapLinearFilter;
+      map.magFilter=T.LinearFilter;
+      map.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+      map.needsUpdate=true;
+      return map;
+    }
+    return {normal:texture(normals,'normal'),roughness:texture(data,'roughness')};
   }
 
   function applyManufacturedFinish(material, kind) {
@@ -67,9 +81,8 @@
         material.map || material.normalMap || material.bumpMap || material.roughnessMap) return material;
     if (!manufacturedTiles.has(kind)) manufacturedTiles.set(kind,makeManufacturedTile(kind,profile));
     const tile=manufacturedTiles.get(kind);
-    material.bumpMap=tile;
-    material.bumpScale=profile.height;
-    material.roughnessMap=tile;
+    material.normalMap=tile.normal;
+    material.roughnessMap=tile.roughness;
     material.roughness=Math.min(1,material.roughness/profile.mean);
     return material;
   }

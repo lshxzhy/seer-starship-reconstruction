@@ -156,11 +156,7 @@ function createPanoSystem(T,world){
   const proxies={klose:remoteSphere('klose',KLOSE_WORLD.radius),ocean:remoteSphere('ocean',OCEAN_WORLD.radius),
     alpha:createTwinGlobe(T,ALPHA_WORLD),beta:createTwinGlobe(T,BETA_WORLD),byron:createByronHull(T,true)};
   root.add(proxies.alpha,proxies.beta,proxies.byron);
-  const rings=KLOSE_WORLD.rings;
-  const band=new T.Mesh(new T.RingGeometry(rings.inner*KLOSE_WORLD.radius,rings.outer*KLOSE_WORLD.radius,100),
-    new T.MeshBasicMaterial({color:0xe4c54b,side:T.DoubleSide,fog:false}));
-  band.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3().fromArray(rings.normal).normalize());
-  proxies.klose.add(band);
+  addKloseRingBands(T,proxies.klose,KLOSE_WORLD,proxies.klose.material.uniforms.sunDir.value,100);
   function update(reference,time){
     panoCenter(reference,time,root.position).negate();
     for(const id of ids){

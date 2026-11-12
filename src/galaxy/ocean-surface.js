@@ -132,6 +132,10 @@ function createOceanSurface(T,world){
   const limestone=mineral.clone();
   const spongeSkin=fieldSurfaceFinish(organic.clone(),'sponge');
   const nacre=fieldSurfaceFinish(organic.clone(),'nacre');
+  fieldSurfaceFinish(organic,'cuticle');
+  const enamel=applyManufacturedFinish(new T.MeshStandardMaterial({roughness:.48,metalness:.12}),'paint');
+  const fittings=fieldSurfaceFinish(new T.MeshStandardMaterial({roughness:.57,metalness:.42}),'metal');
+  const tabletStone=fieldSurfaceFinish(new T.MeshStandardMaterial({roughness:.85}),'stone');
   fieldSurfaceFinish(mineral,'crystal');
   // Thin folded bedding follows each outcrop, including its underside.
   // Fade the fine strata at a distance so the reef still reads in clear masses.
@@ -148,7 +152,7 @@ function createOceanSurface(T,world){
   };
   // Refracted light uses the same metre coordinates on an oyster shell, its
   // limestone support and the sand underneath. It fades down the deep trench.
-  for(const [i,mat] of [limestone,mineral,organic,painted,spongeSkin,nacre].entries()){
+  for(const [i,mat] of [limestone,mineral,organic,painted,spongeSkin,nacre,enamel,fittings,tabletStone].entries()){
     const surfacePass=mat.onBeforeCompile.bind(mat);
     mat.customProgramCacheKey=()=>'reef-light-'+i;
     mat.onBeforeCompile=s=>{
@@ -198,6 +202,11 @@ function createOceanSurface(T,world){
   shape('box',new T.BoxGeometry(1,1,1));
   shape('disk',new T.CylinderGeometry(1,1,1,48));
   shape('ring',new T.TorusGeometry(1,.11,7,22));
+  // A rounded coral tip and a machine housing share a mesh, but reflect differently.
+  for(const [id,source,finish] of [['housing','lobe',enamel],['panel','box',enamel],['deck','disk',enamel],
+    ['coupling','ring',fittings],['rail','rod',fittings],['hub','lobe',fittings]]){
+    shape(id,shapes.get(source).g,finish);
+  }
   {
     // One continuous span, surveyed in metres. Rotate the second span around
     // the shared pier; the two openings are independently passable.
@@ -226,7 +235,7 @@ function createOceanSurface(T,world){
       return new T.ExtrudeGeometry(face,{depth,bevelEnabled:true,bevelSegments:1,bevelSize:.11,bevelThickness:.09});
     };
     shape('sanctumTablet',tablet([[-1.64,-.2],[1.23,-.2],[1.77,2.1],[1.31,3.0],[1.74,5.38],
-      [1.08,7.88],[-.28,8.38],[-.92,6.63],[-.87,4.25],[-1.48,3.03]],1.27),painted);
+      [1.08,7.88],[-.28,8.38],[-.92,6.63],[-.87,4.25],[-1.48,3.03]],1.27),tabletStone);
     const jade=new T.MeshStandardMaterial({roughness:.36,metalness:.10,
       emissive:color(0x69c6b6),emissiveIntensity:.63});
     shape('jadePlate',tablet([[-.93,-.27],[.34,-.44],[.97,-.12],[.82,.25],[-.46,.38],[-.86,.18]],.10),jade);
@@ -272,11 +281,11 @@ function createOceanSurface(T,world){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
   }
   const rodAxis=v(0,1,0);
-  function rod(x,y,z,xx,yy,zz,r,tint){
+  function rod(x,y,z,xx,yy,zz,r,tint,shapeId='rod'){
     const dir=v(xx-x,yy-y,zz-z),len=dir.length();
     temp.position.set((x+xx)*.5,(y+yy)*.5,(z+zz)*.5);
     temp.quaternion.setFromUnitVectors(rodAxis,dir.divideScalar(len));
-    temp.scale.set(r,len,r);temp.updateMatrix();record('rod',tint);
+    temp.scale.set(r,len,r);temp.updateMatrix();record(shapeId,tint);
   }
   let seed=832491;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   function boulder(x,z,w,h,d,tint){
@@ -354,11 +363,11 @@ function createOceanSurface(T,world){
     // a vertical row of diodes and two vented side units on short feet.
     const base=groundY(x,z);
     const part=(id,dx,y,dz,w,h,d,tint,rx=0,ry=0,rz=0)=>stamp(id,x+dx*s,base+y*s,z+dz*s,w*s,h*s,d*s,tint,rx,ry,rz);
-    part('box',0,.32,0,2.0,.23,1.12,0x16435a);
-    part('lobe',0,.85,-.05,1.09,.68,.63,0x298ab1);
+    part('panel',0,.32,0,2.0,.23,1.12,0x16435a);
+    part('housing',0,.85,-.05,1.09,.68,.63,0x298ab1);
     for(const side of [-1,1]){
-      part('box',side*.92,.64,.30,.56,.65,1.04,0x154f78,.22,0,-side*.18);
-      part('box',side*.93,.71,.80,.39,.39,.08,0x388aaf,.22,0,-side*.18);
+      part('panel',side*.92,.64,.30,.56,.65,1.04,0x154f78,.22,0,-side*.18);
+      part('panel',side*.93,.71,.80,.39,.39,.08,0x388aaf,.22,0,-side*.18);
       for(let k=0;k<3;k++)part('box',side*.93,.60+k*.10,.86,.29,.039,.055,0x173948,.22);
       for(const end of [-1,1])part('lobe',side*.77,.20,end*.42,.17,.17,.18,0xdaa853);
     }
@@ -370,7 +379,7 @@ function createOceanSurface(T,world){
     part('lobe',0,1.72,-.14,.27,.26,.27,0x80d743);
     part('lobe',-.10,1.84,.035,.073,.059,.036,0xd9ff8a);
     for(const side of [-1,1]){
-      part('ring',side*.68,1.17,.42,.14,.14,.075,0x9cb2a9,0,side*.32);
+      part('coupling',side*.68,1.17,.42,.14,.14,.075,0x9cb2a9,0,side*.32);
       part('lobe',side*.68,1.17,.45,.077,.077,.034,0x254b5a);
       for(let j=0;j<4;j++)part('lobe',side*(.71+.13*(j%2)),.42+.34*(j>>1),.88,.028,.028,.019,0xa2bbb4);
     }
@@ -515,16 +524,16 @@ function createOceanSurface(T,world){
     // Left foreground of map 737: a partly buried spoked rim against the broken, green-lit casing.
     const wx=end.x-9.1,wz=end.z-5.6,base=groundY(wx,wz),wy=base+1.38;
     stamp('sanctumSpur',wx-.98,base-.21,wz-2.04,2.40,3.90,1.63,0x2a5362,0,-.45,.13);
-    stamp('ring',wx,wy,wz,2.14,2.14,.89,0x527c82,-.30,.19,.06);
+    stamp('coupling',wx,wy,wz,2.14,2.14,.89,0x527c82,-.30,.19,.06);
     const wheel=new T.Object3D();wheel.position.set(wx,wy,wz);wheel.rotation.set(-.30,.19,.06);wheel.updateMatrix();
     const center=v(0,0,0).applyMatrix4(wheel.matrix);
     for(let i=0;i<7;i++){
       const a=i*tau/7,end=v(2.07*Math.cos(a),2.07*Math.sin(a),0).applyMatrix4(wheel.matrix);
-      rod(center.x,center.y,center.z,end.x,end.y,end.z,.13,0x49717a);
+      rod(center.x,center.y,center.z,end.x,end.y,end.z,.13,0x49717a,'rail');
       const lug=v(1.64*Math.cos(a),1.64*Math.sin(a),.09).applyMatrix4(wheel.matrix);
-      stamp('lobe',lug.x,lug.y,lug.z,.093,.091,.058,0x90ada3,-.30,.19,.06);
+      stamp('hub',lug.x,lug.y,lug.z,.093,.091,.058,0x90ada3,-.30,.19,.06);
     }
-    stamp('lobe',wx,wy,wz,.39,.39,.24,0x5d8586);
+    stamp('hub',wx,wy,wz,.39,.39,.24,0x5d8586);
     for(let j=0;j<4;j++)stamp('crystal',wx-.76+j*.32,base+2.25+.13*Math.sin(j),wz-1.02,.22,.48+.25*(j%2),.29,0x90ca82,0,0,.24*j-.26);
     blockers.push({x:wx-.35,z:wz-.65,r:2.17,top:wy+2.35});
   }
@@ -535,8 +544,8 @@ function createOceanSurface(T,world){
   }
   // An over-water platform, landing stripe and descending access ramp share the support function.
   const pierY=pierLevel-(pad.x*pad.x+pad.z*pad.z)/(2*radius);
-  stamp('disk',pad.x,pierY-.44,pad.z,pierRadius,.88,pierRadius,0x567982);
-  stamp('disk',pad.x,pierY-.026,pad.z,pierRadius-.15,.052,pierRadius-.15,0x9caaa5);
+  stamp('deck',pad.x,pierY-.44,pad.z,pierRadius,.88,pierRadius,0x567982);
+  stamp('deck',pad.x,pierY-.026,pad.z,pierRadius-.15,.052,pierRadius-.15,0x9caaa5);
   stamp('ring',pad.x,pierY+.04,pad.z,12.2,12.2,.20,0xf0db8f,Math.PI/2);
   for(const off of [-1,1])stamp('box',pad.x+off*2,pierY+.045,pad.z,.42,.06,5.8,0xede7b8);
   stamp('box',pad.x,pierY+.046,pad.z,4,.062,.46,0xede7b8);
@@ -544,8 +553,8 @@ function createOceanSurface(T,world){
   let railLast=null;
   for(let i=0;i<=42;i++){
     const a=face+.116+(tau-.232)*i/42,x=pad.x+railRadius*Math.cos(a),z=pad.z+railRadius*Math.sin(a);
-    rod(x,pierY,z,x,pierY+.84,z,.078,0x75888e);
-    if(railLast)rod(...railLast,x,pierY+.84,z,.065,0xdfcb8f);
+    rod(x,pierY,z,x,pierY+.84,z,.078,0x75888e,'rail');
+    if(railLast)rod(...railLast,x,pierY+.84,z,.065,0xdfcb8f,'rail');
     railLast=[x,pierY+.84,z];
   }
   const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=pierLevel-seaFloor(0,0);
@@ -554,13 +563,13 @@ function createOceanSurface(T,world){
     v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
     v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
   temp.position.set(pad.x+acrossX*rampMid,(pierLevel+seaFloor(0,0))*.5-.13,pad.z+acrossZ*rampMid);
-  temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('box',0x7696a0);
+  temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('panel',0x7696a0);
   for(const sign of [-1,1]){
     let last=null;
     for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
       const x=pad.x+acrossX*along+acrossZ*2.04*sign,z=pad.z+acrossZ*along-acrossX*2.04*sign;
       const y=T.MathUtils.lerp(pierLevel,seaFloor(0,0),(along-rampStart)/rampRun);
-      rod(x,y,z,x,y+1,z,.055,0x70868e);if(last)rod(...last,x,y+1,z,.062,0xffce74);
+      rod(x,y,z,x,y+1,z,.055,0x70868e,'rail');if(last)rod(...last,x,y+1,z,.062,0xffce74,'rail');
       last=[x,y+1,z];
     }
   }

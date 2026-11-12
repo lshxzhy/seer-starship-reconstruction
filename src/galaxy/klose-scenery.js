@@ -153,7 +153,12 @@ function createKloseScenery(T, parent, surface) {
   shape('coreCrystal',crystalShape,fieldSurfaceFinish(new T.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:.39,
     metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}),'crystal'));
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.8,side:T.DoubleSide});
-  for(const [key,geometry] of Object.entries(buildMeadowPlants(T)))shape(key,geometry,colored);
+  const roots=fieldSurfaceFinish(colored.clone(),'stem');
+  const wax=fieldSurfaceFinish(colored.clone(),'cuticle');
+  const leafBlade=fieldSurfaceFinish(colored.clone(),'blade');
+  const meadow=buildMeadowPlants(T);
+  shape('meadowRoot',meadow.meadowRoot,roots);
+  shape('meadowSocket',meadow.meadowSocket,wax);
   const mushroomCap=(()=>{
     const p=[],rgb=[],ix=[],segments=64;
     for(const [j,[r,y]] of mushroomProfile.entries())for(let k=0;k<segments;k++){
@@ -167,9 +172,9 @@ function createKloseScenery(T, parent, surface) {
     }
     return meshData(p,rgb,ix);
   })();
-  shape('cap',mushroomCap,colored);
+  shape('cap',mushroomCap,wax);
   const moss=fieldSurfaceFinish(colored.clone(),'moss');
-  shape('leaf',leafGeometry(),fieldSurfaceFinish(colored.clone(),'blade'));
+  shape('leaf',leafGeometry(),leafBlade);
   shape('canopy',kloseCanopyGeometry(T,true),moss);
   function meshData(positions,colors,indices) {
     const g=new T.BufferGeometry();
@@ -193,7 +198,7 @@ function createKloseScenery(T, parent, surface) {
     }
     return meshData(p,colors,idx);
   }
-  shape('plume',curledBlade(),colored);
+  shape('plume',curledBlade(),leafBlade);
   {
     const route=new T.CatmullRomCurve3([[-3.65,-.62,.11],[-3.38,.95,-.23],[-3.46,2.02,.08],
       [-2.61,3.46,.35],[-1.05,4.08,.15],[-.37,4.82,-.09],[1.05,4.20,-.25],
@@ -210,7 +215,7 @@ function createKloseScenery(T, parent, surface) {
         if(j){const n=j*sides+i,b=j*sides+(i+1)%sides;ix.push(n-sides,n,b-sides,b-sides,n,b);}
       }
     }
-    shape('swampVault',meshData(p,c,ix),colored);
+    shape('swampVault',meshData(p,c,ix),roots);
   }
   // The body, turned-back lip and dark recess of the ochre pod in map 11.
   {
@@ -228,7 +233,7 @@ function createKloseScenery(T, parent, surface) {
         if(j){const n=j*segs+i,b=j*segs+(i+1)%segs;ix.push(n-segs,b-segs,n,n,b-segs,b);}
       }
     }
-    shape('swampPod',meshData(p,c,ix),colored);
+    shape('swampPod',meshData(p,c,ix),wax);
   }
   {
     const p=[],c=[],ix=[],rings=352,sides=12;
@@ -245,7 +250,7 @@ function createKloseScenery(T, parent, surface) {
         if(j){const n=j*sides+i,b=j*sides+(i+1)%sides;ix.push(n-sides,b-sides,n,n,b-sides,b);}
       }
     }
-    shape('swampCoil',meshData(p,c,ix),colored);
+    shape('swampCoil',meshData(p,c,ix),roots);
   }
   // Each tilted rib grows from a fluted foot to a keeled, inward-facing tip.
   {
@@ -258,7 +263,7 @@ function createKloseScenery(T, parent, surface) {
         if(j){const n=j*5+i,b=j*5+(i+1)%5;ix.push(n-5,n,b-5,b-5,n,b);}
       }
     }
-    shape('swampRib',meshData(p,c,ix),colored);
+    shape('swampRib',meshData(p,c,ix),roots);
   }
   function sodGeometry() {
     const n=38,p=[0,.19,0],rgb=[.84,1,.97],idx=[];
@@ -294,7 +299,7 @@ function createKloseScenery(T, parent, surface) {
     }
     return meshData(points,colors,indices);
   }
-  shape('fern',fernGeometry(),colored);
+  shape('fern',fernGeometry(),leafBlade);
   const distantShapes={round:new T.SphereGeometry(1,8,5),rock:new T.IcosahedronGeometry(1,0),canopy:kloseCanopyGeometry(T,false),
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);

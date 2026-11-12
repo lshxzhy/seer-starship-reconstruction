@@ -1,5 +1,9 @@
   // Classic browser-game base chassis. Metres, origin at sole level, front at -Z.
   // Sources and the unsighted rear surface are documented in references/robot-audit.
+  // The suit and painted officer gear use untextured enamel at every viewing distance.
+  const seerShellEnamel = new T.MeshStandardMaterial({
+    vertexColors:true, roughness:.35, metalness:.06, envMapIntensity:.82
+  });
   const seerRobots = (() => {
     const PI = Math.PI, TAU = PI * 2;
     const restCoreY = .955, ankleY = .177, hipX = .249, hipY = .539;
@@ -166,7 +170,7 @@
     }
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
-      paint: new T.MeshStandardMaterial({vertexColors:true, roughness:.33, metalness:.28}),
+      paint: seerShellEnamel,
       alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.34, metalness:.78}),
       machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
       gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
@@ -176,26 +180,21 @@
         clearcoat:1, clearcoatRoughness:.065, reflectivity:.59, envMapIntensity:.8,
         transparent:true, opacity:.22, blending:T.AdditiveBlending, depthWrite:false})
     };
-    const lacquer = new T.MeshPhysicalMaterial({vertexColors:true, roughness:.36, metalness:.19,
-      clearcoat:.67, clearcoatRoughness:.19, envMapIntensity:.85});
-    applyManufacturedFinish(skinMaterials.paint,'paint');
     applyManufacturedFinish(skinMaterials.alloy,'metal');
     applyManufacturedFinish(skinMaterials.machined,'metal');
     applyManufacturedFinish(skinMaterials.gasket,'rubber');
-    applyManufacturedFinish(lacquer,'paint');
     const suitColors = new Map(), suitMaterials = new Map();
     function suitColor(value) {
       if (!suitColors.has(value)) suitColors.set(value,hex(value));
       return suitColors.get(value);
     }
-    function suitMaterial(value,simple) {
-      const key=(simple?'crew/':'pilot/')+value;
-      if (!suitMaterials.has(key)) {
-        const material=(simple?skinMaterials.paint:lacquer).clone();
+    function suitMaterial(value) {
+      if (!suitMaterials.has(value)) {
+        const material=seerShellEnamel.clone();
         material.color.copy(suitColor(value));
-        suitMaterials.set(key,material);
+        suitMaterials.set(value,material);
       }
-      return suitMaterials.get(key);
+      return suitMaterials.get(value);
     }
     const templates = new Map();
     function template(simple,officer=false,display=false) {
@@ -228,7 +227,7 @@
           else if (color===rubber || color===dark) family='gasket';
         }
         const key = bone + '/' + family;
-        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:[],col:[],ix:[]});
+        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:family==='paint'?null:[],col:[],ix:[]});
         const dest = parts.get(key), offset = dest.pos.length/3;
         const tint = color === paint ? new T.Color(1,1,1) : hex(color);
         pose.position.set(x,y,z);
@@ -243,7 +242,7 @@
           normal.fromBufferAttribute(normals,i).applyNormalMatrix(normalMatrix);
           dest.pos.push(point.x,point.y,point.z);
           dest.norm.push(normal.x,normal.y,normal.z);
-          dest.uv.push(texcoords.getX(i),texcoords.getY(i));
+          if(dest.uv)dest.uv.push(texcoords.getX(i),texcoords.getY(i));
           if (colors) dest.col.push(tint.r*colors.getX(i),tint.g*colors.getY(i),tint.b*colors.getZ(i));
           else dest.col.push(tint.r,tint.g,tint.b);
         }
@@ -455,7 +454,7 @@
         const geometry=new T.BufferGeometry();
         geometry.setAttribute('position',new T.Float32BufferAttribute(entry.pos,3));
         geometry.setAttribute('normal',new T.Float32BufferAttribute(entry.norm,3));
-        geometry.setAttribute('uv',new T.Float32BufferAttribute(entry.uv,2));
+        if(entry.uv)geometry.setAttribute('uv',new T.Float32BufferAttribute(entry.uv,2));
         geometry.setAttribute('color',new T.Float32BufferAttribute(entry.col,3));
         geometry.setIndex(entry.ix);
         geometry.computeBoundingSphere();
@@ -514,7 +513,7 @@
       rig.portrait=['roger','raymond','shawn'].includes(options.officer)?options.officer:null;
       rig.faceFrame='neutral';
       for(const entry of template(options.simple===true,Boolean(options.officer),options.display===true)){
-        const m=entry.family==='paint'?suitMaterial(color,options.simple===true):skinMaterials[entry.family];
+        const m=entry.family==='paint'?suitMaterial(color):skinMaterials[entry.family];
         const mesh=new T.Mesh(entry.geometry,m);
         const opaqueBody=entry.family!=='glass' && entry.family!=='screen';
         mesh.castShadow=options.castShadow!==false && opaqueBody;

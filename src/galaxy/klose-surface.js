@@ -221,6 +221,40 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     closestPad,sample,heightSample,height,point,siteAt,sandstone};
 }
 
+// The remote navigation sphere and the orbital mesh use the same four bands and gaps.
+function addKloseRingBands(T,parent,definition,sunDirection,segments){
+  const {inner,outer,normal}=definition.rings,radius=definition.radius;
+  const rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3(...normal).normalize());
+  const material=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide,fog:false});
+  material.onBeforeCompile=shader=>{
+    shader.uniforms.ringSun={value:sunDirection};
+    shader.uniforms.inverseRingRadius={value:1/radius};
+    shader.vertexShader='uniform float inverseRingRadius; varying vec3 ringPoint;\n'+shader.vertexShader.replace(
+      '#include <begin_vertex>','#include <begin_vertex>\nringPoint=position*inverseRingRadius;');
+    shader.fragmentShader='uniform vec3 ringSun; varying vec3 ringPoint;\n'+shader.fragmentShader.replace(
+      '#include <color_fragment>',`#include <color_fragment>
+      float axial=dot(ringPoint,ringSun);
+      float clearance=length(ringPoint-axial*ringSun);
+      if(axial<0.)diffuseColor.rgb*=mix(.49,1.,smoothstep(.95,1.08,clearance));`);
+  };
+  material.customProgramCacheKey=()=>'klose-ring-shadow';
+  const base=new T.Color(),p=new T.Vector3();
+  for(const [a,b,dark,bright] of [[0,.22,'#bd834c','#dfa25e'],[.244,.70,'#efd567','#ffff66'],
+    [.707,.89,'#f4d269','#fff484'],[.907,1,'#efbd5a','#ffff77']]){
+    const start=T.MathUtils.lerp(inner,outer,a)*radius,end=T.MathUtils.lerp(inner,outer,b)*radius;
+    const ring=new T.RingGeometry(start,end,segments,12);
+    ring.applyQuaternion(rotation);
+    const position=ring.getAttribute('position'),rgb=new Float32Array(position.count*3);
+    const low=new T.Color(dark).convertSRGBToLinear(),high=new T.Color(bright).convertSRGBToLinear();
+    for(let i=0;i<position.count;i++){
+      const t=T.MathUtils.clamp((p.fromBufferAttribute(position,i).length()-start)/(end-start),0,1);
+      base.copy(low).lerp(high,.3+.6*t+.07*Math.sin(t*28+a*6)).toArray(rgb,i*3);
+    }
+    ring.setAttribute('color',new T.BufferAttribute(rgb,3));
+    const mesh=new T.Mesh(ring,material);mesh.name='克洛斯星 · 金色环带';parent.add(mesh);
+  }
+}
+
 function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createKloseTerrain(T,definition)) {
   const {radius,landingSites}=definition;
   const {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
@@ -270,35 +304,6 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     ctx.putImageData(land,0,0);
     const tex=new T.CanvasTexture(body);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;tex.anisotropy=4;return tex;
   }
-  function addRings() {
-    const {inner,outer}=definition.rings;
-    // The icon has an amber inner band and a wider lemon-gold outer band.
-    // Give the disk a few genuine gaps; the globe and rings share the depth buffer.
-    const material=new T.MeshBasicMaterial({vertexColors:true,side:T.DoubleSide});
-    const rotation=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,0,1),pole);
-    const lerp=T.MathUtils.lerp;
-    const sun=frame(origin.lat,origin.lon);
-    const light=sun.up.multiplyScalar(.76).addScaledVector(sun.east,-.8).addScaledVector(sun.north,-.22).normalize();
-    const p=new T.Vector3(),base=new T.Color();
-    for(const [a,b,dark,bright] of [[0,.22,'#bd834c','#dfa25e'],[.244,.70,'#efd567','#ffff66'],
-      [.707,.89,'#f4d269','#fff484'],[.907,1,'#efbd5a','#ffff77']]){
-      const start=lerp(inner,outer,a),end=lerp(inner,outer,b);
-      const ring=new T.RingGeometry(start*radius,end*radius,220,12);
-      const attribute=ring.getAttribute('position'),rgb=new Float32Array(attribute.count*3);
-      const low=color(dark),high=color(bright);
-      for(let i=0;i<attribute.count;i++){
-        p.fromBufferAttribute(attribute,i).divideScalar(radius).applyQuaternion(rotation);
-        const r=p.length(),t=clamp((r-start)/(end-start)),along=p.dot(light);
-        const clearance=Math.sqrt(Math.max(0,r*r-along*along));
-        const shade=along>=0?1:.49+.51*smooth(.95,1.08,clearance);
-        base.copy(low).lerp(high,.3+.6*t+.07*Math.sin(t*28+a*6)).multiplyScalar(shade);
-        base.toArray(rgb,i*3);
-      }
-      ring.setAttribute('color',new T.BufferAttribute(rgb,3));
-      const mesh=new T.Mesh(ring,material);mesh.name='克洛斯星 · 金色环带';
-      mesh.quaternion.copy(rotation);orbital.add(mesh);
-    }
-  }
   let builtOrbit=false,atmosphereRim;
   const shellCenter={value:new T.Vector3()},shellCut={value:2};
   function buildOrbit() {
@@ -324,7 +329,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
           '#include <clipping_planes_fragment>\n if(dot(normalize(surfaceRay),shellCenter)>shellCut) discard;');
     };
     orbital.add(new T.Mesh(shell,crust));
-    addRings();
+    const sun=frame(origin.lat,origin.lon);
+    const light=sun.up.multiplyScalar(.76).addScaledVector(sun.east,-.8).addScaledVector(sun.north,-.22).normalize();
+    addKloseRingBands(T,orbital,definition,light,220);
     const rim=new T.ShaderMaterial({vertexShader:
       'varying vec3 n; varying vec3 v; void main(){ vec4 p=modelViewMatrix*vec4(position,1.); n=normalize(normalMatrix*normal); v=normalize(-p.xyz); gl_Position=projectionMatrix*p; }',
       fragmentShader:'varying vec3 n; varying vec3 v; void main(){ float f=pow(max(0.,1.-abs(dot(normalize(n),normalize(v)))),5.); gl_FragColor=vec4(.61,.63,.71,.26*f); }',

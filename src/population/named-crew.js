@@ -163,12 +163,11 @@ function createOfficerFigure(post){
     color:new T.Float32BufferAttribute(colors,3)};
   sphere.dispose();cube.dispose();unitRing.dispose();
   const materials=[
-    new T.MeshPhysicalMaterial({vertexColors:true,metalness:.18,roughness:.36,clearcoat:.62,clearcoatRoughness:.20}),
+    seerShellEnamel.clone(),
     new T.MeshStandardMaterial({vertexColors:true,metalness:.73,roughness:.29}),
     new T.MeshStandardMaterial({vertexColors:true,metalness:.06,roughness:.65}),
     new T.MeshBasicMaterial({vertexColors:true,toneMapped:false})
   ];
-  applyManufacturedFinish(materials[0],'paint');
   applyManufacturedFinish(materials[1],'metal');
   applyManufacturedFinish(materials[2],'rubber');
   const armour=new T.Group();armour.name=post.name+' · 职务机装';

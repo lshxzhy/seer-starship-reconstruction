@@ -56,7 +56,8 @@ function buildBetaLandmarks(kit){
   const iron=metal(0x415361),gun=metal(0x33343e),edge=metal(0x8997a0),light=metal(0xc6c4b4);
   const copper=metal(0xab6856),patina=metal(0x69575a),gold=metal(0xc99843),ochre=metal(0xae782c);
   const rose=metal(0x987381),purple=metal(0x6c477e),plum=metal(0x674e72);
-  const dark=material(0x25262c,{roughness:.76}),grime=material(0x666c51,{roughness:.95});
+  const dark=fieldSurfaceFinish(material(0x25262c,{roughness:.76}),'coating');
+  const grime=fieldSurfaceFinish(material(0x666c51,{roughness:.95}),'coating');
   const green=emit(0x93d63a),aqua=emit(0x4ce0da),blue=emit(0x4bbde0),red=emit(0xe84a38);
   const chartreuse=emit(0xcbd63c),rockTone=[0xa69e8e,0x818b87,0xab9c87,0x9a8680].map(c=>fieldSurfaceFinish(material(c,{roughness:.96,vertexColors:true}),'stone'));
   // Beds have a torn edge, a dark seam recessed behind it and a freshly exposed
@@ -412,7 +413,7 @@ function buildBetaLandmarks(kit){
     block(x,z,s*.72,s*1.52);
   }
   // Geodesic observation hoods, visible hardware and finned foundations.
-  const glass=material(0x83d9d9,{roughness:.17,metalness:.14,transparent:true,opacity:.47,depthWrite:false});
+  const glass=applyWindowFresnel(material(0x83d9d9,{roughness:.17,metalness:.14,transparent:true,opacity:.47,depthWrite:false}));
   const cage=new T.IcosahedronGeometry(1,1),cageLines=new T.EdgesGeometry(cage,1);
   const pos=cageLines.getAttribute('position'),legs=6;
   function dome(x,z,r){
@@ -604,6 +605,7 @@ function buildBetaLandmarks(kit){
     const cx=-255,cz=-150,y=ground(cx,cz),shell=metal(0x34313c),wall=metal(0x534452);
     const plating=metal(0x645774),fascia=metal(0x76528a),lichen=metal(0x868751);
     const limeLine=emit(0xacc742,.33),cyanLine=emit(0x2bc7e2,.46),olive=material(0x5b622b,{roughness:.9});
+    fieldSurfaceFinish(olive,'coating');
     const inset=metal(0x28323f),grille=metal(0x657684),canvasStone=metal(0x8f8878);
     const arc=new T.TorusGeometry(1,.15,12,52,Math.PI),trim=new T.TorusGeometry(1,.045,8,52,Math.PI);
     const panel=(x,z,w,h,d,m,gap=.025)=>add(box,m,cx+x,y+h/2+gap,cz+z,w,h,d);
@@ -751,7 +753,8 @@ function buildBetaLandmarks(kit){
     ])seam(track,track[0][0]>0||track[0][0]===-10.5?limeLine:cyanLine);
     // Dense climbing roots hug the flanks, cross just above the right eye and
     // loop through the conduits without closing the central walking line.
-    const shoots=fieldSurfaceFinish(material(0x646f30,{roughness:.87}),'stem'),vines=material(0x4c5124,{roughness:.88});
+    const shoots=fieldSurfaceFinish(material(0x646f30,{roughness:.87}),'stem');
+    const vines=fieldSurfaceFinish(material(0x4c5124,{roughness:.88}),'stem');
     for(const s of [-1,1])for(let n=0;n<5;n++){
       const x=s*(13.2+.47*n),z=-11+3.9*n;
       const vine=pipe([at(x+s*.9,9.5,z-1.8),at(x-s*1.3,7.8,z-1),at(x+s*.45,6.0,z+.35),
