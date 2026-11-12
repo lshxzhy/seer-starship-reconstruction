@@ -316,8 +316,14 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
         figure(art,[{id:s.id,name:s.name}]);studio.show(stageJob.mount,stageJob.entries);
       }else{studio.hide();cols.style.gridTemplateColumns='1fr';art.remove();}
       el(info,'span','spirit-catalog-number',number(s.id)+'　'+types(s)+'　'+(s.owned?'已获得':s.seen?'已观察':'未发现'));el(info,'h3','spirit-name',s.name);
-      const where=origins.get(s.id);
-      el(info,'p','spirit-sub',where?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
+      const where=new Set(origins.get(s.id)||[]);
+      for(const prev of s.previousForms||[]){
+        const source=game.species(prev.id);
+        for(const route of source?.evolutionRoutes||[]){
+          if(route.targetId===s.id)where.add(prev.name+'进化 · '+routeTerms(route)+(route.supported?'':' · 尚未接入'));
+        }
+      }
+      el(info,'p','spirit-sub',where.size?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
       if(SPT_CHALLENGES.has(s.id))button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:s.id===47?'mushroom-spt':'shark-spt'});
       const row=SEER_SPIRIT_DATA.index.find(item=>item[0]===s.id);
       if(row?.[3]||row?.[4])el(info,'p','spirit-sub',[row[3]&&('身高 '+row[3]+' cm'),row[4]&&('体重 '+row[4]+' kg')].filter(Boolean).join('　'));
