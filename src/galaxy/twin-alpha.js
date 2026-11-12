@@ -2,7 +2,7 @@
 // meandering connection between these painted scenes are authored for this world.
 const ALPHA_THERMAL_VENTS=[[-7,-12,3.05],[5,-21,2.75],[-18,-27,2.65],[7,-6,1.95],[-15,3,2.2],[.5,-37,2.35],[-32,-7,2.1],[18,-29,1.8]];
 const ALPHA_WORLD=defineTwinWorld({
-  id:'alpha',name:'双子阿尔法星',radius:7600,previousRadius:38000,lat:.29,lon:-.95,
+  id:'alpha',name:'双子阿尔法星',radius:800,previousRadius:38000,lat:.29,lon:-.95,
   districts:[[['alpha-springs'],.29,-.95],[['alpha-rock','alpha-station'],.34,1.16],[['alpha-forest'],-.43,-3.02]],
   waterAreas:ALPHA_THERMAL_VENTS,
   sites:[
@@ -47,8 +47,24 @@ const ALPHA_WORLD=defineTwinWorld({
   buildLandmarks:buildAlphaLandmarks
 });
 
-function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}){
+function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal,projection,transition}){
   const tau=Math.PI*2,V=(x,y,z)=>new T.Vector3(x,y,z);
+  const projectedPoint=V(0,0,0),particleRotation=new T.Quaternion();
+  function projectAbsolute(geo,particles=false){
+    const positions=geo.attributes.position,rotations=particles?new Float32Array(positions.count*4):null;
+    for(let i=0;i<positions.count;i++){
+      const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i);
+      if(rotations)projection.rotation(x,z,particleRotation).toArray(rotations,i*4);
+      projection.point(x,y,z,projectedPoint);positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
+    }
+    positions.needsUpdate=true;geo.userData.surveyProjected=true;
+    if(rotations)geo.setAttribute('surveyRotation',new T.BufferAttribute(rotations,4));
+    else geo.computeVertexNormals();
+    geo.computeBoundingSphere();return geo;
+  }
+  // Rotate each GPU-animated puff and droplet in its own local surface frame.
+  const particleDirection=`attribute vec4 surveyRotation;
+    vec3 surveyDelta(vec3 d){d*=${projection.scale.toFixed(8)};return d+2.*cross(surveyRotation.xyz,cross(surveyRotation.xyz,d)+surveyRotation.w*d);}`;
   const sphere=new T.SphereGeometry(1,18,12),cube=new T.BoxGeometry(1,1,1);
   const rod=new T.CylinderGeometry(1,1,1,16),disc=new T.CylinderGeometry(1,1,1,52);
   const hoop=new T.TorusGeometry(1,.045,8,64);
@@ -168,6 +184,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       stamp(twist,teal,x+size*1.65*Math.cos(a),y,z+size*1.65*Math.sin(a),1.67*size,2.30*size,1.2*size,0,Math.PI-a,0);
     }
   }
+  transition?.('alpha-springs',(x,z,seed)=>nativeTree(x,z,1.6+seed*1.1,seed*tau));
   const ventData=ALPHA_THERMAL_VENTS;
   const water=new T.ShaderMaterial({uniforms:{clock:{value:0}},extensions:{derivatives:true},vertexShader:`
     varying vec2 disk;varying vec3 eye;void main(){disk=position.xz;mat4 pose=modelViewMatrix;
@@ -237,13 +254,15 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   }
   const sinterMesh=new T.BufferGeometry();sinterMesh.setAttribute('position',new T.Float32BufferAttribute(sinterVertices,3));
   sinterMesh.setAttribute('color',new T.Float32BufferAttribute(sinterColors,3));sinterMesh.setIndex(sinterIndices);
-  sinterMesh.computeVertexNormals();stamp(sinterMesh,stone,0,0,0);
+  stamp(projectAbsolute(sinterMesh),stone,0,0,0);
   const mistGeom=new T.BufferGeometry();mistGeom.setAttribute('position',new T.Float32BufferAttribute(mistPos,3));
   mistGeom.setAttribute('flow',new T.Float32BufferAttribute(mistData,4));
+  projectAbsolute(mistGeom,true);
   const mistMat=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{clock:{value:0}},
-    vertexShader:`attribute vec4 flow;uniform float clock;varying float opacity;varying float curl;
+    vertexShader:`${particleDirection}
+      attribute vec4 flow;uniform float clock;varying float opacity;varying float curl;
       void main(){float t=fract(clock*.25+flow.x);float beat=.66+.34*sin(clock*.65+flow.z);
-        vec3 p=position+vec3(sin(t*7.+flow.z)*t*.64+1.25*t*t,flow.w*t*beat,cos(t*6.+flow.z)*t*.52);
+        vec3 p=position+surveyDelta(vec3(sin(t*7.+flow.z)*t*.64+1.25*t*t,flow.w*t*beat,cos(t*6.+flow.z)*t*.52));
         vec4 mv=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*mv;
         gl_PointSize=clamp(flow.y*(.67+t*2.7)*600./max(.1,-mv.z),2.,170.);
         opacity=.60*(1.-t)*smoothstep(0.,.12,t);curl=flow.z+t*2.;}`,
@@ -285,9 +304,11 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   // Water at the top separates into illuminated beads and falls back inside the basin.
   const drops=new T.BufferGeometry();drops.setAttribute('position',new T.Float32BufferAttribute(dropPos,3));
   drops.setAttribute('flight',new T.Float32BufferAttribute(dropCycle,4));
+  projectAbsolute(drops,true);
   const bead=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{clock:water.uniforms.clock},
-    vertexShader:`attribute vec4 flight;uniform float clock;varying float fade;void main(){
-      float t=fract(clock*.55+flight.w);vec3 p=position+vec3(t*flight.x,4.*flight.z*t*(1.-t),t*flight.y);
+    vertexShader:`${particleDirection}
+      attribute vec4 flight;uniform float clock;varying float fade;void main(){
+      float t=fract(clock*.55+flight.w);vec3 p=position+surveyDelta(vec3(t*flight.x,4.*flight.z*t*(1.-t),t*flight.y));
       vec4 v=modelViewMatrix*vec4(p,1.);gl_Position=projectionMatrix*v;
       gl_PointSize=clamp(110./max(.1,-v.z),1.4,12.);fade=smoothstep(.07,.28,t)*(1.-smoothstep(.87,1.,t));}`,
     fragmentShader:`varying float fade;void main(){vec2 p=(gl_PointCoord*2.-1.)*vec2(1.45,1.);
@@ -347,6 +368,12 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   // Forest 407's illuminated opening is formed by bent multi-ridged trunks,
   // a warm hollow, and an interlaced roof. Keep the central aisle open.
   const forestTrunk=curve([[0,0,0],[.31,.13,.04],[-.14,.37,.08],[-.32,.66,-.06],[.06,.87,-.12],[.38,1,0]],.115,30);
+  transition?.('alpha-forest',(x,z,seed)=>{
+    const y=ground(x,z),h=6+seed*4;
+    stamp(forestTrunk,bark,x,y,z,5,h,5,0,seed*tau,0);
+    stamp(forestFern,foliage,x,y+h*.88,z,4,3,4,0,seed*tau,0);
+    block(x,z,.8,h+1);
+  });
   const forestRoot=curve([[0,.65,0],[.14,.32,.09],[.41,.14,-.06],[.70,.05,.02],[1,0,0]],.074);
   const vine=curve([[0,0,0],[.24,-.14,.05],[.49,-.33,.09],[.74,-.18,.02],[1,0,0]],.037);
   const beamGreen=material(0x528e6c),dusk=material(0x233e38),warm=material(0xd19348,{emissive:0x65301a,emissiveIntensity:.53});
@@ -421,7 +448,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     for(const side of [-1,1])paving(x+side*(1.53+.24*Math.sin(i*1.3)),z+side*.42,1.93+.35*Math.cos(i*.9),1.64,side*.24,i+side);
     if(i>7)paving(x+2.7+(i-7)*1.47,z-.75,1.68,1.26,-.64,i*2);
   }
-  const path=new T.BufferGeometry();path.setAttribute('position',new T.Float32BufferAttribute(paved,3));path.setAttribute('color',new T.Float32BufferAttribute(pavedRGB,3));path.setIndex(pavedIdx);path.computeVertexNormals();stamp(path,stone,0,0,0);
+  const path=new T.BufferGeometry();path.setAttribute('position',new T.Float32BufferAttribute(paved,3));path.setAttribute('color',new T.Float32BufferAttribute(pavedRGB,3));path.setIndex(pavedIdx);stamp(projectAbsolute(path),stone,0,0,0);
   const groveLeaf=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.86}),'moss');
   const leafbank=revolve([[.25,-.24,0x213b31],[.78,-.10,0x2c513a],[1,.16,0x3b6346],
     [.93,.38,0x577e53],[.72,.57,0x648757],[.38,.73,0x82a06a],[.02,.79,0x96ae7d]],32,

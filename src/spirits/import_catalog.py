@@ -9,6 +9,8 @@ import zlib
 PLAYABLE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 27, 28, 29,
               33, 34, 46, 47, 83, 84, 85, 164, 165, 166, 301, 302, 303, 442, 443, 444, 701, 702, 4694]
 EXHIBITS = [821, 2197, 4690, 4693]
+TWIN_PLAYABLE = [86, 87, 88, 89, 90, 91, 92, 93, 94, 97, 98, 99, 105, 106, 107,
+                111, 112, 113, 119, 120, 121, 184, 185, 188, 189]
 SAFARI = {
     "field": [10, 16, 574, 690, 553, 249, 414, 164, 738],
     "random": [399, 732, 203, 459, 293, 454, 701, 22],
@@ -143,7 +145,7 @@ def collect(folder,client):
         for item in rows if isinstance(rows,list) else [rows]:
             iid=int(item["ID"])
             if iid in resources:items[iid]=item["Name"]
-    playable=set(PLAYABLE)
+    playable=set(PLAYABLE) | set(TWIN_PLAYABLE)
     frontier={sid for pool in SAFARI.values() for sid in pool}
     while frontier:
         sid=frontier.pop()

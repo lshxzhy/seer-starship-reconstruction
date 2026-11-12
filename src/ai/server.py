@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from functools import lru_cache
+import hashlib
 from http.client import HTTPConnection, HTTPException, HTTPSConnection
 import json
 import os
@@ -33,6 +34,9 @@ CONTEXT_SIZE = 8192
 PROMPT_BUDGET = 4608
 SERVICE = 'seer-crew'
 SCHEMA_VERSION = 2
+UPDATE_ORIGIN = 'https://github.com/lshxzhy/seer-starship-reconstruction.git'
+UPDATE_BRANCH = 'codex/desktop-development-20261112'
+UPDATE_REF = 'refs/remotes/origin/' + UPDATE_BRANCH
 ROOMS = {
     'teleport': '传送舱', 'captain': '船长室', 'laboratory': '实验室',
     'archives': '资料室', 'instructor': '教官办公室', 'honors': '荣誉大厅',
@@ -45,6 +49,200 @@ class BridgeError(Exception):
     def __init__(self, status: int, message: str):
         self.status, self.message = status, message
         super().__init__(message)
+
+
+def windows_enabled_proxy():
+    """Reuse the user's enabled Windows HTTP proxy without changing settings."""
+    if os.name != 'nt':
+        return None
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r'Software\Microsoft\Windows\CurrentVersion\Internet Settings') as key:
+            if not winreg.QueryValueEx(key, 'ProxyEnable')[0]:
+                return None
+            value = str(winreg.QueryValueEx(key, 'ProxyServer')[0]).strip()
+    except OSError:
+        return None
+    if '=' in value:
+        schemes = dict(part.strip().split('=', 1) for part in value.split(';') if '=' in part)
+        value = schemes.get('https') or schemes.get('http') or ''
+    if not value:
+        return None
+    value = value if '://' in value else 'http://' + value
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.query and not parsed.fragment:
+        return value
+    return None
+
+
+def project_git(*arguments, timeout=10):
+    """Run Git only in this checkout, without interactive credential prompts."""
+    environment = os.environ.copy()
+    environment['GIT_TERMINAL_PROMPT'] = '0'
+    options = ['-c', 'credential.interactive=never']
+    if arguments and arguments[0] == 'fetch' and not any(
+            environment.get(key) for key in ('https_proxy', 'HTTPS_PROXY', 'http_proxy',
+                                             'HTTP_PROXY', 'all_proxy', 'ALL_PROXY')):
+        configured = subprocess.run(
+            ['git', 'config', '--get-urlmatch', 'http.proxy', UPDATE_ORIGIN], cwd=PROJECT,
+            env=environment, capture_output=True, timeout=10, check=False)
+        # A configured empty value deliberately disables proxies; respect it.
+        if configured.returncode == 1:
+            proxy = windows_enabled_proxy()
+            if proxy:
+                options.extend(('-c', 'http.proxy=' + proxy))
+    return subprocess.run(
+        ['git', *options, *arguments], cwd=PROJECT,
+        env=environment, capture_output=True, text=True, encoding='utf-8',
+        errors='replace', timeout=timeout, check=False)
+
+
+def local_source():
+    # A portable package inside another repository is not itself a checkout.
+    if not (PROJECT / '.git').exists():
+        return {'status': 'non_git', 'head': None, 'dirty': None}
+    try:
+        root = project_git('rev-parse', '--show-toplevel')
+        if root.returncode or Path(root.stdout.strip()).resolve() != PROJECT:
+            return {'status': 'invalid_checkout', 'head': None, 'dirty': None}
+        head = project_git('rev-parse', '--verify', 'HEAD')
+        state = project_git('status', '--porcelain', '--untracked-files=normal')
+        if head.returncode or state.returncode:
+            return {'status': 'invalid_checkout', 'head': None, 'dirty': None}
+        return {'status': 'checkout', 'head': head.stdout.strip(),
+                'dirty': bool(state.stdout)}
+    except (OSError, subprocess.TimeoutExpired):
+        return {'status': 'git_unavailable', 'head': None, 'dirty': None}
+
+
+def pending_git_operation():
+    for name in ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD',
+                 'rebase-merge', 'rebase-apply', 'sequencer'):
+        marker = project_git('rev-parse', '--git-path', name)
+        if marker.returncode:
+            return None
+        if (PROJECT / marker.stdout.strip()).exists():
+            return True
+    return False
+
+
+def check_project_updates():
+    """One event-triggered check; never stash, reset, rebase, commit or push."""
+    result = local_source()
+    result.update(remoteHead=None, latestConfirmed=False)
+    if result['status'] != 'checkout':
+        return result
+    try:
+        pending = pending_git_operation()
+        if pending is not False:
+            result['status'] = 'merge_in_progress' if pending else 'invalid_checkout'
+            return result
+        origin = project_git('remote', 'get-url', 'origin')
+        branch = project_git('symbolic-ref', '--quiet', '--short', 'HEAD')
+        if origin.returncode or origin.stdout.strip() != UPDATE_ORIGIN:
+            result['status'] = 'origin_mismatch'
+            return result
+        fetched = project_git('fetch', '--no-tags', 'origin',
+                              'refs/heads/' + UPDATE_BRANCH + ':' + UPDATE_REF, timeout=40)
+        if fetched.returncode:
+            result['status'] = 'remote_unreachable'
+            return result
+        remote = project_git('rev-parse', '--verify', UPDATE_REF)
+        if remote.returncode:
+            result['status'] = 'remote_unreachable'
+            return result
+        result['remoteHead'] = remote.stdout.strip()
+        if branch.returncode or branch.stdout.strip() != UPDATE_BRANCH:
+            result['status'] = 'wrong_branch'
+            return result
+        current = local_source()
+        if current['status'] != 'checkout' or current['head'] != result['head']:
+            result['status'] = 'checkout_changed'
+            return result
+        if current['dirty']:
+            result.update(status='local_modified', dirty=True)
+            return result
+        if result['head'] == result['remoteHead']:
+            result.update(status='up_to_date', latestConfirmed=True)
+            return result
+        behind = project_git('merge-base', '--is-ancestor', result['head'], result['remoteHead'])
+        ahead = project_git('merge-base', '--is-ancestor', result['remoteHead'], result['head'])
+        if behind.returncode == 0:
+            branch = project_git('symbolic-ref', '--quiet', '--short', 'HEAD')
+            if (branch.returncode or branch.stdout.strip() != UPDATE_BRANCH or
+                    pending_git_operation() is not False or local_source() != current):
+                result['status'] = 'checkout_changed'
+                return result
+            merged = project_git('merge', '--ff-only', '--no-edit', '--no-autostash',
+                                 '--no-overwrite-ignore', result['remoteHead'], timeout=40)
+            after = local_source()
+            if merged.returncode or after['head'] != result['remoteHead'] or after['dirty']:
+                result.update(status='update_failed', head=after['head'], dirty=after['dirty'])
+            else:
+                result.update(status='updated', head=after['head'], latestConfirmed=True)
+        elif ahead.returncode == 0:
+            result['status'] = 'local_ahead'
+        else:
+            result['status'] = 'diverged' if behind.returncode == ahead.returncode == 1 else 'update_failed'
+        return result
+    except (OSError, subprocess.TimeoutExpired):
+        if result['remoteHead']:
+            after = local_source()
+            result.update(status='update_failed', head=after['head'], dirty=after['dirty'])
+        else:
+            result['status'] = 'remote_unreachable'
+        return result
+
+
+def report_update(result):
+    messages = {
+        'non_git': '这是非 Git 交付包，不向上查找其他仓库；使用包内已构建页面，最新状态未确认。',
+        'invalid_checkout': '本项目 Git 状态不可读，未更新源码，最新状态未确认。',
+        'git_unavailable': 'Git 不可用，保留本地版本，最新状态未确认。',
+        'merge_in_progress': '本项目正在合并或变基；不更新、不装配，保留上次构建。',
+        'origin_mismatch': 'origin 不符合本项目登记地址，不访问其他仓库，最新状态未确认。',
+        'wrong_branch': '当前不是登记的共同分支，保留本机分支，请由整合主责接续。',
+        'remote_unreachable': '未能读取 GitHub 共同分支，保留本地版本，最新状态未确认。',
+        'checkout_changed': '检查期间本地提交发生变化，已停止更新，请由整合主责处理。',
+        'local_modified': '检测到本地未提交修改，已保留；未自动合并，请由整合主责接续。',
+        'up_to_date': '已确认本地源码与 GitHub 共同分支一致。',
+        'updated': '已快进更新到 GitHub 共同分支。',
+        'local_ahead': '本地存在尚未发布到共同分支的提交，请由整合主责审阅并推送。',
+        'diverged': '本地与远端存在各自提交，已保留双方历史，需由整合主责做语义合并。',
+        'update_failed': '自动快进未完成，保留现状，请由整合主责检查。',
+    }
+    print('[版本更新] ' + messages[result['status']], flush=True)
+    print('[版本更新] 本地 HEAD：' + (result['head'] or '不可用／非 Git 包'), flush=True)
+    if result.get('remoteHead'):
+        print('[版本更新] 远端 HEAD：' + result['remoteHead'], flush=True)
+
+
+def backend_revision():
+    """Identify loaded backend inputs separately from the current frontend build."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), CATALOG, SPIRIT_CATALOG):
+        digest.update(path.name.encode('utf-8'))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def build_version():
+    """Read the assembly marker, never substitute the live Git HEAD for it."""
+    try:
+        with (PROJECT / 'work' / 'seer-fragment.html').open(encoding='utf-8') as fragment:
+            header = fragment.read(8192)
+    except OSError:
+        return {'builtSourceHead': None, 'builtAt': None, 'sourceDirty': None}
+    fields = {}
+    for name, key in (('seer-source-commit', 'builtSourceHead'), ('seer-built-at', 'builtAt'),
+                      ('seer-source-dirty', 'sourceDirty')):
+        match = re.search(r'<meta\s+name="' + name + r'"\s+content="([^"]*)"', header)
+        fields[key] = match[1] if match else None
+    return fields
 
 
 def loopback_base(value):
@@ -384,7 +582,8 @@ class CrewHandler(BaseHTTPRequestHandler):
                     reachable, version = False, None
                 self._json(200, {'ok': True, 'service': SERVICE, 'schemaVersion': SCHEMA_VERSION,
                                  'ollamaAvailable': reachable, 'thinking': THINKING, 'spiritChat': True,
-                                 'model': self.server.model, 'ollamaVersion': version})
+                                 'model': self.server.model, 'ollamaVersion': version,
+                                 'runtime': self.server.runtime, 'build': build_version()})
             elif path == '/api/models':
                 models = available_models(self.server.ollama, self.server.model)
                 self._json(200, {'models': models, 'selected': self.server.model})
@@ -547,7 +746,35 @@ def main():
     parser.add_argument('--model', default=DEFAULT_MODEL)
     parser.add_argument('--open', action='store_true', help='在默认浏览器打开登舰通讯版')
     parser.add_argument('--no-build', action='store_true', help='使用已经生成的模型')
+    parser.add_argument('--check-updates', action='store_true',
+                        help='检查 GitHub 共同分支，干净且可快进时更新；不构建、不启动服务或浏览器')
     args = parser.parse_args()
+    loaded_source = local_source() if not args.check_updates else None
+    loaded_backend_revision = backend_revision() if not args.check_updates else None
+    update = None
+    if args.open or args.check_updates:
+        # Reload this module after an update also changes server.py itself.
+        # The marker is private to this one child process, not a saved setting.
+        checked_head = os.environ.pop('_SEER_UPDATE_REEXEC_HEAD', None)
+        current = local_source() if checked_head else None
+        reloaded = bool(current and current['head'] == checked_head and not current['dirty'])
+        if reloaded:
+            update = dict(current, status='updated', remoteHead=checked_head, latestConfirmed=True)
+        else:
+            update = check_project_updates()
+            report_update(update)
+        if args.check_updates:
+            print(json.dumps(update, ensure_ascii=False), flush=True)
+            raise SystemExit(0 if update['latestConfirmed'] else 2)
+        if update['status'] in ('checkout_changed', 'update_failed'):
+            raise SystemExit('更新期间源码状态发生变化，本次不构建或启动。请由整合主责处理后重开入口。')
+        if update['status'] == 'updated' and not reloaded:
+            os.environ['_SEER_UPDATE_REEXEC_HEAD'] = update['head']
+            os.execv(sys.executable, [sys.executable, '-X', 'utf8', str(Path(__file__).resolve()),
+                                     *sys.argv[1:]])
+        # Updating source always invalidates an explicitly requested old build.
+        if update['status'] == 'updated':
+            args.no_build = False
     try:
         ollama = loopback_base(args.ollama)
     except ValueError as exc:
@@ -556,6 +783,29 @@ def main():
         parser.error('登舰通讯端口应在 1 至 65535 之间。')
     base = urlsplit(f'http://127.0.0.1:{args.port}')
     address = base.geturl() + '/play'
+    source = local_source()
+    prebuilt_only = source['status'] == 'non_git' or bool(
+        update and update['status'] == 'merge_in_progress')
+    if prebuilt_only:
+        args.no_build = True
+    elif args.no_build and source['status'] == 'checkout':
+        built = build_version()
+        if (source['dirty'] or built['builtSourceHead'] != source['head'] or
+                built['sourceDirty'] != 'false'):
+            print('已有页面与当前源码不一致，先更新构建再启动。', flush=True)
+            args.no_build = False
+    # Rebuild before reusing a listener: /play reads the latest complete fragment.
+    if not args.no_build:
+        subprocess.run([sys.executable, str(PROJECT / 'work' / 'assemble-seer.py')],
+                       cwd=PROJECT, check=True)
+    if not (PROJECT / 'work' / 'seer-fragment.html').is_file():
+        raise SystemExit('本地没有可用的已构建页面，请由整合主责完成构建后再启动。')
+    built = build_version()
+    print('当前页面构建：' + (built['builtSourceHead'] or '版本未标记') +
+          '；含未提交修改：' + (built['sourceDirty'] or '未知') +
+          '；构建时间：' + (built['builtAt'] or '未标记'), flush=True)
+    runtime = {'loadedSourceHead': loaded_source['head'], 'loadedSourceDirty': loaded_source['dirty'],
+               'projectRoot': str(PROJECT), 'backendRevision': loaded_backend_revision}
     try:
         server = CrewServer(('127.0.0.1', args.port), CrewHandler)
     except OSError as exc:
@@ -567,6 +817,11 @@ def main():
             if health.get('service') == SERVICE and health.get('schemaVersion') != SCHEMA_VERSION:
                 raise SystemExit('旧版舰上通讯仍在使用此端口。关闭旧的舰上通讯，再启动本版即可联系精灵。')
             if health.get('service') == SERVICE and health.get('schemaVersion') == SCHEMA_VERSION:
+                running = health.get('runtime') or {}
+                if (running.get('projectRoot') != runtime['projectRoot'] or
+                        running.get('backendRevision') != runtime['backendRevision']):
+                    raise SystemExit('此端口的舰上通讯尚未加载本次后端或精灵资料。'
+                                     '请关闭本项目旧服务，再运行本入口；已保留端口与浏览器存档。')
                 if health.get('model') != args.model:
                     raise SystemExit('此端口上的舰上通讯已使用其他模型，请关闭旧服务或选择另一端口。')
                 if health.get('thinking') is not THINKING:
@@ -578,12 +833,10 @@ def main():
                 return
         raise SystemExit('本地通讯端口不可用，请关闭旧进程或用 --port 指定端口。') from exc
     try:
-        if not args.no_build:
-            subprocess.run([sys.executable, str(PROJECT / 'work' / 'assemble-seer.py')],
-                           cwd=PROJECT, check=True)
         read_catalog()
         server.daemon_threads = True
         server.ollama, server.model = ollama, args.model
+        server.runtime = runtime
         server.inference = threading.BoundedSemaphore(1)
         server.allowed_hosts = {f'127.0.0.1:{args.port}', f'localhost:{args.port}'}
         if args.port == 80:

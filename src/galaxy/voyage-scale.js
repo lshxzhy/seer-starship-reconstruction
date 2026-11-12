@@ -1,16 +1,46 @@
-// In v0.12 a location contained angles only. The classic walking districts
-// kept their metre layouts, while the three Klose survey pads moved inward.
+// The unmarked v3 planets used one metre chart; desktop v4 distributed those
+// charts across larger globes. Keep both historical coordinate frames explicit.
 const previousPlanetRadius={klose:480000,ocean:410000};
+const previousCompactPlanetRadius={klose:48000,ocean:41000,alpha:38000,beta:35000};
+const previousDistrictPlanetRadius={klose:9600,ocean:8200,alpha:7600,beta:7000};
+const previousKlosePads={ridge:[2880,-1480],delta:[-2720,-2940],grove:[4500,1980]};
+const compactVoyageSystemScale=1/60;
+const previousVoyageDistricts={
+  klose:[[['grassland'],.32,.54],[['swamp'],.16,2.12],[['forest'],.65,-2.48],
+    [['vineway','core'],-.52,-.92],[['wetland'],1.02,.91],[['flame'],-.64,2.36],
+    [['sanctuary'],-.47,-2.69],[['ridge'],.63,-.65],[['delta'],-1,.33],[['grove'],.08,-1.60]],
+  ocean:[[['ocean-shallows','ocean-depths','ocean-floor','ocean-sanctum'],.24,-.43]],
+  alpha:[[['alpha-springs'],.29,-.95],[['alpha-rock','alpha-station'],.34,1.16],[['alpha-forest'],-.43,-3.02]],
+  beta:[[['beta-plain'],.19,-.47],[['beta-waste','beta-training','beta-hall'],.37,1.64],[['beta-ruins'],-.40,-2.55]]
+};
 
+function voyageRadial(lat,lon){
+  return new T.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon));
+}
+function voyageCoordinates(lat,lon){
+  const c=Math.cos(lat);
+  return {lat:Math.atan2(Math.sin(lat),Math.abs(c)),lon:Math.atan2(Math.sin(lon)*c,Math.cos(lon)*c)};
+}
+function voyageTangent(lat,lon){
+  const east=new T.Vector3(-Math.sin(lon),0,-Math.cos(lon)),up=voyageRadial(lat,lon),south=east.clone().cross(up);
+  return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(east,up,south));
+}
+function formerVoyageSites(definition,oldPads=true){
+  const copy=site=>{
+    const pad=oldPads&&definition.id==='klose'&&previousKlosePads[site.id];
+    return pad?{...site,x:pad[0],z:pad[1]}:{...site};
+  };
+  return [...definition.sites.map(copy),...(definition.landingSites||[]).map(copy)];
+}
+
+// Original 480/410 km -> 48/41 km step, retaining the original survey pads.
 function compactLegacyPoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
   if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon))return location;
-  const current=definition.previousRadius||definition.radius;
-  if(!Number.isFinite(oldRadius)||current===oldRadius)return location;
-  const home=definition.sites[0],cos=Math.cos(home.lat);
-  const lonDelta=location.lon-home.lon;
+  const current=previousCompactPlanetRadius[definition.id];
+  if(!Number.isFinite(oldRadius)||!current||oldRadius===current)return location;
+  const home=definition.sites[0],cos=Math.cos(home.lat),lonDelta=location.lon-home.lon;
   const x=Math.atan2(Math.sin(lonDelta),Math.cos(lonDelta))*oldRadius*cos,z=(home.lat-location.lat)*oldRadius;
-  const distance=Math.hypot(x,z),ratio=current/oldRadius;
-  const mix=(r,a,b,lo,hi)=>lo+(r-a)*(hi-lo)/(b-a);
+  const distance=Math.hypot(x,z),ratio=current/oldRadius,mix=(r,a,b,lo,hi)=>lo+(r-a)*(hi-lo)/(b-a);
   let r=distance;
   if(distance>800){
     if(definition.id==='klose'){
@@ -23,106 +53,147 @@ function compactLegacyPoint(location,definition,oldRadius=previousPlanetRadius[d
   }
   const factor=distance?r/distance:1;
   let east=x*factor,south=z*factor;
-  // Preserve the actual metre offset of the ramp, walker and gear on old pads.
   if(definition.id==='klose'&&distance>8000&&distance<35000){
-    for(const site of definition.landingSites){
-      if(site.id!=='ridge'&&site.id!=='delta'&&site.id!=='grove')continue;
-      const dx=x-5*site.x,dz=z-5*site.z,near=Math.hypot(dx,dz);
+    for(const [px,pz] of Object.values(previousKlosePads)){
+      const dx=x-5*px,dz=z-5*pz,near=Math.hypot(dx,dz);
       if(near>=200)continue;
       const weight=1-T.MathUtils.smoothstep(near,70,200);
-      east+=(site.x+dx-east)*weight;south+=(site.z+dz-south)*weight;
-      break;
+      east+=(px+dx-east)*weight;south+=(pz+dz-south)*weight;break;
     }
   }
-  return {...location,lat:home.lat-south/current,lon:home.lon+east/(current*cos)};
+  return {...location,...voyageCoordinates(home.lat-south/current,home.lon+east/(current*cos))};
 }
 
-// Version 4 records retain the old stable place ids. Only physical positions
-// move: a visitor's offset within a district is carried into that district's
-// new spherical anchor. Arbitrary wilderness positions retain their angles.
-function migrateSurfacePoint(location,definition,format=3){
-  if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon)||!definition.layout||format>=4)return location;
-  if(format<3)return compactSurfacePoint(location,definition);
-  const oldRadius=definition.previousRadius,home=definition.sites[0];
-  if(!oldRadius)return location;
-  let x,z;
+function compactSurfacePoint(location,definition,oldRadius=previousCompactPlanetRadius[definition.id]){
+  if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon)||!definition.layout||
+      !Number.isFinite(oldRadius)||oldRadius<=0||definition.kind==='ship')return location;
+  const prior=previousCompactPlanetRadius[definition.id];if(!prior)return location;
+  if(oldRadius>prior){location=compactLegacyPoint(location,definition,oldRadius);oldRadius=prior;}
+  const home=definition.sites[0];let x,z;
   if(definition.id==='alpha'||definition.id==='beta'){
-    const d=surfaceDisplacement(home,location,oldRadius);x=d.east;z=-d.north;
+    const p=surfaceDisplacement(home,location,oldRadius);x=p.east;z=-p.north;
   }else{
-    const delta=location.lon-home.lon;x=Math.atan2(Math.sin(delta),Math.cos(delta))*oldRadius*Math.cos(home.lat);
-    z=(home.lat-location.lat)*oldRadius;
+    const delta=location.lon-home.lon;
+    x=Math.atan2(Math.sin(delta),Math.cos(delta))*oldRadius*Math.cos(home.lat);z=(home.lat-location.lat)*oldRadius;
   }
-  const region=definition.layout.source(x,z),distance=Math.min(...region.members.map(s=>Math.hypot(x-s.x,z-s.z)));
-  if(distance>550)return {...location};
-  return {...location,...definition.layout.fromXZ(x,z,region)};
+  // An old single-chart location belongs to the nearest stable scene/pad.
+  // Moving a survey pad must not multiply the visitor's local metre offset.
+  let nearest=null,distance=Infinity;
+  for(const site of formerVoyageSites(definition,oldRadius===prior)){
+    const d=Math.hypot(x-site.x,z-site.z);if(d<distance){nearest=site;distance=d;}
+  }
+  if(!nearest||distance>550)return {...location};
+  const named=(definition.landingSites||[]).find(s=>s.id===nearest.id&&s.name===nearest.name)||
+    definition.sites.find(s=>s.id===nearest.id)||(definition.landingSites||[]).find(s=>s.id===nearest.id);
+  const region=definition.layout.source(named.x,named.z);
+  const scale=definition.layout.scale;
+  return {...location,...definition.layout.fromXZ(named.x+(x-nearest.x)/scale,named.z+(z-nearest.z)/scale,region)};
 }
 
-function compactSurfacePoint(location,definition,oldRadius=previousPlanetRadius[definition.id]){
-  return migrateSurfacePoint(compactLegacyPoint(location,definition,oldRadius),definition,3);
+// V4 already uses distributed 1.7x districts. Recover that exact old chart,
+// then carry physical offsets into the corresponding new stable district.
+function migrateSurfacePoint(location,definition,format=3,oldRadius){
+  if(!location||!Number.isFinite(location.lat)||!Number.isFinite(location.lon)||!definition.layout||
+      definition.kind==='ship'||format>=5)return location;
+  if(format!==4)return compactSurfacePoint(location,definition,Number.isFinite(oldRadius)?oldRadius:
+    format<3?previousPlanetRadius[definition.id]||previousCompactPlanetRadius[definition.id]:previousCompactPlanetRadius[definition.id]);
+  const radius=Number.isFinite(oldRadius)&&oldRadius>0?oldRadius:previousDistrictPlanetRadius[definition.id];
+  const groups=previousVoyageDistricts[definition.id];if(!radius||!groups)return location;
+  const sites=formerVoyageSites(definition),unique=sites.filter((s,i)=>sites.findIndex(p=>p.id===s.id)===i);
+  const former=createSurfaceLayout(radius,unique,groups,1.7),p=former.chart(location.lat,location.lon);
+  const members=sites.filter(s=>former.source(s.x,s.z)===p.region);
+  let nearest=null,distance=Infinity;
+  for(const member of members){
+    const d=Math.hypot(p.x-member.x,p.z-member.z);if(d<distance){nearest=member;distance=d;}
+  }
+  if(!nearest||distance>550)return {...location};
+  const named=(definition.landingSites||[]).find(s=>s.id===nearest.id&&s.name===nearest.name)||
+    definition.sites.find(s=>s.id===nearest.id)||(definition.landingSites||[]).find(s=>s.id===nearest.id);
+  const region=definition.layout.source(named.x,named.z);
+  const factor=former.scale/definition.layout.scale;
+  return {...location,...definition.layout.fromXZ(named.x+(p.x-nearest.x)*factor,named.z+(p.z-nearest.z)*factor,region)};
 }
 
-let formerKloseTerrain=null;
-function previousKloseHeight(lat,lon){
-  if(!formerKloseTerrain){
-    const oldRadius=KLOSE_WORLD.previousRadius,home=KLOSE_WORLD.sites[0];
-    const fromXZ=(x,z)=>({lat:home.lat-z/oldRadius,lon:home.lon+x/(oldRadius*Math.cos(home.lat))});
-    const chart=(a,b)=>({x:Math.atan2(Math.sin(b-home.lon),Math.cos(b-home.lon))*oldRadius*Math.cos(home.lat),z:(home.lat-a)*oldRadius});
-    formerKloseTerrain=createKloseTerrain(T,{...KLOSE_WORLD,radius:oldRadius,
-      sites:KLOSE_WORLD.sites.map(s=>({...s,...fromXZ(s.x,s.z)})),
-      landingSites:KLOSE_WORLD.landingSites.map(s=>({...s,...fromXZ(s.x,s.z)})),layout:{chart,fromXZ,detail:()=>1}});
+function formerVoyageDock(definition,radius,dock){
+  if(definition.id!=='klose'||!dock)return null;
+  const home=definition.sites[0];
+  // Unmarked flying saves do not contain the former carrier transform. Keep
+  // its old sampled datum; docked saves restore to the exact new berth below.
+  const center=voyageRadial(home.lat+.18,home.lon+.05).multiplyScalar(radius+145000+795.707971);
+  const surface=voyageRadial(home.lat,home.lon).multiplyScalar(radius+120.350081);
+  return {root:{position:center},quaternion:carrierOrientation(T,center,surface)};
+}
+function rotateVoyageRecord(updated,source,rotation,speedLimit){
+  for(const field of ['v','heading'])if(Array.isArray(source[field])&&source[field].length===3&&source[field].every(Number.isFinite)){
+    const vector=new T.Vector3().fromArray(source[field]).applyQuaternion(rotation);
+    if(field==='v'&&Number.isFinite(speedLimit))vector.clampLength(0,speedLimit);
+    updated[field]=vector.toArray();
   }
-  return formerKloseTerrain.height(lat,lon);
+  if(Array.isArray(source.q)&&source.q.length===4&&source.q.every(Number.isFinite))
+    updated.q=rotation.clone().multiply(new T.Quaternion().fromArray(source.q)).normalize().toArray();
 }
 
 function compactVehicleRecord(record,dock){
-  if(!record||![1,2,3].includes(record.version))return record;
+  if(!record||![1,2,3,4,5].includes(record.version))return record;
   const definition=PANO_NAVIGATION.regions[record.planetId]?.definition||KLOSE_WORLD;
-  const updated={...record,version:4,planetId:definition.id};
-  const site=(value,body)=>{
+  const oldRadius=Number.isFinite(record.planetRadius)&&record.planetRadius>0?record.planetRadius:
+    record.version>=5?definition.radius:record.version===4?previousDistrictPlanetRadius[definition.id]:
+    record.version===3?previousCompactPlanetRadius[definition.id]:previousPlanetRadius[definition.id]||previousCompactPlanetRadius[definition.id];
+  const changed=record.version<5&&Number.isFinite(oldRadius)&&definition.kind!=='ship';
+  const updated={...record,version:5,planetId:definition.id,planetRadius:definition.radius,systemScale:compactVoyageSystemScale};
+  const site=(value,body,radius)=>{
     if(!value)return value;
-    const named=body.landingSites.find(s=>s.id===value.id)||body.sites.find(s=>s.id===value.id);
-    return named?{...value,lat:named.lat,lon:named.lon}:migrateSurfacePoint(value,body,record.version);
+    const named=(body.landingSites||[]).find(s=>s.id===value.id)||body.sites.find(s=>s.id===value.id);
+    return named?{...value,lat:named.lat,lon:named.lon}:migrateSurfacePoint(value,body,record.version,radius);
   };
-  updated.target=site(record.target,definition);
+  updated.target=site(record.target,definition,oldRadius);
   if(record.route?.site){
     const body=PANO_NAVIGATION.regions[record.route.planet]?.definition||KLOSE_WORLD;
-    updated.route={...record.route,site:site(record.route.site,body)};
+    updated.route={...record.route,planetRadius:body.radius,site:site(record.route.site,body,record.route.planetRadius)};
   }
-  // Interstellar coordinates are relative to the same moving planet centre.
-  if(record.inTransit||!definition.layout||
-     !Array.isArray(record.p)||record.p.length!==3||!record.p.every(Number.isFinite))return updated;
-  const position=new T.Vector3().fromArray(record.p),oldRadius=record.version===3?
-    definition.previousRadius:previousPlanetRadius[definition.id]||definition.previousRadius;
-  if(position.length()<oldRadius*.94)return null;
-  const altitude=position.length()-oldRadius;
-  const ll={lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
-  const radial=(lat,lon)=>new T.Vector3(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon));
-  let rotation=new T.Quaternion();
-  if(definition.id==='klose'&&dock&&altitude>140000&&altitude<150000){
-    // The terrain sampler in v0.12 placed the carrier and meadow at these heights.
-    const home=definition.sites[0];
-    const formerHeight=record.version===3?previousKloseHeight(home.lat+.18,home.lon+.05):795.707971;
-    const formerCentre=radial(home.lat+.18,home.lon+.05).multiplyScalar(oldRadius+145000+formerHeight);
-    if(position.distanceTo(formerCentre)<3500){
-      const formerHome=radial(home.lat,home.lon).multiplyScalar(oldRadius+(record.version===3?previousKloseHeight(home.lat,home.lon):120.350081));
-      rotation=dock.quaternion.clone().multiply(carrierOrientation(T,formerCentre,formerHome).invert());
-      updated.p=position.sub(formerCentre).applyQuaternion(rotation).add(dock.root.position).toArray();
+  if(record.inTransit){
+    // Transit coordinates are relative to an orbiting reference centre, even
+    // for Byron. The independent marker prevents shrinking a new save twice.
+    const oldScale=Number.isFinite(record.systemScale)&&record.systemScale>0?record.systemScale:record.version>=5?compactVoyageSystemScale:1;
+    if(oldScale!==compactVoyageSystemScale){
+      const factor=compactVoyageSystemScale/oldScale;
+      for(const field of ['p','v'])if(Array.isArray(record[field])&&record[field].length===3&&record[field].every(Number.isFinite)){
+        const vector=new T.Vector3().fromArray(record[field]).multiplyScalar(factor);
+        if(field==='v')vector.clampLength(0,800);updated[field]=vector.toArray();
+      }
+      updated.boostPower=0;updated.tour=[];updated.tourIndex=0;
     }
+    return updated;
   }
-  if(updated.p===record.p){
-    const mapped=migrateSurfacePoint(ll,definition,record.version);
-    const weight=record.phase==='landed'?1:1-T.MathUtils.smoothstep(altitude,1500,30000);
-    const delta=Math.atan2(Math.sin(mapped.lon-ll.lon),Math.cos(mapped.lon-ll.lon));
-    const to={lat:ll.lat+(mapped.lat-ll.lat)*weight,lon:ll.lon+delta*weight},up=radial(to.lat,to.lon);
-    const tangent=(lat,lon)=>{
-      const east=new T.Vector3(-Math.sin(lon),0,-Math.cos(lon)),normal=radial(lat,lon),south=east.clone().cross(normal);
-      return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(east,normal,south));
-    };
-    rotation.copy(tangent(to.lat,to.lon)).multiply(tangent(ll.lat,ll.lon).invert());
-    updated.p=up.multiplyScalar(definition.radius+altitude).toArray();
+  if(!changed)return updated;
+  updated.boostPower=0;updated.tour=[];updated.tourIndex=0;
+  if(record.phase==='docked'&&dock){
+    updated.planetId='klose';updated.planetRadius=KLOSE_WORLD.radius;
+    updated.p=dock.position.toArray();updated.q=dock.quaternion.toArray();updated.v=[0,0,0];
+    updated.heading=new T.Vector3(0,0,-1).applyQuaternion(dock.quaternion).toArray();return updated;
   }
-  for(const field of ['v','heading'])
-    if(Array.isArray(record[field])&&record[field].length===3)updated[field]=new T.Vector3().fromArray(record[field]).applyQuaternion(rotation).toArray();
-  if(Array.isArray(record.q)&&record.q.length===4)updated.q=rotation.multiply(new T.Quaternion().fromArray(record.q)).normalize().toArray();
-  return updated;
+  if(!Array.isArray(record.p)||record.p.length!==3||!record.p.every(Number.isFinite))return updated;
+  const position=new T.Vector3().fromArray(record.p);if(position.length()<oldRadius*.94)return null;
+  const altitude=position.length()-oldRadius,former=formerVoyageDock(definition,oldRadius,dock),rotation=new T.Quaternion();
+  let speedLimit=180;
+  if(former&&position.distanceTo(former.root.position)<3500){
+    rotation.copy(dock.quaternion).multiply(former.quaternion.clone().invert());
+    updated.p=position.sub(former.root.position).applyQuaternion(rotation).add(dock.root.position).toArray();
+    const migrated=new T.Vector3().fromArray(updated.p);
+    if(dock.isBlocked?.(migrated)){
+      const forward=new T.Vector3(0,0,-1).applyQuaternion(dock.quaternion),up=new T.Vector3(0,1,0).applyQuaternion(dock.quaternion);
+      migrated.copy(dock.position).addScaledVector(forward,(dock.corridorLength??dock.corridor??35)+60).addScaledVector(up,30);
+      updated.p=migrated.toArray();updated.leg='';
+    }
+    updated.riseLevel=new T.Vector3().fromArray(updated.p).length()-definition.radius+20;speedLimit=20;
+  }else{
+    const ll={lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
+    const mapped=migrateSurfacePoint(ll,definition,record.version,oldRadius),up=voyageRadial(mapped.lat,mapped.lon);
+    rotation.copy(voyageTangent(mapped.lat,mapped.lon)).multiply(voyageTangent(ll.lat,ll.lon).invert());
+    // Landed craft restore their actual gear support in the flight controller.
+    const height=record.phase==='landed'?Math.max(0,altitude):Math.max(45,
+      altitude<=500?altitude:Math.min(definition.radius*6,500+(altitude-500)*Math.sqrt(definition.radius/oldRadius)));
+    updated.p=up.multiplyScalar(definition.radius+height).toArray();updated.riseLevel=height+20;
+  }
+  rotateVoyageRecord(updated,record,rotation,speedLimit);return updated;
 }

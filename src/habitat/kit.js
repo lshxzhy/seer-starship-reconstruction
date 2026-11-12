@@ -641,7 +641,9 @@
       // handrail height. Keep the final 10 cm of deck edge outside the path.
       block(0,-halfD+.05,W,.10);
     }else if(hasWindow){
-      const sill=Math.min(1.35,H*.22),head=H*.80,pier=Math.max(1.35,W*.12),glassH=head-sill;
+      // The Seer's optical centre is about one metre above the deck. Keep
+      // the observation sill below it so a standing visitor can see outside.
+      const sill=Math.min(family==='observation'?.72:1.35,H*.22),head=H*.80,pier=Math.max(1.35,W*.12),glassH=head-sill;
       shellBox(0,sill/2,-halfD-t/2,W,sill,t,wall);
       shellBox(0,(head+H)/2,-halfD-t/2,W,H-head,t,wall);
       for(const s of [-1,1])shellBox(s*(halfW-pier/2),(sill+head)/2,-halfD-t/2,pier,glassH,t,wall);

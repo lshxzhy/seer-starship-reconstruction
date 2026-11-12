@@ -15,7 +15,7 @@ function createSpiritSystem(saved){
   const data=SEER_SPIRIT_DATA;
   const roster=new Set(data.playable),starters=[1,4,7];
   includeSpiritEvolutionForms(roster,data);
-  const wild=new Set([10,16,27,30,33,34,47,83,108,164,442,4694]);
+  const wild=new Set([10,16,27,30,33,34,47,83,108,164,442,4694,...TWIN_ENCOUNTERS.keys(),...SPT_CHALLENGES.keys()]);
   const index=new Map(data.index.map(row=>[row[0],row]));
   const formsFrom=new Map(),formsTo=new Map();
   function linkForm(source,route){
@@ -57,6 +57,16 @@ function createSpiritSystem(saved){
   const markOwned=pet=>{remember(state.seen,pet.speciesId);remember(state.owned,pet.speciesId);};
   const safari=createSafariRules({data,makePet,readPet,petView,receive,markSeen:id=>remember(state.seen,id),done,fail});
   const xpGoal=level=>level<100?Math.floor(7+1.4*level*level):0;
+  const encounterXP=foe=>Math.max(1,Math.floor((data.species[foe.speciesId].yield||56)*foe.level/7));
+  function bankExperience(amount){
+    const granted=Math.min(amount,Number.MAX_SAFE_INTEGER-state.bankedXP);
+    state.bankedXP+=granted;return granted;
+  }
+  function costToLevel(p,target){
+    if(target<=p.level)return 0;
+    let cost=-p.xp;for(let level=p.level;level<Math.min(100,target);level++)cost+=xpGoal(level);
+    return Math.max(0,cost);
+  }
   function evolutionOptions(id,pet){
     return (formsFrom.get(id)||[]).map(r=>{
       const stock=evolutionStock[r.item],count=r.count||0;
@@ -77,7 +87,7 @@ function createSpiritSystem(saved){
     id=Number(id);const row=index.get(id);if(!row)return null;
     const def=data.species[id];
     const entry={id,name:row[1],types:elements(row[2]),heightCm:row[3]??null,weightKg:row[4]??null,base:def?.base||[],evolves:def?.evolves||null,
-      seen:state.seen.includes(id),owned:state.owned.includes(id),playable:roster.has(id)};
+      seen:state.seen.includes(id),owned:state.owned.includes(id),playable:roster.has(id),canCapture:!!def?.catch};
     if(details&&def){
       entry.previousForms=(formsTo.get(id)||[]).map(({source})=>({id:source,name:monName(source)}));
       entry.evolutionRoutes=evolutionOptions(id);
@@ -107,6 +117,56 @@ function createSpiritSystem(saved){
   function potential(p){
     return [...new Set([...(p.inheritedMoves||[]),...levelMoves(p.speciesId,p.level)])];
   }
+  // A small, explainable default: a main attack, different attack coverage and
+  // one useful support skill. This is a suggestion; manual loadouts stay intact.
+  function recommendedMoveIds(p){
+    const values=stats(p),native=elements(index.get(p.speciesId)[2]),pool=potential(p);
+    const scores=new Map(pool.map(id=>{
+      const row=data.moves[id],fx=decodeSpiritEffects(row).filter(f=>f.args!==null);
+      if(row[1]===4){
+        let score=0;
+        for(const {code,args:[x,y,z]} of fx){
+          if(code===43)score=Math.max(score,80/Math.max(1,x));
+          if(code===4&&z>0)score+=z*([0,2].includes(x)?(x===0?values[1]:values[3])/Math.max(values[1],values[3])*18:8);
+          if([10,15,16].includes(code))score=Math.max(score,24*x/100);
+          if(code===5&&z<0)score+=Math.abs(z)*8;
+          if([33,47,48,55,56].includes(code))score=Math.max(score,18);
+          if(code===20)score-=10;
+        }
+        return [id,score*(row[7]?1:row[5]/100)];
+      }
+      let power=row[3],repeat=1;
+      for(const {code,args:[x,y]} of fx){
+        if(code===31)repeat=(x+y)/2;
+        if(code===6)power*=.8;
+        if(code===34||code===7)power=Math.max(power,25);
+      }
+      const same=elements(row[2]).every(t=>native.includes(t))?1.5:1;
+      return [id,power*repeat*same*(row[1]===1?values[1]:values[3])*(row[7]?1:row[5]/100)];
+    }));
+    const byScore=(a,b)=>scores.get(b)-scores.get(a)||b-a;
+    const attacks=pool.filter(id=>data.moves[id][1]!==4).sort(byScore);
+    const support=pool.filter(id=>data.moves[id][1]===4&&scores.get(id)>0).sort(byScore);
+    const selected=[];
+    const add=id=>{if(id!==undefined&&!selected.includes(id)&&selected.length<4)selected.push(id);};
+    add(attacks[0]);
+    const primary=data.moves[attacks[0]];
+    add(attacks.find(id=>data.moves[id][2]!==primary?.[2]));
+    add(support[0]);
+    for(const id of attacks)add(id);
+    for(const id of support)add(id);
+    for(const id of pool)add(id);
+    return selected;
+  }
+  function trainingView(p){
+    const routes=evolutionOptions(p.speciesId,p).filter(r=>r.supported).sort((a,b)=>a.level-b.level);
+    const next=routes[0],recommended=recommendedMoveIds(p),values=stats(p);
+    return {nextLevelCost:costToLevel(p,p.level+1),fiveLevelsCost:costToLevel(p,p.level+5),maxLevelCost:costToLevel(p,100),
+      evolutionCost:next?costToLevel(p,next.level):null,evolutionTarget:next?.targetName||null,evolutionLevel:next?.level||null,
+      recommendedMoves:recommended.map(id=>({...moveInfo(id),pp:p.moves.find(m=>m[0]===id)?.[1]??reserveMovePP(p,id)})),
+      recommendationChanged:recommended.length!==p.moves.length||recommended.some((id,i)=>p.moves[i]?.[0]!==id),
+      focus:values[1]>=values[3]?'物攻':'特攻'};
+  }
   // Limit migrated moves to real ancestors and a reachable evolution level.
   // Branch siblings, activity forms and unearned future moves cannot contribute.
   function inheritedCandidates(id,level){
@@ -122,14 +182,14 @@ function createSpiritSystem(saved){
   }
   function makePet(id,level,uid){
     const p={uid,speciesId:id,level,xp:0,iv:rand(0,31),nature:rand(0,data.natures.length-1),ev:[0,0,0,0,0,0],hp:0,moves:[]};
-    p.moves=potential(p).slice(-4).map(id=>[id,data.moves[id][4]]);p.hp=stats(p)[0];return p;
+    p.moves=recommendedMoveIds(p).map(id=>[id,data.moves[id][4]]);p.hp=stats(p)[0];return p;
   }
   function petView(p){
     const values=stats(p),flags=state.battle?.conditions[p.uid],equipped=new Set(p.moves.map(m=>m[0]));
-    return {uid:p.uid,speciesId:p.speciesId,name:label(p),types:elements(index.get(p.speciesId)[2]),level:p.level,
+    return {uid:p.uid,speciesId:p.speciesId,name:label(p),types:elements(battleType(p)),level:p.level,
       iv:p.iv,ev:[...p.ev],nature:data.natures[p.nature][0],hp:p.hp,maxHP:values[0],xp:p.xp,nextXP:xpGoal(p.level),
       stats:Object.fromEntries(statKeys.map((k,i)=>[k,values[i+1]])),
-      evolutionRoutes:evolutionOptions(p.speciesId,p),
+      evolutionRoutes:evolutionOptions(p.speciesId,p),training:trainingView(p),
       moves:p.moves.map(([id,pp])=>({...moveInfo(id),pp})),learnable:potential(p).filter(id=>!equipped.has(id)).map(id=>({...moveInfo(id),pp:reserveMovePP(p,id)})),
       status:statuses[flags?.status]||''};
   }
@@ -138,10 +198,10 @@ function createSpiritSystem(saved){
     return {party:state.party.map(petView),storage:state.storage.map(petView),followerUid:state.followerUid,capsules:state.capsules,potions:state.potions,
       starters:[...starters],seen:[...state.seen],owned:[...state.owned],log:[...state.log],
       materials:{...state.materials},bead:state.bead?{...state.bead}:null,starterClaimed:state.starterClaimed,collectionRewardClaimed:state.collectionRewardClaimed,
-      flameTool:state.flameTool,defeatedMushroom:state.bosses.includes(47),defeatedShark:state.bosses.includes(34),bankedXP:state.bankedXP,
+      flameTool:state.flameTool,bosses:[...state.bosses],defeatedMushroom:state.bosses.includes(47),defeatedShark:state.bosses.includes(34),bankedXP:state.bankedXP,
       safari:safari.view(state.safari),
       battle:b?{enemy:petView(b.enemy),activeUid:b.activeUid,encounterKey:b.encounterKey,kind:b.kind,turn:b.turn,
-        needsSwitch:active()?.hp===0,area:b.area,canCapture:b.kind!=='boss',canStruggle:active()?.hp>0&&active().moves.every(m=>!m[1])}:null};
+        needsSwitch:active()?.hp===0,area:b.area,canCapture:b.kind!=='boss'&&!!data.species[b.enemy.speciesId].catch,canStruggle:active()?.hp>0&&active().moves.every(m=>!m[1])}:null};
   }
   function receive(p){
     p.uid='p'+state.nextId++;const party=state.party.length<6;
@@ -155,7 +215,7 @@ function createSpiritSystem(saved){
       const earned=Math.min(budget,255-p.ev[i],kind.ev[i]||0);
       p.ev[i]+=earned;budget-=earned;
     }
-    const earned=Math.max(1,Math.floor((kind.yield||56)*foe.level/7));
+    const earned=encounterXP(foe);
     if(p.level<100)addLog(label(p)+' 获得 '+earned+' 经验。');
     gainExperience(p,earned,beforeHp);
   }
@@ -224,7 +284,12 @@ function createSpiritSystem(saved){
       physicalWard:0,reflect:0,reflectFactor:1,addDamage:0,addAmount:0,typeBuff:0,buffType:0,buffFactor:1,
       critBonus:0,mirror:0,mirroredDefense:0,staticGuard:0,staticChance:0,
       specialWard:0,mirrorAttack:0,mirroredAttack:0,recoveryPoints:0,recoveryAmount:0,
-      priorityTurns:0,priorityBonus:0,attackPriorityTurns:0,attackPriorityBonus:0,boostPercentTurns:0,boostPercent:0};
+      priorityTurns:0,priorityBonus:0,attackPriorityTurns:0,attackPriorityBonus:0,boostPercentTurns:0,boostPercent:0,
+      typeTurns:0,typeId:0};
+  }
+  function battleType(p){
+    const f=state.battle?.conditions[p.uid];
+    return f?.typeTurns&&Object.hasOwn(data.types,f.typeId)?f.typeId:index.get(p.speciesId)[2];
   }
   function scaled(p,i){
     const f=flags(p.uid);
@@ -234,7 +299,7 @@ function createSpiritSystem(saved){
     return base*(stage>=0?(2+stage)/2:2/(2-stage));
   }
   function typeFactor(attacking,defend){
-    const attacks=elements(attacking),opponents=elements(index.get(defend.speciesId)[2]);
+    const attacks=elements(attacking),opponents=elements(battleType(defend));
     const one=(a,d)=>data.matchups[a]?.[d]??1;
     function combined(a,b){
       if(a===2&&b===2)return 4;
@@ -273,7 +338,7 @@ function createSpiritSystem(saved){
         const roll=rand(0,9);
         if(roll<3)afflict(def,(code===74?['poison','burn','freeze']:['paralysis','sleep','fear'])[roll],rand(2,4));
       }
-      if(code===13&&!elements(index.get(def.speciesId)[2]).includes('草'))b.seed=x;
+      if(code===13&&!elements(battleType(def)).includes('草'))b.seed=x;
       if(code===20&&dice(x)){a.status='tired';a.duration=y+1;}
       if(code===22&&dice(x))afflict(def,'tired',y+(first?0:1));
       if(code===21){a.reflect=rand(x,y)+1;a.reflectFactor=z;}
@@ -298,6 +363,15 @@ function createSpiritSystem(saved){
       if(code===843){a.priorityTurns=x+1;a.priorityBonus=y;}
       if(code===481){a.attackPriorityTurns=x+1;a.attackPriorityBonus=y;}
       if(code===54){b.weaken=x+1;b.weakenFactor=y;}
+      if(code===55){
+        const from=battleType(att),to=battleType(def);
+        a.typeId=to;b.typeId=from;a.typeTurns=b.typeTurns=x+1;
+        addLog(label(att)+' 与 '+label(def)+' 的战斗属性互换 '+x+' 回合。');
+      }
+      if(code===56){
+        a.typeId=battleType(def);a.typeTurns=x+1;
+        addLog(label(att)+' 复制了对手的'+elements(a.typeId).join('·')+'属性。');
+      }
       if(code===81)a.aim=x+1;
       if(code===58)a.crit=x+1;
       if(code===57){a.recovery=x+1;a.recoveryFactor=y;}
@@ -384,7 +458,7 @@ function createSpiritSystem(saved){
       const physical=row[1]===1;
       const defenseIndex=physical?1:3;
       const attack=scaled(att,physical?0:2),defense=scaled(def,defenseIndex),baseDefense=stats(def)[defenseIndex+1];
-      const same=elements(row[2]).every(t=>elements(index.get(att.speciesId)[2]).includes(t))?1.5:1;
+      const same=elements(row[2]).every(t=>elements(battleType(att)).includes(t))?1.5:1;
       const factor=typeFactor(row[2],def);
       const burst=byCode.get(1141);
       // A multi-strike rule explicitly repeats the damage calculation.
@@ -435,9 +509,29 @@ function createSpiritSystem(saved){
   }
   function chooseMove(p){
     const available=p.moves.filter(m=>m[1]>0);
+    if(!available.length)return null;
+    const opponent=p.uid==='wild'?active():state.battle.enemy,a=flags(p.uid),b=flags(opponent.uid);
     const attacks=available.filter(m=>data.moves[m[0]][1]!==4);
-    const pool=attacks.length&&dice(70)?attacks:available;
-    return pool[rand(0,pool.length-1)]||null;
+    const supports=available.filter(m=>data.moves[m[0]][1]===4).filter(m=>
+      decodeSpiritEffects(data.moves[m[0]]).some(({code,args})=>{
+        if(!args)return false;
+        if(code===43)return p.hp<stats(p)[0]*.65;
+        if(code===4)return args[2]>0&&a.stages[args[0]]<4;
+        if(code===5)return args[2]<0&&b.stages[args[0]]>-4&&!b.mist;
+        if([10,11,12,14,15,16,94].includes(code))return !b.status&&!b.ward;
+        if(code===33)return b.stages.some(value=>value>0);
+        if(code===3)return a.stages.some(value=>value<0);
+        if(code===55||code===56)return !a.typeTurns&&battleType(p)!==battleType(opponent);
+        return ![4,5,43].includes(code);
+      }));
+    if(supports.length&&(!attacks.length||dice(25)))return supports[rand(0,supports.length-1)];
+    function score(slot){
+      const row=data.moves[slot[0]],power=Math.max(1,row[3]),physical=row[1]===1;
+      return power*scaled(p,physical?0:2)/Math.max(1,scaled(opponent,physical?1:3))*typeFactor(row[2],opponent)*
+        (elements(row[2]).every(t=>elements(battleType(p)).includes(t))?1.5:1)*(row[7]?1:row[5]/100);
+    }
+    attacks.sort((x,y)=>score(y)-score(x));
+    return (dice(75)?attacks[0]:attacks[rand(0,attacks.length-1)])||available[0];
   }
   function finishRound(){
     const b=state.battle,player=active(),enemy=b.enemy;
@@ -454,7 +548,7 @@ function createSpiritSystem(saved){
       if(f.duration>0&&!--f.duration)f.status='';
       for(const key of ['mist','fireWard','evade','boost','weaken','aim','ward','crit','leech','siphon','recovery',
         'physicalWard','reflect','addDamage','typeBuff','critBonus','mirror','staticGuard','specialWard','mirrorAttack',
-        'priorityTurns','attackPriorityTurns','recoveryPoints','boostPercentTurns'])if(f[key]>0)f[key]--;
+        'priorityTurns','attackPriorityTurns','recoveryPoints','boostPercentTurns','typeTurns'])if(f[key]>0)f[key]--;
     }
     if(!enemy.hp){
       if(enemy.speciesId===16){state.materials.photo++;addLog('获得光合能量 ×1。');}
@@ -463,20 +557,19 @@ function createSpiritSystem(saved){
       let reward='';
       if(b.kind==='boss'&&!state.bosses.includes(enemy.speciesId)){
         remember(state.bosses,enemy.speciesId);
-        if(enemy.speciesId===47){
-          const quest=SPT_CHALLENGES.get(47);
-          state.bankedXP+=quest.bankedXP;
-          const where=receive(makePet(quest.partner,1,''));
-          reward='首次击败蘑菇怪。小蘑菇已进入'+where+'，获得 '+quest.bankedXP+' 点积累经验。';
-        }else if(enemy.speciesId===34){
-          const amount=SPT_CHALLENGES.get(34).blackCrystal;
-          state.materials.blackCrystal+=amount;
-          reward='首次击败钢牙鲨，获得黑晶矿 ×'+amount+'。';
-        }
+        const quest=SPT_CHALLENGES.get(enemy.speciesId),rewards=[];
+        if(quest.partner){const where=receive(makePet(quest.partner,1,''));rewards.push(monName(quest.partner)+'已进入'+where);}
+        if(quest.bankedXP)rewards.push(bankExperience(quest.bankedXP)+' 点积累经验');
+        if(quest.blackCrystal){state.materials.blackCrystal+=quest.blackCrystal;rewards.push('黑晶矿 ×'+quest.blackCrystal);}
+        reward='首次击败'+label(enemy)+'，'+rewards.join('，')+'。';
       }
       for(const uid of b.participants){
         const p=state.party.find(p=>p.uid===uid);if(p)grantXP(p,enemy);
       }
+      // One shared award per won encounter, independent of party size. Healing,
+      // fleeing and capture do not mint experience; rest prevents immediate reuse.
+      const banked=bankExperience(Math.max(1,Math.floor(encounterXP(enemy)*.5)));
+      addLog('获得 '+banked+' 点积累经验，可用于队伍或仓库伙伴。');
       state.recent[b.encounterKey]=Date.now()+60000;state.battle=null;
       return done(reward||'战斗胜利。','won');
     }
@@ -497,11 +590,17 @@ function createSpiritSystem(saved){
       !['wild','rare','boss','common','shiny'].includes(encounter.kind))return fail('该精灵当前仅可观察。');
     const chief=SPT_CHALLENGES.get(id);
     if(chief?encounter.siteId!==chief.site||encounter.kind!=='boss':encounter.kind==='boss')return fail('请在首领所在区域发起挑战。');
+    const habitat=TWIN_ENCOUNTERS.get(id);
+    if(habitat&&(encounter.siteId!==habitat.site||encounter.kind!=='wild'))return fail('请在该精灵所在栖地发起对战。');
     if(id===47&&!state.flameTool)return fail('先到赛尔号实验室领取火焰喷射器，回林间破开护膜。');
     if((state.recent[key]||0)>Date.now())return fail('这只精灵刚刚离开，请寻找附近的其他个体。');
     const lead=state.party.find(p=>p.hp>0);
     if(!lead)return fail(state.party.length?'请先恢复队伍体力。':'先选择一只初始伙伴。');
-    const enemy=makePet(id,chief?.level||integer(encounter.level,1,100,1),'wild');
+    const enemy=makePet(id,chief?.level||habitat?.level||integer(encounter.level,1,100,1),'wild');
+    if(chief?.moves){
+      const learned=new Set(potential(enemy));
+      enemy.moves=chief.moves.filter(move=>learned.has(move)).slice(0,4).map(move=>[move,data.moves[move][4]]);
+    }
     const b={enemy,kind:encounter.kind,area:String(encounter.siteId||''),encounterKey:key,
       turn:1,activeUid:lead.uid,participants:[lead.uid],conditions:{}};
     state.battle=b;remember(state.seen,id);flags(lead.uid);flags(enemy.uid);
@@ -603,10 +702,21 @@ function createSpiritSystem(saved){
       return done('已装备火焰喷射器，可在克洛斯星林间对准蘑菇怪护膜。');
     }
     if(a.type==='allocateXP'){
-      const pet=state.party.find(p=>p.uid===a.uid);
-      if(!pet||pet.level>=100)return fail('请选择一只未满级的队伍伙伴。');
-      if(!Number.isSafeInteger(a.amount)||a.amount<=0||a.amount>state.bankedXP)return fail('分配数量需要在积累经验余额内。');
-      const used=gainExperience(pet,a.amount,stats(pet)[0]);
+      const pet=findPet(a.uid);
+      if(!pet||pet.level>=100)return fail('请选择一只未满级的队伍或仓库伙伴。');
+      let amount=a.amount;
+      if(a.mode!==undefined){
+        const training=trainingView(pet);
+        const costs={nextLevel:training.nextLevelCost,fiveLevels:training.fiveLevelsCost,evolution:training.evolutionCost,
+          all:Math.min(state.bankedXP,training.maxLevelCost)};
+        if(!Object.hasOwn(costs,a.mode))return fail('请选择有效的培养目标。');
+        amount=costs[a.mode];
+        if(amount===null)return fail('这只精灵没有当前可用的进化路线。');
+        if(a.mode==='evolution'&&!amount)return fail('已达到进化等级，请在进化栏查看材料或前往实验室。');
+      }
+      if(!Number.isSafeInteger(amount)||amount<=0)return fail('没有可分配的经验，请通过对战胜利积累。');
+      if(amount>state.bankedXP)return fail('本次需要 '+amount+' 点经验，当前还有 '+state.bankedXP+' 点。');
+      const used=gainExperience(pet,Math.min(amount,costToLevel(pet,100)),stats(pet)[0]);
       state.bankedXP-=used;
       return done(label(pet)+' 领取了 '+used+' 点积累经验，剩余 '+state.bankedXP+' 点。');
     }
@@ -646,6 +756,16 @@ function createSpiritSystem(saved){
     if(!pet)return fail('请选择队伍或仓库内的精灵。');
     if(a.type==='evolve')return evolve(pet,a);
     if(a.type==='potion')return medicate(pet);
+    if(a.type==='autoLearn'){
+      const recommended=recommendedMoveIds(pet),equipped=new Map(pet.moves);
+      const replacements=recommended.map(id=>[id,equipped.get(id)??reserveMovePP(pet,id)]);
+      for(const [id,pp] of pet.moves){
+        if(!recommended.includes(id)&&pp<data.moves[id][4])(pet.reservePP??={})[id]=pp;
+      }
+      for(const id of recommended)if(pet.reservePP)delete pet.reservePP[id];
+      pet.moves=replacements;
+      return done(label(pet)+' 已采用推荐配招，剩余 PP 保留。');
+    }
     if(a.type==='learn'){
       const id=Number(a.moveId),slot=Number(a.slot);
       if(!potential(pet).includes(id)||pet.moves.some(m=>m[0]===id))return fail('该精灵暂不能装配这项技能。');
@@ -727,7 +847,7 @@ function createSpiritSystem(saved){
     state.flameTool=defeated||saved.flameTool===true;
     // A v0.11.0 first-win record already awarded the baby, but had no experience bank.
     const rewardXP=SPT_CHALLENGES.get(47).bankedXP;
-    state.bankedXP=defeated?integer(saved.bankedXP,0,rewardXP,rewardXP):0;
+    state.bankedXP=integer(saved.bankedXP,0,Number.MAX_SAFE_INTEGER,defeated?rewardXP:0);
     state.capsules=integer(saved.capsules,0,9999,10);state.potions=integer(saved.potions,0,9999,5);
     state.collectionRewardClaimed=saved.collectionRewardClaimed===true;
     for(const k of ['photo','air','water'])state.materials[k]=integer(saved.materials?.[k],0,Number.MAX_SAFE_INTEGER);
@@ -743,6 +863,8 @@ function createSpiritSystem(saved){
     if(!old||!enemy||(!wild.has(enemy.speciesId)&&enemy.speciesId!==701)||!enemy.hp||!state.party.some(p=>p.hp)||!state.party.some(p=>p.uid===old.activeUid))return;
     const chief=SPT_CHALLENGES.get(enemy.speciesId);
     if(chief&&(old.area!==chief.site||enemy.level!==chief.level||old.kind!=='boss'))return;
+    const habitat=TWIN_ENCOUNTERS.get(enemy.speciesId);
+    if(habitat&&(old.area!==habitat.site||enemy.level!==habitat.level||old.kind!=='wild'))return;
     if(enemy.speciesId===47)state.flameTool=true;
     state.safari.encounter=null;
     const partySet=new Set(state.party.map(p=>p.uid));
@@ -756,6 +878,7 @@ function createSpiritSystem(saved){
       f.stages=f.stages.map((_,i)=>integer(s.stages?.[i],-6,6,0));
       f.status=Object.hasOwn(statuses,s.status)?s.status:'';
       for(const key of Object.keys(f))if(typeof f[key]==='number')f[key]=integer(s[key],0,key==='chainMove'?99999:999,f[key]);
+      if(!Object.hasOwn(data.types,f.typeId)){f.typeId=0;f.typeTurns=0;}
     }
   }
   function snapshot(){

@@ -1,7 +1,7 @@
 // Taomei's map table connects 20 → 21 → 22 and, in a later chapter, 22 → 737.
 // The floating L-01 berth is expedition equipment. All natural ground is submerged.
 const OCEAN_WORLD=(()=>{
-  const radius=8200,lat=.24,lon=-.43;
+  const radius=600,lat=.24,lon=-.43;
   const at=(id,name,x,z,description,mapId)=>({id,name,x,z,description,mapId,
     lat:lat-z/radius,lon:lon+x/(radius*Math.cos(lat))});
   const sites=[
@@ -13,7 +13,10 @@ const OCEAN_WORLD=(()=>{
   ];
   const routes=sites.slice(1).map((site,i)=>[sites[i].id,site.id]);
   const landingSites=[at('ocean-shallows','浅海登陆平台',24,-37,'海洋星水面上的 L-01 人工泊台',null)];
-  const layout=createSurfaceLayout(radius,sites,[[sites.map(s=>s.id),lat,lon]]);
+  const layout=createSurfaceLayout(radius,sites,[
+    [['ocean-shallows'],lat,lon],[['ocean-depths'],.62,1.8],
+    [['ocean-floor'],-.92,2.55],[['ocean-sanctum'],.47,-2.54]
+  ]);
   for(const site of [...sites,...landingSites])Object.assign(site,layout.fromXZ(site.x,site.z));
   return {id:'ocean',name:'海洋星',radius,sites,landingSites,routes,layout,previousRadius:41000};
 })();
@@ -38,28 +41,30 @@ function createOceanSurface(T,world){
     const radial=c*cz-s*north/dist*sz,side=east/dist*sz;
     return {lat:Math.atan2(s*cz+c*north/dist*sz,Math.hypot(radial,side)),lon:wrap(lon+Math.atan2(side,radial))};
   }
-  const chart=(lat,lon)=>layout.chart(lat,lon),fromXZ=(x,z)=>layout.fromXZ(x,z);
+  const chart=(lat,lon)=>layout.chart(lat,lon),fromXZ=(x,z,region)=>layout.fromXZ(x,z,region);
   const depthMarks=[6,27,49,64];
-  function seaFloor(x,z){
-    const rough=.46*Math.sin(x*.095+z*.041)*Math.cos(z*.08)+.18*Math.sin(x*.27-z*.10);
-    const reach=Math.hypot(x+86,z-57);
-    if(reach>520)return -89+12*Math.sin(x*.00038)*Math.cos(z*.00051);
-    // Blend the shelves by distance; give each named site's central courtyard a level floor.
-    let weight=0,sum=0;
-    for(let i=0;i<sites.length;i++){
-      const dx=x-sites[i].x,dz=z-sites[i].z;
-      const t=1/(60+dx*dx+dz*dz),w=t*t;
-      sum+=w*depthMarks[i];weight+=w;
+  function floorAt(lat,lon){
+    const c=Math.cos(lat),x=c*Math.cos(lon),y=Math.sin(lat),z=-c*Math.sin(lon);
+    const wave=Math.sin(x*12+z*6)*Math.cos(y*11-z*3),ridge=(1-Math.abs(Math.sin(z*21+x*8+y*3)))**2;
+    let bed=0;
+    for(const p of layout.weights(lat,lon)){
+      const index=sites.findIndex(s=>p.region.ids.includes(s.id)),outer=smooth(p.distance,65,220);
+      const rough=.46*Math.sin(p.x*.095+p.z*.041)*Math.cos(p.z*.08)+.18*Math.sin(p.x*.27-p.z*.10);
+      const relief=index===0?-4-5*wave:index===1?7*wave+4*ridge:index===2?10*wave-13*ridge:8*wave+16*ridge;
+      bed+=(-depthMarks[index]+rough*(1-outer)+relief*outer)*p.weight;
     }
-    const local=-sum/weight+rough;
-    return T.MathUtils.lerp(local,-89+12*Math.sin(x*.00038)*Math.cos(z*.00051),smooth(reach,285,520));
+    return Math.min(-2,bed);
+  }
+  function seaFloor(x,z,region=layout.source(x,z)){
+    const ll=fromXZ(x,z,region);return floorAt(ll.lat,ll.lon);
   }
   const pierRadius=22,pierLevel=1.65;
   const pierPlane=pierLevel-(pad.x*pad.x+pad.z*pad.z)*sceneScale*sceneScale/(2*radius);
   const flatHeight=(x,z,y)=>(radius+y)/Math.cos(Math.hypot(x,z)*sceneScale/radius)-radius;
   const pierDistance=Math.hypot(pad.x,pad.z),acrossX=-pad.x/pierDistance,acrossZ=-pad.z/pierDistance;
-  function support(x,z){
-    const ground=seaFloor(x,z),dx=x-pad.x,dz=z-pad.z;
+  function support(x,z,region=layout.source(x,z)){
+    const ground=seaFloor(x,z,region),dx=x-pad.x,dz=z-pad.z;
+    if(!region.ids.includes(pad.id))return ground;
     if(dx*dx+dz*dz<=pierRadius*pierRadius)return flatHeight(x,z,pierPlane);
     const along=dx*acrossX+dz*acrossZ,across=dx*acrossZ-dz*acrossX;
     if(Math.abs(across)<=2.25&&along>=pierRadius-1&&along<=pierDistance+1){
@@ -68,42 +73,27 @@ function createOceanSurface(T,world){
     }
     return ground;
   }
-  function height(lat,lon){const {x,z}=chart(lat,lon);return support(x,z);}
+  function height(lat,lon){const {x,z,region}=chart(lat,lon);return support(x,z,region);}
   function point(lat,lon,above=0){
     const r=radius+height(lat,lon)+above,c=Math.cos(lat);
     return v(r*c*Math.cos(lon),r*Math.sin(lat),-r*c*Math.sin(lon));
   }
   function siteAt(lat,lon){
-    const {x,z}=chart(lat,lon);let nearest=null,best=58;
-    for(const site of sites){const d=Math.hypot(x-site.x,z-site.z);if(d<best){nearest=site;best=d;}}
+    const {x,z,region}=chart(lat,lon);let nearest=null,best=58;
+    for(const site of sites){const d=Math.hypot(x-site.x,z-site.z);if(region.ids.includes(site.id)&&d<best){nearest=site;best=d;}}
     return nearest;
   }
   const cut={value:2},capCenter={value:v(1,0,0)};
   function globeTexture(){
-    const c=document.createElement('canvas');c.width=1024;c.height=512;
-    const ctx=c.getContext('2d'),bg=ctx.createLinearGradient(0,0,120,512);
-    bg.addColorStop(0,'#88aebd');bg.addColorStop(.32,'#91a9c8');bg.addColorStop(.58,'#687fa9');
-    bg.addColorStop(.82,'#6d86a8');bg.addColorStop(1,'#b3c8db');
-    ctx.fillStyle=bg;ctx.fillRect(0,0,1024,512);
-    let seed=328293;
-    const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
-    for(let i=0;i<58;i++){
-      const cx=rnd()*1024,cy=14+484*rnd(),r=6+30*rnd(),stretch=1.15/Math.max(.44,Math.sin(cy*Math.PI/512));
-      const bend=rnd()*tau;
-      for(const x of [cx-1024,cx,cx+1024]){
-        ctx.save();ctx.translate(x,cy);ctx.scale(stretch,1);
-        for(const [ratio,tint,weight] of [[1.25,'#556f8b',.14],[1.06,'#ced8ef',.19],[.91,'#f1f2ef',.14],[.74,'#5b8faa',.12],[.62,'#687da3',.18]]){
-          ctx.beginPath();
-          for(let k=0;k<=40;k++){
-            const a=tau*k/40,len=r*ratio*(1+.11*Math.cos(a*4+bend)+.055*Math.cos(3*a-bend));
-            const px=len*Math.cos(a),py=len*Math.sin(a);if(k===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
-          }
-          ctx.closePath();ctx.strokeStyle=tint;ctx.lineWidth=r*weight;ctx.stroke();
-        }
-        ctx.restore();
-      }
+    const canvas=document.createElement('canvas');canvas.width=512;canvas.height=256;
+    const ctx=canvas.getContext('2d'),data=ctx.createImageData(512,256),tone=new T.Color();
+    const shallow=new T.Color().setRGB(.15,.48,.55),deep=new T.Color().setRGB(.07,.23,.40);
+    for(let row=0;row<256;row++)for(let col=0;col<512;col++){
+      const lat=(.5-(row+.5)/256)*Math.PI,lon=((col+.5)/512-.5)*tau,depth=-floorAt(lat,lon);
+      tone.copy(shallow).lerp(deep,1-Math.exp(-.038*depth)).convertLinearToSRGB();
+      const i=(row*512+col)*4;data.data[i]=255*tone.r;data.data[i+1]=255*tone.g;data.data[i+2]=255*tone.b;data.data[i+3]=255;
     }
-    const tex=new T.CanvasTexture(c);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;return tex;
+    ctx.putImageData(data,0,0);const tex=new T.CanvasTexture(canvas);tex.encoding=T.sRGBEncoding;tex.wrapS=T.RepeatWrapping;return tex;
   }
   const oceanPaint=new T.MeshStandardMaterial({map:globeTexture(),roughness:.72,metalness:.06});
   oceanPaint.onBeforeCompile=s=>{
@@ -116,7 +106,12 @@ function createOceanSurface(T,world){
   const fixedFrame=frame(origin.lat,origin.lon),anchor=fixedFrame.up.clone().multiplyScalar(radius);
   district.position.copy(anchor);district.quaternion.copy(fixedFrame.quaternion);
   // Local geometry is surveyed in the same east/south chart as the collision model.
-  function groundY(x,z){return seaFloor(x,z)/sceneScale-(x*x+z*z)*sceneScale/(2*radius);}
+  function groundY(x,z){
+    const region=layout.source(x,z),d=Math.hypot(x-region.x,z-region.z)*sceneScale;
+    return ((radius+seaFloor(x,z,region))*Math.cos(d/radius)-radius)/sceneScale;
+  }
+  const projection=createLayoutProjection(T,layout,frame,groundY,seaFloor);
+  const pierTransform=new T.Matrix4().compose(anchor,fixedFrame.quaternion,v(sceneScale,sceneScale,sceneScale));
   const blockers=[],shapes=new Map(),entries=new Map();
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
@@ -161,7 +156,7 @@ function createOceanSurface(T,world){
     mat.onBeforeCompile=s=>{
       surfacePass(s);s.uniforms.seaClock=tideTime;
       s.vertexShader='varying vec3 reefPlace;\n'+s.vertexShader.replace('#include <begin_vertex>',
-        '#include <begin_vertex>\nreefPlace=(instanceMatrix*vec4(position,1.)).xyz;');
+        '#include <begin_vertex>\nvec3 reefWorld=(instanceMatrix*vec4(position,1.)).xyz;reefPlace=vec3(reefWorld.x,length(reefWorld)-'+radius.toFixed(1)+',reefWorld.z);');
       s.fragmentShader='varying vec3 reefPlace;uniform float seaClock;\n'+waterLightGLSL+s.fragmentShader.replace('#include <color_fragment>',
         `#include <color_fragment>
          float lightNet=reefLight(reefPlace.xz+.18*reefPlace.y,-reefPlace.y,seaClock);
@@ -276,9 +271,10 @@ function createOceanSurface(T,world){
     return [r*flute*Math.cos(a),y+.095*y*rib,r*flute*Math.sin(a),light*(.95+.08*rib)];
   }),organic);
   const temp=new T.Object3D();
+  let flatPlacement=false;
   function record(id,tint){
     if(!entries.has(id))entries.set(id,[]);
-    entries.get(id).push({matrix:temp.matrix.clone(),tint});
+    entries.get(id).push({matrix:flatPlacement?new T.Matrix4().multiplyMatrices(pierTransform,temp.matrix):projection.matrix(temp.matrix.clone()),tint});
   }
   function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
@@ -546,6 +542,7 @@ function createOceanSurface(T,world){
     for(let j=0;j<4;j++)stamp('tube',x+sign*(2.7+j*.38),groundY(x,z),z+j*.30,.32,.78+j*.23,.34,j%2?0x8ed568:0xa8e28e);
   }
   // An over-water platform, landing stripe and descending access ramp share the support function.
+  flatPlacement=true;
   const pierY=pierPlane/sceneScale;
   stamp('deck',pad.x,pierY-.44,pad.z,pierRadius,.88,pierRadius,0x567982);
   stamp('deck',pad.x,pierY-.026,pad.z,pierRadius-.15,.052,pierRadius-.15,0x9caaa5);
@@ -576,29 +573,63 @@ function createOceanSurface(T,world){
       last=[x,y+1,z];
     }
   }
+  flatPlacement=false;
+  // The four reef signatures continue across their spherical districts. Reuse
+  // the authored coral, limestone, crystal and sanctum meshes in fixed batches.
+  const reefProjections=new Map(layout.regions.map(region=>[region,createLayoutProjection(T,layout,frame,()=>0,
+    (x,z)=>seaFloor(x,z,region),()=>region)]));
+  for(let i=0;i<2200;i++){
+    const lat=Math.asin(1-2*(i+.5)/2200),lon=wrap(i*2.3999632297),p=chart(lat,lon),region=p.region;
+    if(region.members.some(s=>Math.hypot(p.x-s.x,p.z-s.z)<90)||
+        (region.ids.includes(pad.id)&&Math.hypot(p.x-pad.x,p.z-pad.z)<62))continue;
+    const variant=.5+.5*Math.sin(i*17.319),id=region.ids[0],floor=seaFloor(p.x,p.z,region),project=reefProjections.get(region);
+    function reef(shape,x,y,z,w,h,d,tint){
+      const key=shape+'-transition';if(!shapes.has(key))shapes.set(key,shapes.get(shape));
+      if(!entries.has(key))entries.set(key,[]);
+      temp.position.set(x,y,z);temp.rotation.set(0,i*.73,0);temp.scale.set(w,h,d);temp.updateMatrix();
+      entries.get(key).push({matrix:project.matrix(temp.matrix.clone()),tint});
+    }
+    if(id==='ocean-shallows'){
+      for(let k=0;k<3;k++)reef('tube',p.x+(k-1)*.72,0,p.z+.36*Math.sin(k+i),.48+.22*variant,1.2+1.6*variant+.3*k,.55,0xc78c9e);
+      blockers.push({x:p.x,z:p.z,r:1.6,top:floor+(2+1.6*variant)*sceneScale,region,radial:true});
+    }else if(id==='ocean-depths'){
+      reef('rock',p.x,1.15,p.z,4.2,2.6,3.4,0xb5b5ac);
+      reef('crystal',p.x+.9,2.1,p.z,.55,2.4,.62,0xd6c776);
+      blockers.push({x:p.x,z:p.z,r:4.2,top:floor+4.6*sceneScale,region,radial:true});
+    }else if(id==='ocean-floor'){
+      reef('rock',p.x,1.6,p.z,5.3,3.6,3.4,0x6e858a);
+      reef('rock',p.x+2,2.5,p.z-1.1,3.9,2.4,3.0,0x8e9a9a);
+      blockers.push({x:p.x,z:p.z,r:6,top:floor+4.8*sceneScale,region,radial:true});
+    }else{
+      reef('sanctumSpur',p.x,-.15,p.z,2.1,5+3*variant,2.4,0x42798a);
+      reef('sanctumSpur',p.x+2.4,-.12,p.z+1,1.4,3.8+variant,1.6,0x4c8b98);
+      blockers.push({x:p.x,z:p.z,r:3.8,top:floor+(8+3*variant)*sceneScale,region,radial:true});
+    }
+  }
   for(const [id,items] of entries){
     const {g,m}=shapes.get(id),batch=new T.InstancedMesh(g,m,items.length);
     for(const [i,it] of items.entries()){batch.setMatrixAt(i,it.matrix);batch.setColorAt(i,color(it.tint));}
-    batch.instanceMatrix.needsUpdate=batch.instanceColor.needsUpdate=true;batch.receiveShadow=true;batch.castShadow=true;
-    district.add(batch);
+    batch.instanceMatrix.needsUpdate=batch.instanceColor.needsUpdate=true;batch.receiveShadow=true;batch.castShadow=!id.endsWith('-transition');
+    batch.userData.surveyProjected=true;district.add(batch);
   }
   entries.clear();
+  for(const b of blockers)if(!b.radial){b.region=layout.source(b.x,b.z);b.top=seaFloor(b.x,b.z)+(b.top-groundY(b.x,b.z))*sceneScale;}
   const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),springFlags=new Float32Array(bubbleCount),rise=[];
   for(let i=0;i<bubbleCount;i++){
     const s=sites[i%4],spring=i%4===0&&i%3===0;
     const x=spring?12+random()*3-1.5:s.x+(random()-.5)*66,z=spring?4+random()*3-1.5:s.z+(random()-.5)*65;
     const y=groundY(x,z);
     springFlags[i]=spring?1:0;
-    rise.push({x,z,y,h:Math.max(4,-y-.3),phase:random(),speed:.22+random()*.38});
+    rise.push({x,z,y,h:Math.max(4,-seaFloor(x,z)/sceneScale-.3),phase:random(),speed:.22+random()*.38});
   }
   const bubblesAttr=new T.BufferAttribute(bubbles,3);lights.setAttribute('position',bubblesAttr);
   lights.setAttribute('spring',new T.BufferAttribute(springFlags,1));
   const bubbleShade=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},
     vertexShader:'attribute float spring;varying float d;varying float vent;void main(){vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;vent=spring;gl_Position=projectionMatrix*p;gl_PointSize=clamp((65.+300.*vent)/max(1.,d),1.,6.+16.*vent);}',
     fragmentShader:'varying float d;varying float vent;void main(){float z=length(gl_PointCoord-.5);if(z>.49)discard;float gleam=1.-smoothstep(.04,.13,length(gl_PointCoord-vec2(.36,.32)));float a=(.14+.62*smoothstep(.27,.46,z)+.28*gleam)*(1.-smoothstep(18.,85.,d));gl_FragColor=vec4(mix(vec3(.47,.89,.95),vec3(.64,.97,.55),vent)+.22*gleam,a);}'});
-  const particulate=new T.Points(lights,bubbleShade);particulate.frustumCulled=false;district.add(particulate);
+  const particulate=new T.Points(lights,bubbleShade);particulate.frustumCulled=false;particulate.userData.surveyProjected=true;district.add(particulate);
   // A camera-centred spherical patch resolves metre-scale walking and joins the orbital shell.
-  const patchReach=radius*.57;
+  const patchReach=radius*.82;
   const radii=[0,1.4,3,5,7,10,14,19,26,34,46,62,86,120,174,260,420,720,1400,3500,5800,8500,12400,17800].filter(r=>r<patchReach);
   radii.push(patchReach);
   const sectors=96,coords=[[0,0,0]],indices=[];
@@ -699,11 +730,11 @@ function createOceanSurface(T,world){
     const tone=new T.Color();
     for(const [i,[dx,dz,j]] of coords.entries()){
       const range=radii[j],ang=range/radius,cs=Math.cos(ang),ss=Math.sin(ang);
-      const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=seaFloor(x,z),r=radius+h;
+      const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=floorAt(ll.lat,ll.lon),r=radius+h;
       gp.setXYZ(i,dx*ss*r,cs*r-radius,dz*ss*r);wp.setXYZ(i,dx*ss*radius,cs*radius-radius,dz*ss*radius);
       chartUV.setXY(i,x,z);
       waterColumn.setX(i,Math.max(0,-h));
-      writeBed(i,x,z);
+      writeBed(i,x,z,ll.lat,ll.lon);
       tone.copy(shallowsColor).lerp(deepColor,smooth(-h,10,28)).lerp(floorColor,smooth(-h,31,49)).lerp(abyssColor,smooth(-h,50,65));
       tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
     }
@@ -711,39 +742,41 @@ function createOceanSurface(T,world){
     groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(.95*patchReach/radius);
   }
   function canSwim(lat,lon,margin=.4){
-    const {x,z}=chart(lat,lon);
-    return blockers.every(b=>Math.hypot(x-b.x,z-b.z)>b.r+margin/sceneScale);
+    const {x,z,region}=chart(lat,lon);
+    return blockers.every(b=>b.region!==region||Math.hypot(x-b.x,z-b.z)>b.r+margin/sceneScale);
   }
   function walk(lat,lon,east,north){
     const at=move(lat,lon,east,north),p=chart(at.lat,at.lon);
     const dx=p.x-pad.x,dz=p.z-pad.z,dist=Math.hypot(dx,dz);
-    if(dist>0&&Math.abs(dist-railRadius)<=.38/sceneScale+Math.hypot(east,north)/sceneScale&&
+    if(p.region.ids.includes(pad.id)&&dist>0&&Math.abs(dist-railRadius)<=.38/sceneScale+Math.hypot(east,north)/sceneScale&&
         (dx*acrossX+dz*acrossZ<0||Math.abs(dx*acrossZ-dz*acrossX)>2.02)){
       const old=chart(lat,lon),side=Math.hypot(old.x-pad.x,old.z-pad.z)<railRadius?-1:1;
       if(side*(dist-railRadius)<.38/sceneScale){const edge=railRadius+side*.38/sceneScale;p.x=pad.x+dx*edge/dist;p.z=pad.z+dz*edge/dist;}
     }
     for(const b of blockers){
+      if(b.region!==p.region)continue;
       const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28/sceneScale;
       if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
     }
     ecology.clearWalker(p,.28);
-    return fromXZ(p.x,p.z);
+    return fromXZ(p.x,p.z,p.region);
   }
   function landingInfo(lat,lon,footprint=12){
-    const {x,z}=chart(lat,lon),onPier=Math.hypot(x-pad.x,z-pad.z)+footprint/sceneScale<=pierRadius;
-    const h=support(x,z),top=Math.max(0,h);
+    const {x,z,region}=chart(lat,lon),onPier=region.ids.includes(pad.id)&&Math.hypot(x-pad.x,z-pad.z)+footprint/sceneScale<=pierRadius;
+    const h=support(x,z,region),top=Math.max(0,h);
     return {ok:onPier,height:h,top,slope:0,water:!onPier,obstacle:false,
       reason:onPier?'':'下方是海水，请返回浅海登陆平台'};
   }
   function clipCamera(aim,eye){
     // Clip the third-person boom at the near edge of any reef its line crosses.
-    const here=aim.clone().sub(anchor).divideScalar(sceneScale),sight=eye.clone().sub(aim);
-    const localSight=sight.clone().divideScalar(sceneScale),x=here.dot(fixedFrame.east),z=here.dot(fixedFrame.south);
-    const y=here.dot(fixedFrame.up),dx=localSight.dot(fixedFrame.east),dz=localSight.dot(fixedFrame.south),dy=localSight.dot(fixedFrame.up);
+    const ll=p=>({lat:Math.atan2(p.y,Math.hypot(p.x,p.z)),lon:Math.atan2(-p.z,p.x)});
+    const a=ll(aim),b=ll(eye),here=chart(a.lat,a.lon),there=chart(b.lat,b.lon),sight=eye.clone().sub(aim);
+    const x=here.x,z=here.z,y=aim.length()-radius,dx=there.x-x,dz=there.z-z,dy=eye.length()-aim.length();
     const length2=dx*dx+dz*dz;if(length2<.001)return;
     let limit=1;
     for(const b of blockers){
-      const rx=x-b.x,rz=z-b.z,t=-(rx*dx+rz*dz)/length2,r=b.r+.24;
+      if(b.region!==here.region)continue;
+      const rx=x-b.x,rz=z-b.z,t=-(rx*dx+rz*dz)/length2,r=b.r+.24/sceneScale;
       if(t<0||t>1+r/Math.sqrt(length2))continue;
       const chord2=r*r-(rx+t*dx)**2-(rz+t*dz)**2;
       if(chord2<=0)continue;
@@ -753,12 +786,12 @@ function createOceanSurface(T,world){
     if(limit<1)eye.copy(aim).addScaledVector(sight,limit);
   }
   let mode='hidden',elapsed=0,last=null;
-  placeSurfaceDistrict(T,district,layout,frame,radius);
+  placeSurfaceDistrict(T,district,projection);
   const body={root,sites,radius,sceneScale,landingSites,landingSite:id=>id===pad.id?pad:null,frame,chart,height,point,move,siteAt,walk,canSwim,clipCamera,
     resolveArrival:(lat,lon)=>walk(lat,lon,0,0),groundCorrection:()=>0,waterDepth:(lat,lon)=>Math.max(0,-height(lat,lon)),
     landingInfo,flightHeight:(lat,lon,footprint=0)=>{
-      const {x,z}=chart(lat,lon);
-      return Math.max(0,support(x,z));
+      const {x,z,region}=chart(lat,lon);
+      return Math.max(0,support(x,z,region));
     },setMode,update,dispose,forestBossPosition:()=>null,nearestPipi:()=>null,setSafariState(){},
     safariAction:()=>null,safariWalk:()=>null,safariHint:()=>'',interactSpiritSite:()=>'',
     spiritSiteHint:(lat,lon)=>height(lat,lon)>.4?'浅海登陆平台 · 沿西南侧黄色护栏斜坡步行下水':
@@ -770,17 +803,22 @@ function createOceanSurface(T,world){
     if(next!==mode)last=null;mode=next;root.visible=next!=='hidden';if(next==='hidden')return;
     globe.visible=true;terrain.visible=district.visible=fauna.visible=false;cut.value=2;
   }
+  const bubblePoint=v();
   function update(lat,lon,dt=0,altitude=0,shuttleStatus=null){
     if(mode==='hidden')return;
-    const near=mode==='surface'||(mode==='flight'&&altitude<radius*.19);
+    const near=mode==='surface'||(mode==='flight'&&altitude<radius*.68);
     terrain.visible=near;fauna.visible=near&&mode==='surface';
-    const c=chart(lat,lon);district.visible=near&&altitude<1250&&Math.hypot(c.x+80,c.z-60)<2700;
+    district.visible=near;
     if(!near){last=null;cut.value=2;return;}
-    if(!last||Math.hypot(c.x-last.x,c.z-last.z)>Math.min(1800,4+altitude*.18)){placePatch(lat,lon);last=c;}
+    const tolerance=mode==='surface'?4:patchReach*.16;
+    if(!last||layout.displacement(last,lat,lon).distance>tolerance){
+      placePatch(lat,lon);last={lat,lon};
+    }
     elapsed+=dt;tideTime.value=elapsed;
     if(district.visible)for(const [i,p] of rise.entries()){
       const y=p.y+.18+p.h*((p.phase+elapsed*p.speed/p.h)%1);
-      bubblesAttr.setXYZ(i,p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y));
+      projection.point(p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y),bubblePoint);
+      bubblesAttr.setXYZ(i,bubblePoint.x,bubblePoint.y,bubblePoint.z);
     }
     bubblesAttr.needsUpdate=district.visible;
     ecology.update(lat,lon,dt,mode==='surface',shuttleStatus);

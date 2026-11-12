@@ -341,6 +341,13 @@ function createKloseScenery(T, parent, surface) {
       const at=move(site.lat,site.lon,x,-z);
       return height(at.lat,at.lon)-baseHeight-(x*x+z*z)/(2*radius);
     }
+    const inverse=frame(site.lat,site.lon).quaternion.clone().invert();
+    const projection=createSurveyProjection(T,radius+baseHeight,yAt,(x,z)=>{
+      const at=move(site.lat,site.lon,x,-z);return height(at.lat,at.lon)-baseHeight;
+    },(x,z,out)=>{
+      const at=move(site.lat,site.lon,x,-z),c=Math.cos(at.lat);
+      return out.set(c*Math.cos(at.lon),Math.sin(at.lat),-c*Math.sin(at.lon)).applyQuaternion(inverse);
+    });
     function stamp(key,x,y,z,sx,sy,sz,hex,rx=0,ry=0,rz=0) {
       temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(sx,sy,sz);temp.updateMatrix();
       remember(key,hex);
@@ -348,9 +355,10 @@ function createKloseScenery(T, parent, surface) {
     function remember(key,hex) {
       // Leave a sightline at eye height across the clearing, including the
       // length of each frond. The random sequence for the rest of the forest is preserved.
-      if(bossGlade&&key==='leaf'&&Math.hypot(temp.position.x-bossGlade[1],temp.position.z-bossGlade[2])<5+2*temp.scale.length())return;
+      if(bossGlade&&key==='leaf'&&Math.hypot(temp.position.x-bossGlade[1],temp.position.z-bossGlade[2])<
+          Math.max(5,FIELD_SPIRIT_SCALE*FIELD_BOSS_SCALE/sceneScale)+2*temp.scale.length())return;
       if(!records.has(key))records.set(key,[]);
-      records.get(key).push({matrix:temp.matrix.clone(),hex});
+      records.get(key).push({matrix:projection.matrix(temp.matrix.clone()),hex});
     }
     function link(a,b,rad,hex,key='twig') {
       const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,len=Math.hypot(dx,dy,dz);
@@ -1003,10 +1011,11 @@ function createKloseScenery(T, parent, surface) {
     poolTime.value=(poolTime.value+dt)%3600;
     const {x,z}=chart(lat,lon);
     for(let i=0;i<sites.length;i++) {
-      const site=sites[i],dist=Math.hypot(x-site.x,z-site.z,altitude);
-      if(!batches[i]&&dist<570)batches[i]=makeSite(site,i);
+      const site=sites[i],dot=Math.sin(lat)*Math.sin(site.lat)+Math.cos(lat)*Math.cos(site.lat)*Math.cos(lon-site.lon);
+      const dist=Math.hypot(Math.acos(T.MathUtils.clamp(dot,-1,1))*radius*sceneScale,altitude);
+      if(!batches[i]&&dist<570*sceneScale)batches[i]=makeSite(site,i);
       const parts=batches[i];
-      if(parts){parts.group.visible=dist<670;parts.near.visible=dist<116;parts.far.visible=!parts.near.visible;}
+      if(parts){parts.group.visible=dist<670*sceneScale;parts.near.visible=parts.group.visible&&dist<(walking?116:55)*sceneScale;parts.far.visible=!parts.near.visible;}
     }
     const walker=walking?{x,z}:null;
     const shuttle=shuttleStatus&&shuttleStatus.clearance<32?chart(shuttleStatus.lat,shuttleStatus.lon):null;
@@ -1065,7 +1074,7 @@ function createKloseScenery(T, parent, surface) {
     if(hunting)return hunting;
     const viewer=chart(lat,lon),roots=[];
     for(const p of [...pipi,...wildlife.inhabitants]){
-      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale<=22)roots.push(p.root);
+      if(p.near.visible&&p.root.visible&&Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale<=22+p.radius*sceneScale)roots.push(p.root);
     }
     const hit=raycaster.intersectObjects(roots,true)[0];
     if(!hit)return null;
@@ -1106,7 +1115,13 @@ function createKloseScenery(T, parent, surface) {
     const boss=wildlife.inhabitants.find(p=>p.speciesId===47);
     return boss?.at||null;
   }
+  function prepareFlight(){
+    for(const [i,site] of sites.entries()){
+      if(!batches[i])batches[i]=makeSite(site,i);
+      batches[i].group.visible=false;
+    }
+  }
   return {update,nearestPipi,spiritObservation,forestBossPosition,withdrawSpirit,pickSpirit,interactSpiritSite:wildlife.interact,
     spiritSiteHint:wildlife.hint,setSafariState:safari.setState,safariAction:safari.action,safariWalk:safari.walked,safariHint:safari.hint,
-    walk,prepareWalk,obstacleTop};
+    walk,prepareWalk,prepareFlight,obstacleTop};
 }

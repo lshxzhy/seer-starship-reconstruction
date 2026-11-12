@@ -62,7 +62,7 @@
     if(expedition.visitSurface(planetId,id,approachMushroom))return;
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:4,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
+    stagedExpedition={format:5,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,
       vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,navTarget:current?.navTarget||parkedLanding?.navTarget,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
@@ -104,8 +104,11 @@
     setFlameTool:value=>boarding.setFlameTool(value),
     visitChallengeSite:id=>{
       if(id==='laboratory'){travelToShip('laboratory');return;}
-      if(id==='ocean-floor'){travelToPlanet(id,false,'ocean');return;}
-      if(!expedition.approachForestBoss())travelToPlanet('forest',true);
+      const challenge=[...SPT_CHALLENGES.values()].find(entry=>entry.site===id);
+      if(!challenge)return;
+      if(id==='forest'){
+        if(!expedition.approachForestBoss())travelToPlanet(id,true,challenge.planet);
+      }else travelToPlanet(id,false,challenge.planet);
       canvas.focus({preventScroll:true});
     },
     setSafari:s=>expedition.setSafariState(s),enterWetland:()=>expedition.enterWetland(),
@@ -120,7 +123,7 @@
       (state.mode!=='board'&&!expedition.canOpenSpirits))return;
     if(contact&&expedition.active&&!expedition.grounded)return;
     const wild=contact?expedition.nearbySpirit():null;
-    if(contact&&(!wild||wild.kind==='apparition'||wild.distance>22))return;
+    if(contact&&(!wild||wild.kind==='apparition'||wild.distance>(wild.contactRange||22)))return;
     boarding.clearInputs();expedition.clearInputs();
     if(wild?.kind==='safari')spiritTerminal.open(null,trigger,{op:wild.method==='field'?'field':'menu',speciesId:wild.speciesId});
     else spiritTerminal.open(wild,trigger);
@@ -139,7 +142,7 @@
     if(parkedPlanetName()){cockpit.openMap('shuttle-ramp');return;}
     const target=PANO_NAVIGATION.flights.get(berth.landingSiteId);
     if(!target||target.planetId!==berth.destination)return;
-    stagedExpedition={format:4,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
+    stagedExpedition={format:5,origin:{roomId:boarding.roomId,berthId:berth.id,destination:berth.destination,board:boarding.snapshot()},
       phase:'transfer',navTarget:target.id,vehicle:dockedVehicle};
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -186,6 +189,8 @@
     }
     expedition.hide();
     const aboard=state.mode==='board', cut=state.mode==='section', single=state.mode==='deck';
+    if(!aboard&&liveBoard){boarding.leave();liveBoard=false;}
+    const windowView=aboard&&carrierGlazing.hasView(boarding.roomId);
     const detailed=boardable();
     const located=cut && habitat.byId.get(state.located);
     reflections.select(aboard || Boolean(detailed));
@@ -196,9 +201,9 @@
       locator.position.copy(habitat.worldPosition(x,y+height*.5,z));
       locator.scale.set(width*unitMetre,height*unitMetre,depth*unitMetre);
     }
-    for(const g of exterior)g.visible=!single && !aboard;
+    for(const g of exterior)g.visible=!single && (!aboard||windowView);
     for(const {part,source} of outerMeshes){
-      part.visible=!single && !aboard && !(cut && source.isShaderMaterial);
+      part.visible=!single && (!aboard||windowView) && !(cut && source.isShaderMaterial);
       part.material=cut?(sectionMats.get(source)||source):source;
     }
     interiorModel.root.visible=(cut || single) && !detailed;
@@ -234,7 +239,6 @@
       cockpit.sync(true);
       requestDraw();return;
     }
-    if(liveBoard){boarding.leave();liveBoard=false;}
     habitat.setPreview(detailed?.id || null);
     camera.near=detailed ? Math.max(.0002,unitMetre*.12) : .1;
     camera.updateProjectionMatrix();
@@ -267,10 +271,10 @@
     spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
-    if(parkedLanding&&parkedLanding.vehicle.version<4){
+    if(parkedLanding&&parkedLanding.vehicle.version<5){
       const definition=PANO_NAVIGATION.regions[parkedLanding.vehicle.planetId]?.definition||KLOSE_WORLD;
       parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(parkedLanding.vehicle),
-        ramp:migrateSurfacePoint(parkedLanding.ramp,definition,parkedLanding.vehicle.version)};
+        ramp:migrateSurfacePoint(parkedLanding.ramp,definition,parkedLanding.vehicle.version,parkedLanding.vehicle.planetRadius)};
       if(!parkedLanding.vehicle)parkedLanding=null;
     }
     state.mode=saved.mode;

@@ -2,7 +2,7 @@
 // X/Z describe one survey in metres. Reverse sides, distances and ramps connect
 // the original stage views without moving the visitor between separate maps.
 const BETA_WORLD=defineTwinWorld({
-  id:'beta',name:'双子贝塔星',radius:7000,previousRadius:35000,lat:.19,lon:-.47,
+  id:'beta',name:'双子贝塔星',radius:850,previousRadius:35000,lat:.19,lon:-.47,
   districts:[[['beta-plain'],.19,-.47],[['beta-waste','beta-training','beta-hall'],.37,1.64],[['beta-ruins'],-.40,-2.55]],
   sites:[
     {id:'beta-plain',name:'双子贝塔星',x:0,z:0,mapId:47,lookAt:[4,-32],lookPitch:.22,description:'红褐色巨型掘进机。单目绿灯下方是红色进气口，两条节臂垂下三枚锥钻。'},
@@ -48,7 +48,17 @@ const BETA_WORLD=defineTwinWorld({
 });
 
 function buildBetaLandmarks(kit){
-  const {T,ground,stamp,block,root,material}=kit,tau=2*Math.PI;
+  const {T,ground,stamp,block,root,material,projection}=kit,tau=2*Math.PI;
+  const projectedPoint=new T.Vector3();
+  function projectAbsolute(geo){
+    const positions=geo.attributes.position;
+    for(let i=0;i<positions.count;i++){
+      projection.point(positions.getX(i),positions.getY(i),positions.getZ(i),projectedPoint);
+      positions.setXYZ(i,projectedPoint.x,projectedPoint.y,projectedPoint.z);
+    }
+    positions.needsUpdate=true;geo.userData.surveyProjected=true;
+    geo.computeVertexNormals();geo.computeBoundingSphere();return geo;
+  }
   const box=new T.BoxGeometry(1,1,1),ball=new T.SphereGeometry(1,32,20);
   const drum=new T.CylinderGeometry(1,1,1,36),hex=new T.CylinderGeometry(1,1,1,6);
   const chamfer=new T.CylinderGeometry(.82,1,1,8),torus=new T.TorusGeometry(1,.085,10,44);
@@ -93,7 +103,7 @@ function buildBetaLandmarks(kit){
   }
   function pipe(points,r,m,segments=32){
     const line=new T.CatmullRomCurve3(points);
-    add(new T.TubeGeometry(line,segments,r,12,false),m,0,0,0);return line;
+    add(projectAbsolute(new T.TubeGeometry(line,segments,r,12,false)),m,0,0,0);return line;
   }
   function sleeve(curve,count,r,m){
     for(let i=0;i<count;i++){
@@ -141,7 +151,7 @@ function buildBetaLandmarks(kit){
   function finishDeck(){
     for(const [mat,{v,i}] of deck){
       const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));
-      g.setIndex(i);g.computeVertexNormals();add(g,mat,0,0,0);
+      g.setIndex(i);add(projectAbsolute(g),mat,0,0,0);
     }
   }
 
@@ -165,8 +175,8 @@ function buildBetaLandmarks(kit){
       v.push(at.x,at.y,at.z);
       if(row<4&&k<4){const i=row*5+k;idx.push(i,i+1,i+5,i+1,i+6,i+5);}
     }
-    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setIndex(idx);g.computeVertexNormals();
-    add(g,metal(j%2===0?0x907987:0xa27f8b),0,0,0);
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(v,3));g.setIndex(idx);
+    add(projectAbsolute(g),metal(j%2===0?0x907987:0xa27f8b),0,0,0);
     const seamA=hullPoint(a,7.35,.10),seamB=hullPoint(a,11.94,.10);
     pipe([seamA,hullPoint(a,9.6,.12),seamB],.066,patina,5);
     for(const h of [7.63,11.58]){
@@ -204,7 +214,7 @@ function buildBetaLandmarks(kit){
   }
   const cuttingSteel=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,metalness:.68,roughness:.34}),'metal');
   const bits=new T.InstancedMesh(drillBit(),cuttingSteel,6),mounts=[],bitPose=new T.Object3D();
-  bits.frustumCulled=false;bits.castShadow=true;bits.receiveShadow=true;root.add(bits);
+  bits.userData.surveyProjected=true;bits.frustumCulled=false;bits.castShadow=true;bits.receiveShadow=true;root.add(bits);
   for(const s of [-1,1]){
     const curve=pipe([p(mx+s*6.3,my+11.4,mz),p(mx+s*10.4,my+14.7,mz-.4),p(mx+s*14.5,my+14.4,mz+2),p(mx+s*17,my+9.2,mz+3.2)],1.40,copper);
     sleeve(curve,14,1.42,patina);
@@ -237,7 +247,7 @@ function buildBetaLandmarks(kit){
     for(const [index,m] of mounts.entries()){
       bitPose.position.set(m.x,m.y,m.z);bitPose.scale.set(1,1.13,1);
       bitPose.rotation.set(0,m.turn+m.sign*time*.56,0);bitPose.updateMatrix();
-      bits.setMatrixAt(index,bitPose.matrix);
+      bits.setMatrixAt(index,projection.matrix(bitPose.matrix));
     }
     bits.instanceMatrix.needsUpdate=true;
   }

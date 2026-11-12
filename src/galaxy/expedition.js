@@ -85,6 +85,12 @@
     const keyNames=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','Space','KeyC','KeyX','KeyQ','KeyR']);
     const flightPulses=new Map();
     function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();drag=null;lastTime=null;worksites?.cancel();}
+    const lookKeys=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown']);
+    const autoViewing=()=>phase==='helm'&&!!(pending||flight.status().auto);
+    function lookAround(left,right,up,down,amount){
+      yaw+=(Number(left)-Number(right))*amount;
+      pitch=clamp(pitch+(Number(up)-Number(down))*amount,-1.1,1.12);
+    }
     const displacement=(a,b)=>navigationDisplacement(a,b,definition);
     const coordinates=(p,surface=body)=>surface.coordinates?surface.coordinates(p):spherical(p);
     function usePlanet(id){
@@ -93,6 +99,7 @@
       throughScope=false;sisterAbove=false;jump.reset();
       for(const mesh of Object.values(skyPlanets))mesh.visible=false;
       body?.setMode('hidden');body=getSurface(regions[id]?id:'klose');
+      body.prepareFlight?.();
       region=regions[id]||regions.klose;definition=region.definition;radius=definition.radius;home=definition.sites[0];
       worksites=worksiteGroups[definition.id]??=createFieldWorksites(T,world,definition,body,()=>boarding.pack(),id=>boarding.collectField(id));
       airWeights=new Float32Array(definition.sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
@@ -368,7 +375,7 @@
       buildWorld();origin=saved.origin;configureDock();
       flight=createPanoFlight(T,getSurface,dock,pano,saved.vehicle);
       usePlanet(saved.phase==='surface'&&regions[saved.planetId]?saved.planetId:flight.planetId);
-      const current=[2,3,4].includes(saved.format);
+      const current=[2,3,4,5].includes(saved.format);
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
       if(phase==='surface')surfacePitch=pitch;
@@ -383,13 +390,13 @@
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
-      if(current&&saved.format<4&&phase==='surface')position=migrateSurfacePoint(position,definition,saved.format);
+      if(current&&saved.format<5&&phase==='surface')position=migrateSurfacePoint(position,definition,saved.format,saved.surfaceRadius);
       if(!current&&saved.phase==='surface'){
         // The previous radius was 780 km. Keep the visitor's distances from the meadow.
         position=compactSurfacePoint(position,definition,780000);
         flight.placeOnSurface('grassland');phase='surface';dock.setTravel(dock.total);
       }
-      if(saved.format!==4&&phase==='surface'&&!saved.mapDestination)
+      if(saved.format!==5&&phase==='surface'&&!saved.mapDestination)
         position=(body.resolveMigration||body.resolveArrival)(position.lat,position.lon);
       pending=current&&['launch','auto'].includes(saved.pending)&&phase==='helm'?saved.pending:null;
       arrival='';observedBird=null;arrivedOnDeck=!!saved.arrivedOnDeck;approachRamp=false;feedback='';
@@ -412,7 +419,7 @@
       delete stage.dataset.domain;delete stage.dataset.planet;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
-      return {format:4,origin,phase,planetId:definition.id,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
+      return {format:5,origin,phase,planetId:definition.id,surfaceRadius:definition.radius,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
         door,transfer:dock.travel,transferSign,external,navTarget,pending,arrivedOnDeck,yaw,pitch,eye,facing,targetId};
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
@@ -531,9 +538,17 @@
       leaveSeat.disabled=!!pending||s.phase==='flying';
       leaveSeat.title=leaveSeat.disabled?'着陆或对接停稳后可以离席':'离开驾驶席';
       cancelRouteButton.hidden=!walking||(!targetId&&!approachRamp);
+      const viewing=seated&&!!(s.auto||pending);
       for(const b of pad.querySelectorAll('[data-step]')){
-        const left=b.dataset.step==='KeyA',right=b.dataset.step==='KeyD';
-        if(left||right)b.setAttribute('aria-label',seated?(left?'向左转向':'向右转向'):(left?'向左平移':'向右平移'));
+        const code=b.dataset.step,left=code==='KeyA',right=code==='KeyD';
+        b.setAttribute('aria-label',viewing?({KeyA:'向左看',KeyD:'向右看',KeyW:'向上看',KeyS:'向下看'}[code]):
+          left||right?(seated?(left?'向左转向':'向右转向'):(left?'向左平移':'向右平移')):code==='KeyW'?'向前移动':'向后移动');
+      }
+      for(const b of hand.querySelectorAll('[data-flight-key]')){
+        const code=b.dataset.flightKey;
+        b.disabled=viewing&&!lookKeys.has(code);b.title=b.disabled?'按 P 接管后可操纵':'';
+        if(code==='ArrowUp')b.textContent=viewing?'向上看 ↑':'抬头 ↑';
+        if(code==='ArrowDown')b.textContent=viewing?'向下看 ↓':'低头 ↓';
       }
       if(seated)stage.dataset.helm='true';else delete stage.dataset.helm;
       hint.hidden=false;
@@ -550,7 +565,7 @@
           delta.applyQuaternion(originRotation.copy(flight.quaternion).invert());
           const bearing=Math.atan2(delta.x,-delta.z)*180/Math.PI;
           const mark=Math.abs(bearing)<8?'正前':(bearing>0?'右 ':'左 ')+Math.round(Math.abs(bearing))+'°';
-          hint.textContent=pending?'尾舱门正在闭锁':(s.auto?s.stage+'　×'+s.timeScale.toFixed(1):s.phase!=='flying'?
+          hint.textContent=pending?'尾舱门正在闭锁 · 可拖动环视 · P 取消':(s.auto?s.stage+' · 拖动或方向键环视 · P 接管':s.phase!=='flying'?
             arrivedOnDeck?'已停稳 · J 离席后可从尾坡下船':'泊位就绪 · E 手动起飞 / P 自动出发':'W/S 推进 · A/D 转向 · ↑/↓ 俯仰 · 左拖操舵 · 右拖环视 · H 正视')+
             '　／　'+targetName()+' '+distanceText(range)+' '+mark;
         }
@@ -593,8 +608,9 @@
     function directionArrow(a){return ['↑','↗','→','↘','↓','↙','←','↖'][((Math.round(a/(Math.PI/4))%8)+8)%8];}
     function flyCommand(kind){
       if(phase!=='helm')return;
-      if(kind==='manual'){pending=null;flight.manual();updateUI();requestFrame();persist();return;}
+      if(kind==='manual'){pending=null;resetInput();flight.manual();updateUI();requestFrame();persist();return;}
       if(pending)return;
+      resetInput();
       if(flight.status().phase!=='flying'&&door>0){pending=kind;updateUI();requestFrame();persist();return;}
       brakeUntil=0;
       if(kind==='auto'){
@@ -932,7 +948,11 @@
       const openDoor=s.phase!=='flying'&&!pending;
       door=T.MathUtils.clamp(door+(openDoor?1:-1)*dt*.9,0,1);
       if(pending&&door===0){const command=pending;pending=null;flyCommand(command);}
-      const handInput=phase==='helm'&&atlas.hidden&&!stage.dataset.consoleOpen&&!boarding.commsOpen&&!pending;
+      s=flight.status();
+      const freeInput=phase==='helm'&&atlas.hidden&&!stage.dataset.consoleOpen&&!boarding.commsOpen;
+      const handInput=freeInput&&!pending&&!s.auto;
+      if(freeInput&&(pending||s.auto))lookAround(pressed('KeyA')||pressed('ArrowLeft'),pressed('KeyD')||pressed('ArrowRight'),
+        pressed('KeyW')||pressed('ArrowUp'),pressed('KeyS')||pressed('ArrowDown'),dt*1.4);
       let remaining=dt;
       while(remaining>0){
         const sub=flightPulses.size?Math.min(remaining,...flightPulses.values()):remaining;
@@ -991,6 +1011,7 @@
       }
       flameRig.update(dt);
       blendCamera(dt);sky.position.copy(view.position);
+      dock.updateView(view.position);
       drawWorld(agl,walking);
       cameraReady=true;
       if(time-uiClock>140){updateUI();uiClock=time;}
@@ -1063,7 +1084,7 @@
     listen(trackButton,'click',()=>{
       navTarget=select.value;toggleAtlas();flyCommand('auto');
     });
-    listen(targetOnly,'click',()=>{navTarget=select.value;toggleAtlas();if(flight.status().auto)flight.manual();updateUI();persist();});
+    listen(targetOnly,'click',()=>{navTarget=select.value;toggleAtlas();if(autoViewing())flyCommand('manual');updateUI();persist();});
     function leaveHelm(){
       if(phase!=='helm'||pending||flight.status().phase==='flying')return;
       if(!atlas.hidden)toggleAtlas();
@@ -1167,6 +1188,7 @@
         if(code==='KeyH')faceForward();
         if(code==='KeyJ')leaveHelm();
         if(code==='KeyL'){
+          if(autoViewing()){say('按 P 接管后可手动停靠');return;}
           const s=flight.status();if(s.canCapture){brakeUntil=0;flight.captureDock();}else if(s.canLand){brakeUntil=0;flight.land();}else say('靠近地表或对接口并减速后可停靠');
           updateUI();requestFrame();persist();
         }
@@ -1180,7 +1202,7 @@
       if(code==='KeyE'&&phase!=='transfer'){e.preventDefault();if(!e.repeat)mainAction(true);return;}
       if(phase!=='transfer'&&keyNames.has(code)){
         if(code==='Space'&&e.target.closest?.('button,a,summary,[role="button"]'))return;
-        if(phase==='helm')takeHelmControl();
+        if(autoViewing()&&!lookKeys.has(code)){e.preventDefault();return;}
         e.preventDefault();if(!keys.has(code))pendingSteps.set(code,code);keys.add(code);requestFrame();
       }
     });
@@ -1195,13 +1217,13 @@
       if(e.button===1){e.preventDefault();faceForward();return;}
       e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);
       drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,travel:0,
-        steering:phase==='helm'&&e.button===0&&!e.altKey,turn:0,pitch:0,button:e.button};
+        steering:phase==='helm'&&e.button===0&&!e.altKey&&!autoViewing(),turn:0,pitch:0,button:e.button};
     });
     listen(canvas,'pointermove',e=>{
       if(drag?.id!==e.pointerId)return;
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.travel+=Math.abs(dx)+Math.abs(dy);
       if(drag.steering){
-        if(drag.travel>=5){takeHelmControl();drag.turn=clamp((e.clientX-drag.startX)/100,-1,1);drag.pitch=clamp((drag.startY-e.clientY)/100,-1,1);}
+        if(drag.travel>=5){drag.turn=clamp((e.clientX-drag.startX)/100,-1,1);drag.pitch=clamp((drag.startY-e.clientY)/100,-1,1);}
       }else if(observedBird!==null&&phase==='surface'){
         observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,observingWreck()?-.95:-.04,1.12);
       }else{yaw-=dx*.004;pitch=clamp(pitch-dy*.004,-1.1,1.12);}
@@ -1238,12 +1260,13 @@
       else if(phase==='surface')boom=clamp(boom*factor,2.4,8);
       requestFrame();
     },{passive:false});
-    function takeHelmControl(){
-      if(phase!=='helm')return;
-      if(pending||flight.status().auto)flyCommand('manual');
-    }
     function shortStep(code){
-      if(phase==='helm'){takeHelmControl();flightPulses.set(code,.14);return;}
+      if(phase==='helm'){
+        if(autoViewing())lookAround(code==='KeyA'||code==='ArrowLeft',code==='KeyD'||code==='ArrowRight',
+          code==='KeyW'||code==='ArrowUp',code==='KeyS'||code==='ArrowDown',.12);
+        else flightPulses.set(code,.14);
+        return;
+      }
       if(phase==='surface'){approachRamp=false;tapStep(code,.24);return;}
       if(phase!=='cabin')return;
       const side=Number(code==='KeyD')-Number(code==='KeyA');
@@ -1255,7 +1278,7 @@
       const code=b.dataset.step||b.dataset.flightKey;
       listen(b,'pointerdown',e=>{
         if(phase==='hidden'||phase==='transfer'||!atlas.hidden||stage.dataset.consoleOpen||boarding.commsOpen||e.button!==0)return;
-        e.preventDefault();canvas.focus({preventScroll:true});if(phase==='helm')takeHelmControl();
+        e.preventDefault();if(autoViewing()&&!lookKeys.has(code))return;canvas.focus({preventScroll:true});
         b.setPointerCapture(e.pointerId);touch.set(e.pointerId,code);pendingSteps.set(e.pointerId,code);requestFrame();
       });
       for(const type of ['pointerup','pointercancel','lostpointercapture'])listen(b,type,e=>{

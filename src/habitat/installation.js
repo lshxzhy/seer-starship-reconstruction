@@ -188,6 +188,20 @@
       room.roof=kit.roof;
       room.built=true;
     }
+    // Build and bake while entering the ship, before walking begins. Crossing
+    // a visibility boundary must only toggle existing meshes, never generate
+    // a whole cabin, its deck AO and merged fittings in that animation frame.
+    function ensureRoom(id){
+      const room=byId.get(id);
+      if(room)buildRoom(room);
+      return room||null;
+    }
+    let roomsPrepared=false;
+    function prepareRooms(){
+      if(roomsPrepared)return;
+      for(const room of rooms){buildRoom(room);room.group.visible=false;}
+      roomsPrepared=true;
+    }
     const wardGroups=new Map();
     for(const zone of crewBerths.zones){
       // Use the actual shell profile at the two ends and its intervening
@@ -617,7 +631,9 @@
       if(ward && !crewBerths.clearsPedestal(p,ward,radius))return false;
       const room=roomAt(deck,p.x,p.z);
       if(room){
-        buildRoom(room);
+        // Unprepared cabins are closed to movement; spawn/prepareRooms owns
+        // construction so collision queries stay read-only while walking.
+        if(!room.built)return false;
         const orientation=room.side===1?-1:1;
         const lx=(p.x-room.center[0])*orientation,lz=(p.z-room.center[2])*orientation;
         for(const block of room.group.userData.blocks||[]){
@@ -719,8 +735,7 @@
         const dx=Math.max(0,Math.abs(p.x-room.center[0])-room.spec.width/2);
         const dz=Math.max(0,Math.abs(p.z-room.center[2])-room.spec.depth/2);
         const visible=room.level===deck.id&&Math.hypot(dx,dz)<56;
-        if(visible)buildRoom(room);
-        room.group.visible=visible;
+        room.group.visible=visible&&room.built;
       }
       liftPlant.view(null,p);
     }
@@ -757,6 +772,6 @@
     };
     ship.updateMatrixWorld(true);
     return {root:installation,rooms,byId,levels,plan,residences:crewBerths,metresPerRenderUnit,lengthMetres,
-      spawn,move,canStand,location,locate:location,liftStops,worldPosition,liftPlant,updateLiftLOD,
+      spawn,move,canStand,location,locate:location,liftStops,worldPosition,liftPlant,updateLiftLOD,ensureRoom,prepareRooms,
       toWorld:p=>worldPosition(p.x,p.y,p.z),setActive,setPreview,updateLOD};
   })();

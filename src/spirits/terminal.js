@@ -5,7 +5,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   const content=panel.querySelector('[data-spirit-content]'),tabs=panel.querySelector('[data-spirit-tabs]');
   const feedback=panel.querySelector('[data-spirit-feedback]'),title=panel.querySelector('h2'),dismiss=panel.querySelector('[data-spirit-close]');
   const game=createSpiritSystem(),studio=createSpiritStage(T);
-  const sections={party:'队伍',storage:'仓库',dex:'图鉴',spt:'SPT 首领',lab:'培育',safari:'捕猎场',field:'野外'};
+  const sections={party:'队伍 · 养成',storage:'仓库',dex:'图鉴',spt:'SPT 首领',lab:'实验室',safari:'捕猎场',field:'野外'};
   const origins=new Map();
   function addOrigin(id,text){
     if(!origins.has(id))origins.set(id,new Set());
@@ -20,7 +20,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     for(const id of habitat.animals)addOrigin(id,habitat.name+' · '+(id===34?'SPT 首领':'野生'));
   }
   for(const habitat of Object.values(TWIN_HABITATS)){
-    for(const id of habitat.animals)addOrigin(id,habitat.name+' · 栖地观察');
+    for(const id of habitat.animals)addOrigin(id,habitat.name+' · '+(SPT_CHALLENGES.has(id)?'SPT 首领':SEER_SPIRIT_DATA.species[id]?.catch>0?'野生 · 可捕捉':'栖地对战 · 不可捕捉'));
   }
   addOrigin(108,'海洋星 · 三层轮换的历史稀有遭遇');
   const safariMethods={field:'场内可见',random:'步行遭遇',fish:'垂钓',tree:'摇树',bear:'闪光晶石'};
@@ -28,7 +28,8 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     for(const id of list)addOrigin(id,'2011 年克洛斯湿地捕猎场 · '+safariMethods[key]);
   }
   for(const id of game.view().starters)addOrigin(id,'赛尔号 · 初始伙伴');
-  addOrigin(46,'克洛斯星林间 · 蘑菇怪首胜奖励');
+  for(const [id,challenge] of SPT_CHALLENGES)if(challenge.partner)
+    addOrigin(challenge.partner,game.species(id,false).name+' · 首胜奖励');
   addOrigin(301,'实验室融合 · 绿色元神珠孵化');
   const statNames=['体力','攻击','防御','特攻','特防','速度'];
   let page='party',active=false,busy=false,recordReady=false,revision=0,opener=null,encounter=null,chiefId=47;
@@ -97,8 +98,8 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       if(action.type==='move')studio.animateTurn();
       const summary=result.outcome?game.view().log.slice(-3).join('　'):result.message;
       if(action.type==='allocateXP'||result.outcome==='won'){
-        const oldForms=new Map(before.party.map(p=>[p.uid,p.speciesId]));
-        const changes=game.view().party.filter(p=>oldForms.has(p.uid)&&oldForms.get(p.uid)!==p.speciesId)
+        const oldForms=new Map([...before.party,...before.storage].map(p=>[p.uid,p.speciesId])),after=game.view();
+        const changes=[...after.party,...after.storage].filter(p=>oldForms.has(p.uid)&&oldForms.get(p.uid)!==p.speciesId)
           .map(p=>game.species(oldForms.get(p.uid),false).name+' → '+p.name+'（Lv.'+p.level+'）');
         report(changes.length?[summary,...changes].join('\n'):summary);
       }else report(summary);
@@ -133,10 +134,6 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     if(m.effectText)el(card,'p','',m.effectText);
     return card;
   }
-  function showMoves(parent,moves){
-    const fold=el(parent,'details');el(fold,'summary','','已装配技能（'+moves.length+'/4）');
-    for(const m of moves)moveCard(fold,m);
-  }
   function routeTerms(route){
     const terms=[];
     if(route.level)terms.push('Lv.'+route.level);
@@ -165,6 +162,71 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const row=el(parent,'div','spirit-stats');
     for(const [i,name] of statNames.entries()){const cell=el(row,'div','',name);el(cell,'strong','',String(items[i]??'—'));}
   }
+  function growthPanel(host,pet,state){
+    const block=el(host,'section','spirit-growth'),training=pet.training;
+    const head=el(block,'div','spirit-section-head');el(head,'h3','','快速培养');
+    el(head,'span','spirit-sub','积累经验 '+state.bankedXP.toLocaleString('zh-CN'));
+    if(pet.level>=100){el(block,'p','spirit-sub','已达到 100 级。可以继续调整技能与进化路线。');return;}
+    const xp=el(block,'div','spirit-meter spirit-xp'),bar=el(xp,'progress');
+    bar.max=Math.max(1,pet.nextXP);bar.value=pet.xp;bar.setAttribute('aria-label',pet.name+'升级经验');
+    el(xp,'small','',pet.xp+' / '+pet.nextXP);
+    if(training){
+      const options=el(block,'div','spirit-training-actions');
+      const plans=[['升 1 级','nextLevel',training.nextLevelCost],
+        ['升至 '+Math.min(100,pet.level+5)+' 级','fiveLevels',training.fiveLevelsCost]];
+      if(training.evolutionCost>0)plans.push(['练至进化等级','evolution',training.evolutionCost]);
+      plans.push(['投入可用经验','all',Math.min(state.bankedXP,training.maxLevelCost)]);
+      for(const [label,mode,cost] of plans){
+        const missing=Math.max(0,cost-state.bankedXP);
+        button(options,label,()=>act({type:'allocateXP',uid:pet.uid,mode}),{
+          disabled:!Number.isFinite(cost)||cost<=0||missing>0,primary:mode==='nextLevel',action:'train-'+mode,
+          note:cost>0?cost.toLocaleString('zh-CN')+' 经验'+(missing?' · 还缺 '+missing.toLocaleString('zh-CN'):''):'暂无可用经验'});
+      }
+      if(training.evolutionTarget&&training.evolutionLevel>pet.level)
+        el(block,'p','spirit-sub','下一形态 '+training.evolutionTarget+' · Lv.'+training.evolutionLevel+'，具体材料与地点见进化路线。');
+    }
+    if(!state.bankedXP)el(block,'p','spirit-sub','击败野生精灵和完成首领首胜可积累经验；参战伙伴也会直接成长。');
+    const bank=el(block,'details');el(bank,'summary','','按点数分配');
+    const line=el(bank,'div','spirit-row'),label=el(line,'label','','经验点数 ');
+    const amount=el(label,'input');amount.type='number';amount.min='1';amount.step='1';amount.max=String(state.bankedXP);
+    amount.value=String(Math.min(state.bankedXP,Math.max(1,pet.nextXP-pet.xp)));amount.disabled=state.bankedXP<=0;
+    button(line,'分配经验',()=>act({type:'allocateXP',uid:pet.uid,amount:amount.valueAsNumber}),{disabled:state.bankedXP<=0,action:'allocate-xp'});
+  }
+  function skillPanel(host,pet){
+    const block=el(host,'section','spirit-training-skills'),head=el(block,'div','spirit-section-head');
+    el(head,'h3','','技能搭配');el(head,'span','spirit-sub',pet.moves.length+' / 4');
+    const equipped=el(block,'div','spirit-equipped');
+    for(const [i,m] of pet.moves.entries()){
+      const card=el(equipped,'div','spirit-equipped-slot');el(card,'strong','',(i+1)+' · '+m.name);
+      el(card,'span','spirit-sub',m.type+' · '+m.category+' · '+(m.power?'威力 '+m.power:'变化技能'));
+      el(card,'span','spirit-sub','PP '+m.pp+' / '+m.maxPP);
+    }
+    const training=pet.training;
+    if(training?.recommendedMoves?.length){
+      const recommendation=el(block,'details');el(recommendation,'summary','','推荐配招 · '+training.focus+'方向');
+      el(recommendation,'p','spirit-sub','依据当前能力与已学技能推荐。采用后仍可逐项更换，已消耗的 PP 不会重置。');
+      for(const m of training.recommendedMoves)moveCard(recommendation,m);
+      button(recommendation,training.recommendationChanged?'采用推荐配招':'已采用这套技能',()=>act({type:'autoLearn',uid:pet.uid}),
+        {disabled:!training.recommendationChanged,primary:true,action:'auto-learn'});
+    }
+    const fold=el(block,'details');el(fold,'summary','','查看效果与手动换招');
+    for(const m of pet.moves)moveCard(fold,m,'已装配 · ');
+    if(!pet.learnable?.length){el(fold,'p','spirit-sub','当前可学技能均已装配。升级后可习得新招式。');return;}
+    const row=el(fold,'div','spirit-row'),move=el(row,'select');move.setAttribute('aria-label','可回忆技能');
+    for(const m of pet.learnable)move.add(new Option(m.name+' · '+m.type,m.id));
+    const slot=el(row,'select');slot.setAttribute('aria-label','要替换的技能槽');
+    for(let i=0;i<Math.min(4,pet.moves.length+1);i++)slot.add(new Option((i+1)+' · '+(pet.moves[i]?.name||'空位'),String(i)));
+    slot.value=String(Math.min(pet.moves.length,3));
+    const preview=el(fold,'div'),effect=el(fold,'p','spirit-sub');
+    const equip=button(fold,'装入技能槽',()=>act({type:'learn',uid:pet.uid,moveId:Number(move.value),slot:Number(slot.value)}),{action:'learn'});
+    function previewMove(){
+      preview.replaceChildren();const picked=pet.learnable.find(m=>m.id===Number(move.value)),previous=pet.moves[Number(slot.value)];
+      if(!picked)return;moveCard(preview,picked,'准备装入 · ');
+      effect.textContent=previous?'替换「'+previous.name+'」。卸下的技能仍可回忆，剩余 PP 保留。':'装入第 '+(Number(slot.value)+1)+' 个空位。';
+      equip.textContent=previous?'用'+picked.name+'替换'+previous.name:'装入'+picked.name;
+    }
+    move.addEventListener('change',previewMove);slot.addEventListener('change',previewMove);previewMove();
+  }
   function memberPage(host,state,inVault){
     const group=inVault?state.storage:state.party;
     if(!group.length){
@@ -179,52 +241,36 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     figure(art,[{id:pet.speciesId,name:pet.name}]);
     el(detail,'span','spirit-catalog-number',number(pet.speciesId)+'　'+types(pet));
     el(detail,'h3','spirit-name',pet.name+'　Lv.'+pet.level);hpMeter(detail,pet);
-    el(detail,'p','spirit-sub','经验 '+pet.xp+' / '+pet.nextXP+'　·　'+pet.nature+'　·　个体 '+pet.iv);
-    const stats=pet.stats;showStats(detail,[pet.maxHP,stats.attack,stats.defense,stats.spAttack,stats.spDefense,stats.speed]);
-    if(Array.isArray(pet.ev))el(detail,'p','spirit-sub','学习力（体 / 攻 / 防 / 特攻 / 特防 / 速）　'+pet.ev.join(' / '));
-    showMoves(detail,pet.moves);
+    const badges=[inVault?'仓库培养':state.party[0].uid===pet.uid?'首发伙伴':'队伍伙伴'];
+    if(state.followerUid===pet.uid)badges.push('正在跟随');
+    el(detail,'p','spirit-sub',badges.join(' · ')+'　·　'+pet.nature);
+    const controls=el(detail,'div','spirit-actions');
+    if(inVault)button(controls,state.party.length>=6?'队伍已满':'加入队伍',()=>act({type:'withdraw',uid:pet.uid}),{disabled:state.party.length>=6,primary:true,action:'withdraw'});
+    else{
+      button(controls,state.party[0].uid===pet.uid?'已设首发':'设为首发',()=>act({type:'lead',uid:pet.uid}),{disabled:state.party[0].uid===pet.uid,action:'lead'});
+      button(controls,state.followerUid===pet.uid?'收回跟随':'身边跟随',()=>act({type:'follow',uid:pet.uid}),{selected:state.followerUid===pet.uid,action:'follow'});
+      button(controls,'送入仓库',()=>act({type:'store',uid:pet.uid}),{disabled:state.party.length<=1,action:'store'});
+    }
+    button(controls,'恢复与补给',()=>act({type:'heal'}),{action:'heal'});
+    el(detail,'p','spirit-sub','恢复所有伙伴的体力与 PP，并补给基础胶囊和体力药。');
     const species=game.species(pet.speciesId);
     const upcoming=species.skills.filter(m=>m.available&&m.level>pet.level);
     if(upcoming.length){
       const next=Math.min(...upcoming.map(m=>m.level));
       el(detail,'p','spirit-sub','下次习得 · Lv.'+next+'　'+upcoming.filter(m=>m.level===next).map(m=>m.name).join('、'));
     }
-    memberEvolution(detail,pet);
-    const controls=el(host,'div','spirit-actions');
-    button(controls,'查看图鉴与技能表',()=>{
+    memberEvolution(detail,pet,pet.evolutionRoutes,pet.evolutionRoutes.some(r=>r.ready));
+    const stats=el(detail,'details');el(stats,'summary','','能力与学习力');
+    showStats(stats,[pet.maxHP,pet.stats.attack,pet.stats.defense,pet.stats.spAttack,pet.stats.spDefense,pet.stats.speed]);
+    el(stats,'p','spirit-sub','性格 '+pet.nature+'　·　个体值 '+pet.iv+' / 31');
+    if(Array.isArray(pet.ev))el(stats,'p','spirit-sub','学习力 '+pet.ev.reduce((sum,n)=>sum+n,0)+' / 510（体 / 攻 / 防 / 特攻 / 特防 / 速）\n'+pet.ev.join(' / '));
+    growthPanel(host,pet,state);skillPanel(host,pet);
+    const reference=el(host,'details');el(reference,'summary','','图鉴与交流');
+    const links=el(reference,'div','spirit-actions');
+    button(links,'查看图鉴与技能表',()=>{
       query=String(pet.speciesId);offset=0;dexId=pet.speciesId;page='dex';render();
     },{action:'member-dex'});
-    button(controls,'与'+pet.name+'交流',()=>chatWith(pet,'owned'),{action:'chat'});
-    if(inVault)button(controls,'加入队伍',()=>act({type:'withdraw',uid:pet.uid}),{disabled:state.party.length>=6,action:'withdraw'});
-    else{
-      button(controls,'设为首发',()=>act({type:'lead',uid:pet.uid}),{disabled:state.party[0].uid===pet.uid,action:'lead'});
-      button(controls,state.followerUid===pet.uid?'收回跟随':'身边跟随',()=>act({type:'follow',uid:pet.uid}),{selected:state.followerUid===pet.uid,action:'follow'});
-      button(controls,'送入仓库',()=>act({type:'store',uid:pet.uid}),{disabled:state.party.length<=1,action:'store'});
-      button(controls,'全队恢复与补给',()=>act({type:'heal'}),{action:'heal'});
-    }
-    if(!inVault&&state.bankedXP>0&&pet.level<100){
-      const bank=el(host,'details');el(bank,'summary','','分配积累经验 · 余额 '+state.bankedXP);
-      const line=el(bank,'div','spirit-row'),label=el(line,'label','','经验点数 ');
-      const amount=el(label,'input');amount.type='number';amount.min='1';amount.max=String(state.bankedXP);
-      amount.value=String(Math.min(state.bankedXP,Math.max(1,pet.nextXP-pet.xp)));
-      button(line,'分给'+pet.name,()=>act({type:'allocateXP',uid:pet.uid,amount:amount.valueAsNumber}),{action:'allocate-xp'});
-    }
-    if(pet.learnable?.length){
-      const fold=el(host,'details');el(fold,'summary','','回忆与更换技能（'+pet.learnable.length+'）');const row=el(fold,'div','spirit-row');
-      const move=el(row,'select');move.setAttribute('aria-label','可学习技能');
-      for(const m of pet.learnable)move.add(new Option(m.name+' · '+m.type,m.id));
-      const slot=el(row,'select');slot.setAttribute('aria-label','技能槽');
-      for(let i=0;i<Math.min(4,pet.moves.length+1);i++)slot.add(new Option((i+1)+' · '+(pet.moves[i]?.name||'空位'),String(i)));
-      slot.value=String(Math.min(pet.moves.length,3));
-      const preview=el(fold,'div');
-      function previewMove(){
-        preview.replaceChildren();
-        const picked=pet.learnable.find(m=>m.id===Number(move.value));
-        if(picked)moveCard(preview,picked);
-      }
-      move.addEventListener('change',previewMove);previewMove();
-      button(row,'装入技能槽',()=>act({type:'learn',uid:pet.uid,moveId:Number(move.value),slot:Number(slot.value)}),{action:'learn'});
-    }
+    button(links,'与'+pet.name+'交流',()=>chatWith(pet,'owned'),{action:'chat'});
   }
   function travelSpt(site){
     if(busy)return;
@@ -238,22 +284,32 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const challenge=SPT_CHALLENGES.get(chiefId),species=game.species(chiefId,false);
     const site=PANO_NAVIGATION.regions[challenge.planet].byId.get(challenge.site);
     const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
-    figure(art,[{id:chiefId,name:species.name}]);
+    figure(art,[{id:chiefId,name:species.name,boss:true}]);
     el(detail,'span','spirit-catalog-number',number(chiefId)+'　'+types(species)+'　·　SPT 先锋队');
     el(detail,'h3','spirit-name',chiefId===47?'发狂的蘑菇怪':species.name);
     el(detail,'p','',site.name+'　·　Lv.'+challenge.level+'　·　'+challenge.hp+' 体力');
+    const defeated=state.bosses.includes(chiefId),rewards=[];
+    if(challenge.partner)rewards.push('1 级'+game.species(challenge.partner,false).name);
+    if(challenge.bankedXP)rewards.push(challenge.bankedXP.toLocaleString('zh-CN')+' 点积累经验');
+    if(challenge.blackCrystal)rewards.push('黑晶矿 ×'+challenge.blackCrystal);
+    el(detail,'p','spirit-sub',(defeated?'已完成首胜 · 已领取 ':'首胜奖励 · ')+rewards.join('、'));
+    if(challenge.description)el(detail,'p','',challenge.description);
+    if(challenge.projectRule)el(detail,'p','spirit-sub',challenge.projectRule);
+    if(state.bankedXP>0){
+      el(detail,'p','','待分配经验　'+state.bankedXP.toLocaleString('zh-CN'));
+      button(detail,'到队伍培养',()=>{page='party';report('');render();},{action:'party-xp'});
+    }
     if(chiefId===34){
-      el(detail,'p','spirit-sub',state.defeatedShark?'已完成首胜　·　持有黑晶矿 ×'+state.materials.blackCrystal:'首胜奖励　·　黑晶矿 ×'+challenge.blackCrystal);
       el(detail,'p','','深水区可以捕获利牙鱼。将它培养到 20 级，会进化成自己的钢牙鲨。');
       button(detail,'前往海底 · 钢牙鲨',()=>travelSpt(challenge.site),{primary:true,action:'spt-ocean-floor'});
       return;
     }
-    const lab=siteId()==='laboratory';
-    el(detail,'p','spirit-sub',state.defeatedMushroom?'已完成首胜　·　小蘑菇已领取':'首胜奖励　·　1 级'+game.species(challenge.partner,false).name+'和 '+challenge.bankedXP.toLocaleString('zh-CN')+' 点积累经验');
-    if(state.bankedXP>0){
-      el(detail,'p','','待分配经验　'+state.bankedXP);
-      button(detail,'到队伍分配经验',()=>{page='party';report('');render();},{action:'party-xp'});
+    if(chiefId!==47){
+      el(detail,'p','spirit-sub','到现场接触首领即可挑战。首领不可直接捕捉；重复胜利继续获得对战经验。');
+      button(detail,'前往'+site.name+' · '+species.name,()=>travelSpt(challenge.site),{primary:true,action:'spt-site-'+chiefId});
+      return;
     }
+    const lab=siteId()==='laboratory';
     if(!state.flameTool){
       el(detail,'p','','先在赛尔号实验室领用火焰喷射器。');
       if(lab)button(detail,'领取并装备火焰喷射器',()=>act({type:'equipFlameTool',site:siteId()}),{primary:true,action:'equip-flame'});
@@ -266,28 +322,34 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   function fieldPage(host,state){
     if(!encounter){el(host,'p','spirit-sub','靠近地表的精灵后，可以接触它。');return;}
     const info=game.species(encounter.speciesId);if(!info)return;
-    const role=encounter.boss?'首领观察':{wild:'野生',rare:'稀有',boss:'首领',event:'活动观察',observation:'栖地观察'}[encounter.kind]||'野生';
+    const role={wild:'野生',rare:'稀有',boss:'首领',event:'活动观察',observation:'栖地观察'}[encounter.kind]||'野生';
+    const canCapture=encounter.canCapture??(encounter.kind!=='boss'&&SEER_SPIRIT_DATA.species[info.id]?.catch>0);
     const columns=el(host,'div','spirit-columns'),art=el(columns,'div'),detail=el(columns,'div');
-    figure(art,[{id:info.id,name:info.name}]);el(detail,'span','spirit-catalog-number',number(info.id)+'　'+types(info));
+    figure(art,[{id:info.id,name:info.name,boss:encounter.kind==='boss'}]);el(detail,'span','spirit-catalog-number',number(info.id)+'　'+types(info));
     el(detail,'h3','spirit-name',info.name);el(detail,'p','',role+(encounter.level?'　Lv.'+encounter.level:''));
     el(detail,'p','spirit-sub',(TWIN_HABITATS[encounter.siteId]?.name||OCEAN_HABITATS[encounter.siteId]?.name||KLOSE_WORLD.sites.find(s=>s.id===encounter.siteId)?.name||locationName())+
-      (encounter.kind==='boss'?'　·　首领挑战':encounter.kind==='event'?'　·　历史活动观察':encounter.kind==='observation'?'　·　观察与交流':'　·　可使用精灵胶囊'));
+      (encounter.kind==='boss'?'　·　首领挑战 · 不可捕捉':encounter.kind==='event'?'　·　历史活动观察':encounter.kind==='observation'?'　·　观察与交流':canCapture?'　·　可以对战与捕捉':'　·　可以对战 · 不可捕捉'));
     const row=el(detail,'div','spirit-actions');
     if(encounter.fieldLock){
       el(detail,'p','spirit-sub',encounter.fieldLock);
       if(encounter.speciesId===47&&!state.flameTool)button(row,'去实验室领取喷射器',()=>travelSpt('laboratory'),{action:'spt-lab'});
     }
     if(!['event','observation'].includes(encounter.kind)&&!encounter.fieldLock){
-      if(state.party.length)button(row,encounter.kind==='boss'?'挑战首领':'进入对战',()=>act({type:'encounter',encounter:{key:encounter.key,speciesId:info.id,level:encounter.level,kind:encounter.kind,siteId:encounter.siteId}}),{primary:true,action:'encounter'});
+      if(state.party.length){
+        const available=state.party.some(p=>p.hp>0);
+        button(row,encounter.kind==='boss'?'挑战首领':'进入对战',()=>act({type:'encounter',encounter:{key:encounter.key,speciesId:info.id,level:encounter.level,kind:encounter.kind,siteId:encounter.siteId}}),{disabled:!available,primary:true,action:'encounter'});
+        if(!available){el(detail,'p','spirit-sub','队伍没有可出战的伙伴，请先恢复体力。');button(row,'恢复后再挑战',()=>act({type:'heal'}),{action:'heal'});}
+      }
       else button(row,'先选择初始伙伴',()=>{page='party';render();},{primary:true,action:'choose'});
     }
+    if(encounter.kind==='boss')button(row,'查看首领任务与奖励',()=>{chiefId=info.id;page='spt';render();},{action:'field-spt'});
     button(row,'与'+info.name+'交流',()=>chatWith({...encounter,types:info.types},'wild'),{action:'chat'});
   }
   function battlePage(host,state){
     const b=state.battle,pet=state.party.find(p=>p.uid===b.activeUid)||state.party[0],enemy=b.enemy;
     const top=el(host,'div','spirit-battle-heads');
-    for(const p of [pet,enemy]){const side=el(top,'div');el(side,'strong','',p.name+'　Lv.'+p.level+(p.status?'　'+p.status:''));hpMeter(side,p);}
-    figure(host,[{id:pet.speciesId,name:pet.name},{id:enemy.speciesId,name:enemy.name}],true);
+    for(const p of [pet,enemy]){const side=el(top,'div');el(side,'strong','',p.name+'　Lv.'+p.level);el(side,'p','spirit-sub',types(p)+(p.status?' · '+p.status:''));hpMeter(side,p);}
+    figure(host,[{id:pet.speciesId,name:pet.name},{id:enemy.speciesId,name:enemy.name,boss:b.kind==='boss'}],true);
     const moveList=el(host,'div','spirit-moves');
     if(!b.needsSwitch){
       for(const m of pet.moves)button(moveList,m.name,()=>act({type:'move',moveId:m.id}),{disabled:m.pp<=0,
@@ -299,9 +361,10 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const options=el(host,'div','spirit-actions');
     for(const p of state.party.filter(p=>p.uid!==pet.uid&&p.hp>0))
       button(options,'换上'+p.name,()=>act({type:'switch',uid:p.uid}),{action:'switch'});
-    if(b.kind!=='boss'&&!b.needsSwitch)button(options,'精灵胶囊 ×'+state.capsules,()=>act({type:'capture'}),{disabled:state.capsules<=0,action:'capture'});
+    if(b.canCapture&&!b.needsSwitch)button(options,'精灵胶囊 ×'+state.capsules,()=>act({type:'capture'}),{disabled:state.capsules<=0,action:'capture'});
     if(!b.needsSwitch)button(options,'体力药 ×'+state.potions,()=>act({type:'potion',uid:pet.uid}),{disabled:state.potions<=0||pet.hp===pet.maxHP,action:'potion'});
     button(options,'撤离',()=>act({type:'flee'}),{action:'flee'});
+    if(!b.needsSwitch)el(host,'p','spirit-sub',b.canCapture?'降低对手体力或施加异常更容易捕捉。投胶囊、用药和主动换宠各消耗一回合。':(b.kind==='boss'?'首领不可捕捉。':'该形态不可捕捉。')+'用药和主动换宠各消耗一回合。');
     const log=el(host,'ol','spirit-log');for(const msg of state.log.slice(-5))el(log,'li','',msg);
   }
   function dexPage(host){
@@ -324,7 +387,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
         }
       }
       el(info,'p','spirit-sub',where.size?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
-      if(SPT_CHALLENGES.has(s.id))button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:s.id===47?'mushroom-spt':'shark-spt'});
+      if(SPT_CHALLENGES.has(s.id))button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:'dex-spt-'+s.id});
       const row=SEER_SPIRIT_DATA.index.find(item=>item[0]===s.id);
       if(row?.[3]||row?.[4])el(info,'p','spirit-sub',[row[3]&&('身高 '+row[3]+' cm'),row[4]&&('体重 '+row[4]+' kg')].filter(Boolean).join('　'));
       const artLink=el(info,'a','spirit-source','查看原版头像');artLink.href='https://seerh5.61.com/resource/assets/pet/head/'+s.id+'.png';
@@ -360,6 +423,8 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   function labPage(host,s){
     const where=siteId(),lab=where==='laboratory',forest=where==='forest';
     const materials=s.materials||{photo:0,air:0};
+    const shortcut=el(host,'div','spirit-row');el(shortcut,'span','spirit-sub','升级、进化与配招都在伙伴页面。');
+    button(shortcut,'前往队伍 · 养成',()=>{page='party';render();},{action:'party-growth'});
     const chamber=el(host,'section');el(chamber,'h3','','精灵转生仓');
     const candidates=[...s.party,...s.storage].filter(p=>p.evolutionRoutes.some(r=>r.method==='chamber'));
     if(!candidates.length)el(chamber,'p','spirit-sub','队伍和仓库中暂无使用转生仓的精灵。');
@@ -470,7 +535,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       if(key==='safari'&&page!=='safari'&&siteId()!=='wetland'&&!state.safari?.active)continue;
       button(tabs,key==='party'?label+' '+state.party.length+'/6':label,()=>{page=key;report('');render();},{selected:page===key,action:key});
     }
-    title.textContent=battle?(state.battle.kind==='boss'?'SPT 首领挑战':'精灵对战')+' · 第 '+state.battle.turn+' 回合':({party:'精灵背包',storage:'精灵仓库',dex:'精灵图鉴',spt:'赛尔先锋队 · 首领任务',field:'野外接触',lab:'融合与培育',safari:'克洛斯湿地捕猎场'})[page];
+    title.textContent=battle?(state.battle.kind==='boss'?'SPT 首领挑战':'精灵对战')+' · 第 '+state.battle.turn+' 回合':({party:'精灵队伍与养成',storage:'精灵仓库',dex:'精灵图鉴',spt:'赛尔先锋队 · 首领任务',field:'野外接触',lab:'实验室 · 融合与孵化',safari:'克洛斯湿地捕猎场'})[page];
     const host=el(content,'div','spirit-page');
     if(!battle&&page==='party'&&state.party.length&&!state.starterClaimed){
       const initial=el(host,'details');
@@ -506,7 +571,9 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
     const turn=++generation;active=true;opener=trigger||canvas;encounter=wild||null;
     const terminalPage=activity?.op==='spt'||activity?.op==='lab';
     page=terminalPage?activity.op:activity?'safari':wild?'field':'party';
-    chiefId=OCEAN_HABITATS[siteId()]?34:47;
+    const where=siteId()||'';
+    chiefId=SPT_CHALLENGES.has(wild?.speciesId)?wild.speciesId:
+      [...SPT_CHALLENGES].find(([,challenge])=>challenge.site===where)?.[0]??(OCEAN_HABITATS[where]?34:where.startsWith('alpha-')?88:where.startsWith('beta-')?113:47);
     atFieldGate=activity?.op==='enter'&&activity.destination==='wetland';
     overlay.hidden=false;stage.dataset.consoleOpen='spirits';recordReady=false;
     tabs.replaceChildren();content.replaceChildren();report('正在读取精灵背包…');dismiss.focus({preventScroll:true});

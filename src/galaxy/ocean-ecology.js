@@ -170,7 +170,7 @@ function createOceanEcology(T,parent,definition,surface){
   let lastVisitor=null;
   function wetDistance(a,b){return surfaceDisplacement(a,b,definition.radius).distance;}
   function initialize(p){
-    const reach=Math.min(18,Math.max(5,p.model.radius*2.4+2)),rings=Math.ceil(reach/.50);
+    const reach=Math.min(32,Math.max(5,p.model.radius*2.4+2)),rings=Math.ceil(reach/.50);
     for(let ring=0;ring<=rings;ring++)for(let k=0,n=Math.max(1,ring*8);k<n;k++){
       const a=k*Math.PI*2/n,x=p.homeX+ring*.50*Math.cos(a),z=p.homeZ+ring*.50*Math.sin(a);
       const at=surface.move(p.site.lat,p.site.lon,x,-z);
@@ -186,7 +186,7 @@ function createOceanEcology(T,parent,definition,surface){
     lastVisitor={lat,lon};
     const now=Date.now(),cycle=now/1000,rareSite=sites[Math.floor(cycle/interval)%sites.length];
     for(const p of nodes){
-      const active=walking&&wetDistance(p.site,lastVisitor)<46&&p.rest<=now&&
+      const active=walking&&wetDistance(p.site,lastVisitor)<46+p.model.radius&&p.rest<=now&&
         (p.id!==108||(p.site.id===rareSite&&cycle%interval<rareWindow));
       p.anchor.visible=active&&p.ready;if(!active)continue;
       if(!p.ready){
@@ -228,6 +228,7 @@ function createOceanEcology(T,parent,definition,surface){
   function record(p,lat,lon){
     return {id:p.key,key:p.key,speciesId:p.id,name:names[p.id],size:p.model.size,siteId:p.site.id,level:p.level,
       kind:p.id===34?'boss':p.id===108?'rare':'wild',visible:true,fieldLock:'',
+      contactRange:22+p.model.radius,observationRange:22+p.model.radius,
       portraitBearing:p.id===34?Math.PI-p.yaw+.9:undefined,
       lat:p.at.lat,lon:p.at.lon,distance:wetDistance({lat,lon},p.at),focusPoint:p.anchor.localToWorld(new T.Vector3(0,p.model.size*.52,0))};
   }
@@ -235,12 +236,12 @@ function createOceanEcology(T,parent,definition,surface){
     let closest=null;
     for(const p of nodes){
       if(!p.anchor.visible||key&&p.key!==key)continue;
-      const found=record(p,lat,lon);if(found.distance<=40&&(!closest||found.distance<closest.distance))closest=found;
+      const found=record(p,lat,lon);if(found.distance<=40+p.model.radius&&(!closest||found.distance<closest.distance))closest=found;
     }
     return closest;
   }
   function pickSpirit(caster,lat,lon){
-    const nearby=nodes.filter(p=>p.anchor.visible&&wetDistance({lat,lon},p.at)<=22);
+    const nearby=nodes.filter(p=>p.anchor.visible&&wetDistance({lat,lon},p.at)<=22+p.model.radius);
     const hit=caster.intersectObjects(nearby.map(p=>p.anchor),true)[0];
     let n=hit?.object;while(n&&!n.userData.oceanSpirit)n=n.parent;
     return n?spiritObservation(lat,lon,n.userData.oceanSpirit):null;

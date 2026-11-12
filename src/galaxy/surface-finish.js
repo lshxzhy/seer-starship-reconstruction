@@ -1,3 +1,57 @@
+// Fixed scenery is authored in a metre chart about the district origin. Its
+// builders already lower y by groundY(x,z); this adapter maps that same chart
+// onto the sphere instead of leaving x/z on the original tangent plane.
+// Apply matrix() once to static instance placements, or to freshly written
+// dynamic placements. Point buffers can use point() after their ordinary
+// animation update. Never repeatedly project an already projected placement.
+function createSurveyProjection(T,radius,groundY,height,radialAt,options={}){
+  const sceneScale=options.scale??1;
+  const localUp=new T.Vector3(0,1,0),normal=new T.Vector3();
+  const position=new T.Vector3(),scale=new T.Vector3(),attitude=new T.Quaternion(),tilt=new T.Quaternion();
+  function radial(x,z,out){
+    if(radialAt)return radialAt(x,z,out);
+    const distance=Math.hypot(x,z);
+    if(distance<1e-8)return out.set(0,1,0);
+    const angle=distance/radius,factor=Math.sin(angle)/distance;
+    return out.set(x*factor,Math.cos(angle),z*factor);
+  }
+  function point(x,y,z,out=new T.Vector3()){
+    // Separate the builder's old projected base from the object's height
+    // above it, then use the same radial terrain height as the walker.
+    const above=(y-groundY(x,z))*sceneScale,r=radius+height(x,z)+above;
+    radial(x,z,normal);out.copy(normal).multiplyScalar(r);
+    if(!options.world)out.y-=radius;return out;
+  }
+  function rotation(x,z,out=new T.Quaternion()){
+    if(options.rotationAt)return options.rotationAt(x,z,out);
+    radial(x,z,normal);
+    return out.setFromUnitVectors(localUp,normal);
+  }
+  function matrix(source,out=source){
+    source.decompose(position,attitude,scale);
+    rotation(position.x,position.z,tilt);point(position.x,position.y,position.z,position);
+    attitude.premultiply(tilt);
+    return out.compose(position,attitude,scale.multiplyScalar(sceneScale));
+  }
+  return {point,rotation,matrix,scale:sceneScale};
+}
+
+// Distributed authored charts share a world-space contract. Absolute vertex
+// buffers and instance matrices are projected once; the parent stays identity.
+function createLayoutProjection(T,layout,frame,groundY,height,regionAt=(x,z)=>layout.source(x,z)){
+  const normal=new T.Vector3(),tilt=new T.Quaternion();
+  const frames=new Map(layout.regions.map(region=>[region,frame(region.lat,region.lon)]));
+  function radial(x,z,out){
+    const ll=layout.fromXZ(x,z,regionAt(x,z)),c=Math.cos(ll.lat);
+    return out.set(c*Math.cos(ll.lon),Math.sin(ll.lat),-c*Math.sin(ll.lon));
+  }
+  return createSurveyProjection(T,layout.radius,groundY,height,radial,{scale:layout.scale,world:true,
+    rotationAt(x,z,out){
+      const f=frames.get(regionAt(x,z));radial(x,z,normal);
+      tilt.setFromUnitVectors(f.up,normal);return out.copy(f.quaternion).premultiply(tilt);
+    }});
+}
+
 // Object-space relief stays attached to a growing stem or tilted rock.
 // Pixel derivatives suppress detail below one pixel in the orbital view.
 function fieldSurfaceFinish(material,kind){
@@ -164,15 +218,16 @@ function finishSurveyGround(T,geo,material,definition,metresPerUV){
          normal=normalize(max(abs(bedDet),1.e-6)*normal-sign(bedDet)*nearBed*(dFdx(relief)*aBed+dFdy(relief)*bBed));`);
   };
   material.customProgramCacheKey=()=>'survey-bed-'+definition.id;
-  return function writeBed(i,x,z){
-    let sum=.0001,wet=0,rock=.00004,sediment=.00006;
+  return function writeBed(i,x,z,lat,lon){
+    let sum=0,wet=0,rock=0,sediment=0;
+    const districts=Number.isFinite(lat)?definition.layout.weights(lat,lon):null;
     for(const site of definition.sites){
       const dx=x-site.x,dz=z-site.z,d=dx*dx+dz*dz;
-      if(d>40000)continue;
-      const w=(1-d/40000)**2/(1+d*.012),b=beds[site.id];
+      const district=districts?.find(p=>p.region.ids.includes(site.id));
+      const w=districts?(district?.weight??0)/(district?.region.members.length??1):1/(1+d*.012)**2,b=beds[site.id]??[.12,.55,.35];
       wet+=b[0]*w;rock+=b[1]*w;sediment+=b[2]*w;sum+=w;
     }
-    mix.setXYZ(i,wet/sum,rock/sum,sediment/sum);
+    mix.setXYZ(i,sum?wet/sum:.2,sum?rock/sum:.55,sum?sediment/sum:.4);
     if(i===0)mix.needsUpdate=true;
   };
 }

@@ -1,8 +1,126 @@
+  // These are openings through the actual installed hull, not luminous decals.
+  // Keep the mesh cut in model space so every exterior clone inherits it.
+  const carrierGlazing=(()=>{
+    const metric=ship.scale.clone().multiplyScalar(habitat.metresPerRenderUnit);
+    const rooms=['observation','terraceAccess'].map(id=>habitat.byId.get(id));
+    const apertures=rooms.map(room=>{
+      const {width:W,depth:D,height:H}=room.spec,terrace=room.id==='terraceAccess';
+      const pier=terrace?2:Math.max(1.35,W*.12),sill=terrace?.34:Math.min(.72,H*.22),head=terrace?H-.45:H*.80;
+      const inner=room.center[2]+room.side*D/2;
+      return {room,inner,x0:room.center[0]-W/2+pier,x1:room.center[0]+W/2-pier,
+        y0:room.center[1]+sill,y1:room.center[1]+head,
+        z0:room.side<0?-600:inner-.03,z1:room.side<0?inner+.03:600};
+    });
+    const groups=ship.children.filter(g=>g!==habitat.root&&g!==interiorModel.root);
+    ship.updateMatrixWorld(true);
+    const toModel=ship.matrixWorld.clone().invert(),unit=new T.Matrix4().makeScale(metric.x,metric.y,metric.z);
+    // Split intersecting triangles against the six aperture faces. Keeping
+    // the exterior fragments cuts the dark backing and every armour layer,
+    // including triangles spanning a small opening in a much larger panel.
+    function subtractWindow(part,transform,holes){
+      const original=part.geometry,source=original.index?original.toNonIndexed():original;
+      const attributes=Object.entries(source.attributes),sizes=attributes.map(([,a])=>a.itemSize);
+      const offsets=[];let stride=0;for(const size of sizes){offsets.push(stride);stride+=size;}
+      const pos=source.attributes.position;
+      const result=attributes.map(()=>[]),point=new T.Vector3();let changed=false;
+      function vertex(index){
+        const data=[];for(const [,a] of attributes)for(let k=0;k<a.itemSize;k++)data.push(a.array[index*a.itemSize+k]);
+        point.fromBufferAttribute(pos,index).applyMatrix4(transform);
+        return {data,p:[point.x,point.y,point.z]};
+      }
+      function mix(a,b,t){return {data:a.data.map((v,i)=>v+(b.data[i]-v)*t),p:a.p.map((v,i)=>v+(b.p[i]-v)*t)};}
+      function split(poly,axis,bound,sign){
+        const inside=[],outside=[];
+        for(let i=0;i<poly.length;i++){
+          const a=poly[i],b=poly[(i+1)%poly.length],da=(a.p[axis]-bound)*sign,db=(b.p[axis]-bound)*sign;
+          (da>=0?inside:outside).push(a);
+          if((da>=0)!==(db>=0)){const v=mix(a,b,da/(da-db));inside.push(v);outside.push(v);}
+        }
+        return [inside,outside];
+      }
+      function emit(poly){
+        for(let i=1;i<poly.length-1;i++)for(const v of [poly[0],poly[i],poly[i+1]]){
+          for(let k=0;k<attributes.length;k++)for(let n=0;n<sizes[k];n++)result[k].push(v.data[offsets[k]+n]);
+        }
+      }
+      for(let i=0;i<pos.count;i+=3){
+        let fragments=[[vertex(i),vertex(i+1),vertex(i+2)]];
+        for(const h of holes){
+          const remaining=[];
+          for(const poly of fragments){
+            // Most triangles can be rejected before clipping any attributes.
+            if(poly.every(v=>v.p[0]<h.x0)||poly.every(v=>v.p[0]>h.x1)||
+              poly.every(v=>v.p[1]<h.y0)||poly.every(v=>v.p[1]>h.y1)||
+              poly.every(v=>v.p[2]<h.z0)||poly.every(v=>v.p[2]>h.z1)){remaining.push(poly);continue;}
+            let inside=poly;
+            for(const [axis,bound,sign] of [[0,h.x0,1],[0,h.x1,-1],[1,h.y0,1],[1,h.y1,-1],[2,h.z0,1],[2,h.z1,-1]]){
+              const [a,b]=split(inside,axis,bound,sign);if(b.length>=3)remaining.push(b);inside=a;if(inside.length<3)break;
+            }
+            if(inside.length>=3)changed=true;
+          }
+          fragments=remaining;
+        }
+        for(const poly of fragments)emit(poly);
+      }
+      if(changed){
+        const geometry=new T.BufferGeometry();
+        attributes.forEach(([name,a],i)=>geometry.setAttribute(name,new T.Float32BufferAttribute(result[i],a.itemSize,a.normalized)));
+        geometry.computeBoundingBox();geometry.computeBoundingSphere();part.geometry=geometry;
+      }
+      if(source!==original)source.dispose();
+    }
+    const box=new T.Box3();
+    for(const group of groups)group.traverse(part=>{
+      if(!part.isMesh||part.isInstancedMesh||Array.isArray(part.material)||part.material.isShaderMaterial)return;
+      const transform=unit.clone().multiply(toModel).multiply(part.matrixWorld);
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      box.copy(part.geometry.boundingBox).applyMatrix4(transform);
+      const holes=apertures.filter(h=>box.max.x>h.x0&&box.min.x<h.x1&&box.max.y>h.y0&&box.min.y<h.y1&&box.max.z>h.z0&&box.min.z<h.z1);
+      if(holes.length)subtractWindow(part,transform,holes);
+    });
+    const reveals=new T.Group();reveals.name='真实观景窗 · 贯通舰壳与舱内';
+    reveals.scale.set(1/metric.x,1/metric.y,1/metric.z);ship.add(reveals);groups.push(reveals);
+    const lining=new T.MeshStandardMaterial({color:linearColor(0x526c7e),metalness:.58,roughness:.41,side:T.DoubleSide});
+    function hullZ(x,y,side){
+      const [w,keel,belt,top]=station(x/metric.x),dy=y/metric.y-belt;
+      const c=Math.min(1,Math.pow(Math.abs(dy)/(dy>=0?top-belt:belt-keel),1/.84));
+      return side*(w*Math.pow(Math.max(0,1-c*c),.425)*(1+.10*Math.min(0,Math.sign(dy)*c))+.14)*metric.z;
+    }
+    function quad(vertices,points){for(const i of [0,1,2,0,2,3])vertices.push(...points[i]);}
+    for(const h of apertures){
+      const p=[],side=h.room.side;
+      // Four pressure-window reveals follow the real curved shell at their
+      // outer ends. Their inner ends meet the room's own sill and jambs.
+      for(const y of [h.y0,h.y1])for(let i=0;i<16;i++){
+        const a=T.MathUtils.lerp(h.x0,h.x1,i/16),b=T.MathUtils.lerp(h.x0,h.x1,(i+1)/16);
+        quad(p,[[a,y,h.inner],[b,y,h.inner],[b,y,hullZ(b,y,side)],[a,y,hullZ(a,y,side)]]);
+      }
+      for(const x of [h.x0,h.x1])for(let i=0;i<8;i++){
+        const a=T.MathUtils.lerp(h.y0,h.y1,i/8),b=T.MathUtils.lerp(h.y0,h.y1,(i+1)/8);
+        quad(p,[[x,a,h.inner],[x,b,h.inner],[x,b,hullZ(x,b,side)],[x,a,hullZ(x,a,side)]]);
+      }
+      const geometry=new T.BufferGeometry();geometry.setAttribute('position',new T.Float32BufferAttribute(p,3));geometry.computeVertexNormals();
+      const liningMesh=new T.Mesh(geometry,lining);reveals.add(liningMesh);
+      if(h.room.id==='terraceAccess'){
+        const glass=applyWindowFresnel(new T.MeshStandardMaterial({color:linearColor(0xaedbe5),roughness:.10,
+          metalness:.08,transparent:true,opacity:.10,depthWrite:false,side:T.DoubleSide}));
+        const pane=new T.Mesh(new T.PlaneGeometry(h.x1-h.x0,h.y1-h.y0),glass);
+        pane.position.set((h.x0+h.x1)/2,(h.y0+h.y1)/2,h.inner);reveals.add(pane);
+      }
+    }
+    let interior=false;
+    return {rooms,groups,hasView:id=>rooms.some(r=>r.id===id),
+      setInteriorView(id){
+        const visible=rooms.some(r=>r.id===id);if(visible===interior)return;interior=visible;
+        for(const group of groups){group.visible=visible;if(visible)group.traverse(p=>{if(p.isMesh)p.visible=true;});}
+      }};
+  })();
+
   // The carrier's orbital frame uses the habitat's installed metre coordinates.
   // The cradle, rail car and departure controller share the same berth transform.
   function kloseCarrierStation(body){
     const home=body.sites.find(s=>s.id==='grassland');
-    return body.point(home.lat+.18,home.lon+.05,145000);
+    return body.point(home.lat+.18,home.lon+.05,2400);
   }
   function carrierOrientation(T,center,surfacePoint){
     const radial=center.clone().normalize(),back=center.clone().sub(surfacePoint).normalize();
@@ -19,8 +137,19 @@
     const hull=new T.Group();hull.scale.copy(ship.scale).multiplyScalar(habitat.metresPerRenderUnit);carrier.add(hull);
     // Reuse the installed exterior, sharing its geometries, textures and materials.
     for(const group of exterior){
-      const clone=group.clone(true);clone.traverse(o=>{o.visible=true;o.castShadow=false;});hull.add(clone);
+      const clone=group.clone(true);
+      clone.traverse(o=>{o.visible=true;o.castShadow=false;o.updateMatrix();o.matrixAutoUpdate=false;});hull.add(clone);
     }
+    // Share the very same room geometries used by the walking controller.
+    // Only the two glazed cabins are carried into this orbital scene; their
+    // equipment, walls and window mullions remain at installed metre positions.
+    const windowCabins=carrierGlazing.rooms.map(record=>{
+      const source=habitat.ensureRoom(record.id),cabin=source.group.clone(true);
+      cabin.position.fromArray(source.center);
+      cabin.traverse(o=>{o.visible=true;o.castShadow=false;o.updateMatrix();o.matrixAutoUpdate=false;});
+      cabin.visible=false;carrier.add(cabin);
+      return {cabin,center:new T.Vector3().fromArray(source.center),side:source.side};
+    });
     const addr=shipTransporters.ports(room),slot=Math.max(0,addr.findIndex(p=>p.id===berthId));
     const gate=shipTransporters.boardingPose(room,berthId)||{x:room.center[0],y:room.center[1],z:room.center[2]};
     const berth=V(room.center[0]+(slot-(addr.length-1)/2)*19,gate.y-8,-304);
@@ -136,8 +265,16 @@
       const cs=Math.pow(Math.min(1,Math.abs(y)/h),1/.84);
       return Math.abs(p.z)<beam*metric.z*Math.pow(1-cs*cs,.425)+5.6;
     }
+    const eye=new T.Vector3();
+    function updateView(position){
+      eye.copy(position);carrier.worldToLocal(eye);
+      for(const {cabin,center,side} of windowCabins){
+        const near=eye.distanceToSquared(center)<2200*2200&&side*(eye.z-center.z)>-35;
+        cabin.visible=near;
+      }
+    }
     return {root:carrier,car,total,position:dockPosition,quaternion:orientation,corridor:35,corridorLength:35,
-      isBlocked,setTravel,get travel(){return travel;},dispose(){
+      isBlocked,setTravel,updateView,get travel(){return travel;},dispose(){
         world.remove(carrier);boxGeo.dispose();owned.forEach(m=>m.dispose());
         fit.traverse(o=>{if(o.isInstancedMesh)o.dispose?.();});
       }};

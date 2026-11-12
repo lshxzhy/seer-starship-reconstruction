@@ -1,7 +1,7 @@
 // The opening phase is registered to the 960 × 560 Taomee NewWorldMap2020Panel.
 // Chart pixels are a projection; orbital lengths and times are game-scale choices.
 const PANO_ORBITS=(()=>{
-  const scale=16000,period=10*86400;
+  const scale=16000/60,period=10*86400;
   const icon=(world,px,py,colour)=>{
     const z=(py-280)/.56, x=px-515-.28*z;
     return {id:world.id,name:world.name,a:scale*Math.hypot(x,z),phase:Math.atan2(z,x),colour};
@@ -92,7 +92,7 @@ ${TWIN_CRUST_GLSL}
 function createPanoSystem(T,world){
   const tau=Math.PI*2,ids=Object.keys(PANO_ORBITS);
   const root=new T.Group();root.name='帕诺星系 · 公转';world.add(root);
-  const starRadius=480000,far=32000000;
+  const starRadius=8000,far=600000;
   function velocity(id,time,out=new T.Vector3()){
     if(id==='star')return out.set(0,0,0);
     panoCenter(id,time,out);

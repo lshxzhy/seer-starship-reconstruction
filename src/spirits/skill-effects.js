@@ -248,6 +248,8 @@ function spiritEffectSummary(row,types){
       case 52:return x+' 回合内自身先手时闪避对方技能，必中仍可命中';
       case 53:case 90:return x+' 回合内自身攻击伤害乘 '+y;
       case 54:return x+' 回合内对手攻击伤害减至 1/'+y;
+      case 55:return x+' 回合内自身与对手交换战斗属性';
+      case 56:return x+' 回合内自身属性与对手相同';
       case 57:return x+' 回合内使用技能可回复自身最大体力的 1/'+y;
       case 58:return '随后 '+x+' 回合的攻击必定致命';
       case 60:return x+' 回合内攻击追加 '+y+' 点固定伤害';

@@ -60,7 +60,11 @@ function createCompanionFigure(T,id){
 // tiny species. This is a scene presentation rule, not a change to their data.
 // A scaled scene receives local dimensions; records convert them back to metres.
 // Keep the attachment at unit scale so its local focus point matches its geometry.
-const FIELD_SPIRIT_SCALE=3.0, FIELD_SPIRIT_MIN_HEIGHT=1.10, FIELD_BOSS_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
+// Ordinary inhabitants grow by 25%; the additional boss factor doubles, so
+// field bosses are 2.5 times their previous size. Preserve catalogue values.
+const FIELD_SPIRIT_GROWTH=1.25;
+const FIELD_SPIRIT_SCALE=3.0*FIELD_SPIRIT_GROWTH, FIELD_SPIRIT_MIN_HEIGHT=1.10*FIELD_SPIRIT_GROWTH,
+  FIELD_BOSS_SCALE=3.30, KLOSE_ITEM_SCALE=1.40;
 function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
@@ -72,7 +76,7 @@ function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   // visible body. Ornament tips must not determine an elephant's body scale.
   const shoulderHeight=model.shoulderHeight>0?Math.max(0,model.shoulderHeight-bounds.min.y):0;
   const shoulderFactor=shoulderHeight>0&&model.fieldMinShoulderHeight>0?
-    model.fieldMinShoulderHeight/shoulderHeight/sceneScale:0;
+    model.fieldMinShoulderHeight*FIELD_SPIRIT_GROWTH/shoulderHeight/sceneScale:0;
   const factor=Math.max(size/Math.max(.01,extent.y),shoulderFactor),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
   model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;

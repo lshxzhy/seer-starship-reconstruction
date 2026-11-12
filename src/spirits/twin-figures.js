@@ -280,12 +280,184 @@ function createDidaFamilyFigure(T,id){
     dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
 }
 
+// Playable descendants need their own visible bodies after evolution. These
+// family-based sculpts are project adaptations awaiting artwork refinement;
+// they deliberately expose that status to the portrait UI. They are separate
+// meshes and proportions, not an adult model relabelled as its baby form.
+function createTwinGrowthFigure(T,id){
+  if(![86,87,92,93,94,99,107,111,112,121].includes(id))return null;
+  const root=new T.Group(),body=new T.Group();root.add(body);root.name='twin-growth-'+id;
+  const geometry=new Set(),materials=new Map(),joints=[],details=[];
+  const sphere=new T.SphereGeometry(1,28,20);geometry.add(sphere);
+  function material(color,metal=false){
+    const key=color+':'+metal;
+    if(!materials.has(key))materials.set(key,new T.MeshStandardMaterial({color:new T.Color(color).convertSRGBToLinear(),roughness:metal?.37:.62,metalness:metal?.42:0}));
+    return materials.get(key);
+  }
+  function part(g,color,parent=body,metal=false){
+    geometry.add(g);const m=new T.Mesh(g,material(color,metal));m.castShadow=m.receiveShadow=true;parent.add(m);return m;
+  }
+  function oval(color,x,y,z,rx,ry,rz,parent=body,metal=false){
+    const m=part(sphere,color,parent,metal);m.position.set(x,y,z);m.scale.set(rx,ry,rz);return m;
+  }
+  function box(color,x,y,z,w,h,d,parent=body,metal=false){
+    const m=part(new T.BoxGeometry(w,h,d),color,parent,metal);m.position.set(x,y,z);return m;
+  }
+  function cone(color,x,y,z,r,h,parent=body,metal=false){
+    const m=part(new T.ConeGeometry(r,h,16),color,parent,metal);m.position.set(x,y,z);return m;
+  }
+  function line(color,points,r,parent=body,metal=false){
+    return part(new T.TubeGeometry(new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p))),32,r,8,false),color,parent,metal);
+  }
+  function ring(color,x,y,z,r,t,parent=body,metal=false){
+    const m=part(new T.TorusGeometry(r,t,10,36),color,parent,metal);m.position.set(x,y,z);return m;
+  }
+  function limb(x,y,z,phase){
+    const g=new T.Group();g.position.set(x,y,z);body.add(g);joints.push({g,y,phase});return g;
+  }
+  function eye(x,y,z,r,parent=body,color=0x2a4948){
+    oval(0xeaf7ed,x,y,z,r,r*1.16,r*.24,parent);
+    oval(color,x,y,z+r*.20,r*.56,r*.83,r*.12,parent);
+    oval(0xffffff,x-r*.15,y+r*.34,z+r*.32,r*.17,r*.22,r*.035,parent);
+  }
+  if(id===86||id===87){
+    const middle=id===87,stone=middle?0x718f90:0x8da8a1,moss=0x829849;
+    const headY=middle?.90:.57,bodyY=middle?.43:.28;
+    oval(stone,0,bodyY,0,middle?.25:.28,middle?.31:.22,.24);
+    oval(stone,0,headY,.015,middle?.38:.34,middle?.25:.27,.26);
+    for(const s of [-1,1]){
+      const leg=limb(s*.16,middle?.24:.16,0,s<0?0:Math.PI);
+      oval(stone,0,-.08,.025,.10,middle?.17:.10,.115,leg);
+      oval(0xb9c6b5,0,-(middle?.20:.13),.06,.13,.07,.13,leg);
+      eye(s*.15,headY+.015,.255,middle?.073:.089);
+      const arm=limb(s*(middle?.34:.30),middle?.61:.35,.01,s<0?Math.PI:0);
+      oval(stone,s*.025,-.11,0,.10,middle?.23:.13,.10,arm);
+      oval(0xa3b6ad,s*.025,-(middle?.30:.20),.015,.115,.09,.12,arm);
+      line(moss,[[s*.29,headY+.10,-.02],[s*.33,headY-.05,.12],[s*.27,headY-.19,.19]],.020);
+    }
+    if(middle){
+      eye(0,headY+.035,.281,.065);
+      for(const x of [-.23,0,.23])box(0xc5cbb9,x,1.16,-.01,.14,.13,.16);
+      line(moss,[[-.20,.63,.19],[-.11,.52,.24],[.10,.50,.24],[.23,.57,.16]],.024);
+    }else{
+      cone(moss,-.10,.87,-.03,.065,.17).rotation.z=.32;
+      cone(moss,.08,.85,-.02,.052,.13).rotation.z=-.24;
+      oval(0xb6c7ba,0,.28,.20,.13,.105,.025);
+    }
+  }else if(id===111||id===112){
+    const middle=id===112,gold=middle?0xd8ac24:0xe3bd45,steel=0x929d9e;
+    oval(gold,0,.30,0,middle?.31:.28,.22,middle?.36:.28,body,true);
+    for(const s of [-1,1]){
+      for(const z of [-.17,.15]){
+        const leg=limb(s*.25,.22,z,(s<0?0:Math.PI)+(z<0?Math.PI:0));
+        oval(steel,s*.07,-.055,.015,.11,.12,.12,leg,true);
+        oval(gold,s*.09,-.12,.055,.13,.065,.145,leg,true);
+      }
+      const arm=limb(s*.28,.27,.20,s<0?0:Math.PI);
+      line(steel,[[0,0,0],[s*.09,.015,.13],[s*.14,-.01,.22]],.045,arm,true);
+      for(const side of [-1,1])line(gold,[[s*.14,-.01,.22],[s*.14+side*.07,-.01,.29],[s*.14+side*.045,-.01,.36]],.034,arm,true);
+      eye(s*.115,.34,middle?.335:.265,.073,body,0x3e501d);
+    }
+    line(steel,[[-.20,.45,.06],[0,.50,.03],[.20,.45,.06]],.018,body,true);
+    if(middle){
+      line(steel,[[0,.35,-.25],[0,.50,-.39],[0,.70,-.38],[0,.79,-.23]],.07,body,true);
+      for(const [y,z] of [[.47,-.35],[.61,-.39],[.75,-.31]])box(gold,0,y,z,.16,.13,.15,body,true);
+      box(gold,0,.79,-.16,.24,.12,.19,body,true);
+      for(const s of [-1,1])cone(0xb45443,s*.065,.78,-.03,.025,.12).rotation.x=Math.PI/2;
+    }else{
+      for(const s of [-1,1])line(steel,[[s*.08,.47,.02],[s*.12,.61,.01],[s*.15,.64,.02]],.015,body,true);
+    }
+  }else if(id===92||id===93||id===94){
+    const color={92:0xbadac9,93:0x92b5e4,94:0xc3e9f1}[id],accent={92:0x7baaa1,93:0xf1d64f,94:0x74bddc}[id];
+    const head=new T.Group();head.position.y=.73;body.add(head);details.push(head);
+    oval(color,0,.35,0,.20,.25,.18);oval(0xf2faf3,0,.32,.12,.13,.19,.07);
+    oval(color,0,0,.01,.31,.27,.24,head);
+    for(const s of [-1,1]){
+      eye(s*.13,.017,.225,.09,head,id===93?0x3e5378:0x3b6974);
+      const leg=limb(s*.12,.18,.01,s<0?0:Math.PI);oval(color,0,-.09,.06,.07,.12,.105,leg);
+      const ear=oval(color,s*.19,.30,-.02,.075,.26,.05,head);ear.rotation.z=-s*.30;
+      const inner=oval(accent,s*.205,.31,.024,.037,.18,.012,head);inner.rotation.z=-s*.30;
+      if(id===92){
+        const wing=oval(0xe5f4ea,s*.29,.51,-.04,.10,.30,.075);wing.rotation.z=-s*.86;
+        for(let k=0;k<3;k++)oval(accent,s*(.34+k*.04),.53-k*.07,-.01,.08,.12,.034).rotation.z=-s*.70;
+      }else if(id===93){
+        const bolt=box(accent,s*.34,.43,.015,.12,.25,.045);bolt.rotation.z=-s*.48;
+        box(accent,s*.40,.57,.015,.16,.065,.05).rotation.z=s*.24;
+      }else{
+        const fin=cone(accent,s*.30,.44,-.005,.12,.33);fin.rotation.z=-s*.76;
+        cone(0xeffcff,s*.21,1.21,-.03,.06,.18).rotation.z=-s*.25;
+      }
+    }
+    line(accent,[[0,.32,-.12],[.10,.37,-.35],[.14,.55,-.40]],.055);
+    if(id===94)cone(0xc7f6ff,.14,.64,-.40,.09,.21);
+  }else if(id===99){
+    const blue=0x276a9f,teal=0x22b6a5;
+    oval(teal,0,.48,-.08,.26,.26,.47);
+    for(const s of [-1,1])for(const z of [-.33,.25]){
+      const leg=limb(s*.23,.39,z,(s<0?0:Math.PI)+(z<0?Math.PI:0));
+      oval(blue,0,-.13,0,.105,.24,.12,leg);oval(0xdceff3,0,-.32,.07,.13,.065,.15,leg);
+    }
+    const head=new T.Group();head.position.set(0,.86,.31);body.add(head);details.push(head);
+    box(blue,0,0,0,.58,.53,.24,head);box(teal,0,.012,.13,.52,.46,.055,head);
+    box(0xe9f4ec,0,.025,.169,.43,.36,.025,head);
+    for(const s of [-1,1]){
+      eye(s*.115,.045,.19,.058,head,0x376caf);
+      const ear=ring(0x57d4df,s*.36,.01,0,.17,.045,head);ear.rotation.y=Math.PI/2;
+      line(0xe0f36f,[[s*.34,.10,.02],[s*.47,.23,.02],[s*.40,.25,.02],[s*.55,.41,.02]],.019,head);
+      cone(blue,s*.16,.43,-.025,.105,.43,head).rotation.z=-s*.23;
+    }
+    line(blue,[[0,.52,-.43],[0,.60,-.66],[0,.88,-.76]],.06);
+    cone(0x93dedc,0,1.00,-.76,.08,.23);
+  }else if(id===107){
+    const stone=0xbba79e,blue=0x739eb7;
+    cone(0xd9ded5,0,.23,0,.24,.49).rotation.z=Math.PI;
+    const thread=[];for(let k=0;k<=100;k++){const t=k/100,a=t*Math.PI*9;thread.push([.23*t*Math.cos(a),.02+.43*t,.23*t*Math.sin(a)]);}
+    line(0x5b737a,thread,.025);
+    box(stone,0,.62,0,.58,.41,.38);box(blue,0,.79,.195,.46,.16,.025);
+    box(stone,0,1.03,-.015,.64,.32,.47);box(0xd8c8b8,0,1.21,-.015,.72,.07,.50);
+    for(const s of [-1,1]){
+      eye(s*.13,1.03,.225,.061,body,0x374750);
+      const arm=limb(s*.39,.76,.01,s<0?0:Math.PI);
+      box(stone,s*.035,-.16,0,.20,.36,.24,arm);oval(blue,s*.045,-.38,.045,.17,.14,.16,arm);
+      for(const k of [-1,0,1])cone(0xddd5c2,s*.045+k*.07,-.50,.085,.03,.14,arm).rotation.x=Math.PI;
+      box(0x736867,s*.19,1.257,.01,.075,.015,.36).rotation.y=s*.27;
+    }
+  }else if(id===121){
+    const pink=0xd7aa99,cream=0xf0dfb6;
+    oval(pink,0,.49,.20,.27,.29,.23);
+    const shell=oval(cream,0,.89,-.10,.45,.46,.37);
+    for(const s of [-1,1]){
+      const spiral=[];for(let k=0;k<=100;k++){const t=k/100,a=t*Math.PI*3.5,r=.34*(1-.9*t);spiral.push([s*(.46-.13*(1-t)),.89+r*Math.cos(a),-.10+r*Math.sin(a)]);}
+      line(0xab9b75,spiral,.017);
+      const point=cone(0xd2e2bc,s*.50,.90,-.10,.21,.38);point.rotation.z=-s*Math.PI/2;
+      const leg=limb(s*.18,.27,.13,s<0?0:Math.PI);oval(pink,0,-.10,.02,.12,.18,.13,leg);oval(cream,0,-.22,.10,.15,.07,.17,leg);
+      const arm=limb(s*.29,.57,.23,s<0?Math.PI:0);oval(pink,s*.035,-.14,.02,.09,.21,.10,arm);oval(cream,s*.045,-.31,.055,.11,.08,.12,arm);
+      eye(s*.12,.59,.411,.062,body,0x7e5550);
+      cone(0xe0eac6,s*.21,1.28,-.02,.09,.25).rotation.z=-s*.40;
+    }
+    oval(0xf2cfba,0,.33,.37,.16,.13,.04);details.push(shell);
+  }
+  let time=0,phase=0,weight=0;
+  return {root,articulatedGait:joints.length>0,presentationNote:'项目简化造型 · 待按原立绘精修',update(dt,effort=0,locomotion={}){
+    dt=Math.min(.12,Math.max(0,dt));time+=dt;
+    const scale=Math.max(.01,Math.abs(root.scale.y));
+    const speed=Number.isFinite(locomotion.speed)?locomotion.speed/scale:effort*.40;
+    const turning=Number.isFinite(locomotion.turnRate)?Math.abs(locomotion.turnRate):0;
+    weight+=(Math.min(1,Math.abs(speed)*5+turning*.5)-weight)*Math.min(1,dt*12);
+    phase+=dt*(Math.abs(speed)*7+turning*1.8);
+    for(const j of joints){j.g.rotation.x=Math.sin(phase+j.phase)*.22*weight;j.g.position.y=j.y+Math.max(0,Math.cos(phase+j.phase))*.025*weight;}
+    for(const d of details)d.rotation.z=.017*Math.sin(time*1.8);
+    if([92,93,94].includes(id))body.position.y=.018*Math.sin(time*2.3);
+  },dispose(){for(const g of geometry)g.dispose();for(const m of materials.values())m.dispose();}};
+}
+
 // Classic twin-world figures. Identity/colour references: Taomee's numbered
 // main/spirit/{id}.html and seerh5.61.com pet/head/{id}.png.
 // Full silhouettes were compared with the preserved original battle artwork at
 // wiki.biligame.com/seer/精灵:{id}; unseen backs and joint motion are 3D adaptations.
 // This adds presentation only: no species stats, capture rules or boss rewards.
 function createTwinSpiritFigure(T,id){
+  const growth=createTwinGrowthFigure(T,id);if(growth)return growth;
   if(id===89||id===90)return createDidaFamilyFigure(T,id);
   if(![88,89,90,91,97,98,105,106,113,119,120,184,185,188,189].includes(id))return null;
   const root=new T.Group(),body=new T.Group();root.add(body);

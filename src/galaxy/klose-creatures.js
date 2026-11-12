@@ -549,7 +549,7 @@ function createKloseWildlife(T,surface,meadowBirds){
         p.shieldRadius=Math.max(1.1*FIELD_SPIRIT_SCALE/sceneScale,model.radius*1.30);
         p.radius=p.shieldRadius;p.shieldHeight=p.size*1.21;
       }
-      p.placementReach=Math.min(12,Math.max(4.92,p.radius*2.2+1.6));
+      p.placementReach=Math.min(18,Math.max(4.92,p.radius*2.2+1.6));
       const placed=findPlacement(p);if(!placed)p.retry=2;
       p.root.userData.kloseSpirit=p.key;
       near.add(p.root);inhabitants.push(p);byKey.set(p.key,p);if(placed)pose(p);p.root.visible=false;
@@ -717,6 +717,7 @@ function createKloseWildlife(T,surface,meadowBirds){
       p.speciesId===442&&!p.hits?'对探头的闪光依依照射一次':'';
     return {key:p.key,id:p.key,speciesId:p.speciesId,name:KLOSE_SPECIMENS[p.speciesId][0],siteId:p.site.id,fieldLock:lock,
       size:p.size*sceneScale,level:p.level,kind:p.kind,visible:true,lat:p.at.lat,lon:p.at.lon,distance,
+      contactRange:22+p.radius*sceneScale,observationRange:22+p.radius*sceneScale,
       focusPoint:p.root.localToWorld(new T.Vector3(0,p.size*.48,0))};
   }
   function observation(lat,lon,key){
@@ -725,7 +726,7 @@ function createKloseWildlife(T,surface,meadowBirds){
     for(const p of options){
       if(!p||!p.root.visible||!p.near.visible)continue;
       const distance=Math.hypot(viewer.x-p.site.x-p.x,viewer.z-p.site.z-p.z)*sceneScale;
-      if((!best||distance<best.distance)&&distance<=40)best=record(p,viewer);
+      if((!best||distance<best.distance)&&distance<=40+p.radius*sceneScale)best=record(p,viewer);
     }
     return best;
   }
@@ -754,7 +755,9 @@ function createKloseWildlife(T,surface,meadowBirds){
     let best=null,range=Infinity,hitPoint=null;
     for(const c of candidates){
       const distance=Math.hypot(visitor.x-c.site.x-c.x,visitor.z-c.site.z-c.z);
-      if(distance>(caster?22:4))continue;
+      // Interact from the surface of a large body or shield, never from inside it.
+      const reach=(caster?22:4)/sceneScale+(c.p?.radius||0);
+      if(distance>reach)continue;
       c.root.updateWorldMatrix(true,true);
       const hit=caster?caster.intersectObject(c.root,true)[0]:null,d=caster?hit?.distance:distance;
       if(d!==undefined&&d<range){range=d;best=c;hitPoint=hit?.point.clone()||null;}

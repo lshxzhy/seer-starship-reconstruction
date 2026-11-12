@@ -1,8 +1,8 @@
 // Classic habitats follow Taomee's PetXMLInfo mapID/Foundin fields, preserved in
 // references/klose/client-spirit-config/18.xml, plus the official numbered pages.
-// #090 is observed as #089's evolution at map 105, not made a capturable spawn.
-// Visible three-dimensional inhabitants are observations, not invented capture
-// events: the original encounter conditions/rewards are deliberately separate.
+// Evolved habitat inhabitants can be challenged, but zero client capture rates
+// stay non-capturable. Spawn levels and the two bosses use the project rules in
+// challenges.js; they do not stand for all historical server encounter puzzles.
 const TWIN_HABITATS={
   'alpha-springs':{name:'双子阿尔法星 · 温泉群',animals:[89,90,91]},
   'alpha-rock':{name:'阿尔法星岩地',animals:[88,188,189]},
@@ -29,11 +29,12 @@ function createTwinEcology(T,parent,definition,surface){
     const site=definition.sites.find(s=>s.id===siteId);if(!site)return null;
     const look=site.lookAt||[site.x,site.z-1],dx=look[0]-site.x,dz=look[1]-site.z,length=Math.hypot(dx,dz);
     const fx=length?dx/length:0,fz=length?dz/length:-1;
-    const x=-fz*side+fx*ahead,z=fx*side+fz*ahead;
     const boss=id===88||id===113,model=createFieldSpirit(T,id,{boss});if(!model)return null;
+    const forward=boss?Math.max(ahead,model.radius+8):ahead;
+    const x=-fz*side+fx*forward,z=fx*side+fz*forward;
     const anchor=new T.Group(),turn=new T.Group();anchor.add(turn);turn.add(model.root);parent.add(anchor);
     const key=siteId+'-'+id+'-'+index;anchor.userData.twinSpirit=key;anchor.visible=false;
-    return {site,id,x,z,homeX:x,homeZ:z,model,anchor,turn,key,boss,phase:index*1.91,age:0,yaw:0,at:null,ready:false,retry:0};
+    return {site,id,x,z,homeX:x,homeZ:z,model,anchor,turn,key,boss,phase:index*1.91,age:0,yaw:0,at:null,ready:false,retry:0,rest:0};
   }).filter(Boolean);
   let enabled=true,visitor=null;
   const displacement=(a,b)=>surfaceDisplacement(a,b,definition.radius);
@@ -50,10 +51,11 @@ function createTwinEcology(T,parent,definition,surface){
       displacement(at,other.at).distance>p.model.radius+other.model.radius+.22);
   }
   function initialize(p){
-    for(let ring=0;ring<=15;ring++){
+    const step=Math.max(.85,p.model.radius*.28),rings=Math.max(15,Math.ceil((p.model.radius*3+12)/step));
+    for(let ring=0;ring<=rings;ring++){
       const n=Math.max(1,ring*8);
       for(let i=0;i<n;i++){
-        const a=i*Math.PI*2/n,x=p.homeX+ring*.85*Math.cos(a),z=p.homeZ+ring*.85*Math.sin(a);
+        const a=i*Math.PI*2/n,x=p.homeX+ring*step*Math.cos(a),z=p.homeZ+ring*step*Math.sin(a);
         const at=surface.move(p.site.lat,p.site.lon,x,-z);
         if(!clear(p,at))continue;
         p.x=p.homeX=x;p.z=p.homeZ=z;p.at=at;p.ready=true;return true;
@@ -70,7 +72,7 @@ function createTwinEcology(T,parent,definition,surface){
     visitor={lat,lon};dt=Math.min(.15,Math.max(0,dt));
     for(const p of nodes){
       const nearby=enabled&&walking&&displacement(p.site,visitor).distance<105;
-      if(!nearby){p.anchor.visible=false;continue;}
+      if(!nearby||p.rest>Date.now()){p.anchor.visible=false;continue;}
       if(!p.ready){
         p.retry=Math.max(0,p.retry-dt);
         if(p.retry||!initialize(p)){p.anchor.visible=false;if(!p.retry)p.retry=2;continue;}
@@ -102,9 +104,11 @@ function createTwinEcology(T,parent,definition,surface){
     }
   }
   function record(p,lat,lon){
+    const challenge=SPT_CHALLENGES.get(p.id),habitat=TWIN_ENCOUNTERS.get(p.id);
     return {key:p.key,id:p.key,speciesId:p.id,name:SEER_SPIRIT_DATA.index.find(row=>row[0]===p.id)?.[1]||'精灵',
-      siteId:p.site.id,size:p.model.size,kind:'observation',boss:p.boss,visible:true,
-      fieldLock:p.boss?'可以观察和交流。该首领的原版挑战条件与奖励尚未接入。':'可以观察和交流。该精灵的原版出现条件与捕捉流程尚未接入。',
+      siteId:p.site.id,size:p.model.size,kind:p.boss?'boss':'wild',boss:p.boss,visible:true,
+      level:challenge?.level||habitat?.level,canCapture:!p.boss&&!!SEER_SPIRIT_DATA.species[p.id]?.catch,fieldLock:'',
+      observationRange:22+p.model.radius,contactRange:22+p.model.radius,
       lat:p.at.lat,lon:p.at.lon,distance:displacement({lat,lon},p.at).distance,
       focusPoint:p.anchor.localToWorld(new T.Vector3(0,p.model.size*.52,0))};
   }
@@ -113,12 +117,12 @@ function createTwinEcology(T,parent,definition,surface){
     for(const p of nodes){
       if(!p.anchor.visible||!p.ready||(key&&key!==p.key))continue;
       const found=record(p,lat,lon);
-      if(found.distance<=40&&(!best||found.distance<best.distance))best=found;
+      if(found.distance<=Math.max(40,found.observationRange)&&(!best||found.distance-p.model.radius<best.distance-best.radius))best={...found,radius:p.model.radius};
     }
     return best;
   }
   function pickSpirit(caster,lat,lon){
-    const close=nodes.filter(p=>p.anchor.visible&&p.ready&&displacement({lat,lon},p.at).distance<=24);
+    const close=nodes.filter(p=>p.anchor.visible&&p.ready&&displacement({lat,lon},p.at).distance<=24+p.model.radius);
     const hit=caster.intersectObjects(close.map(p=>p.anchor),true)[0];
     let object=hit?.object;while(object&&!object.userData.twinSpirit)object=object.parent;
     return object?spiritObservation(lat,lon,object.userData.twinSpirit):null;
@@ -135,9 +139,9 @@ function createTwinEcology(T,parent,definition,surface){
     return at;
   }
   return {update,spiritObservation,nearbySpirit:(lat,lon)=>spiritObservation(lat,lon),pickSpirit,avoidWalker,
-    withdrawSpirit:()=>false,
+    withdrawSpirit(key){const p=nodes.find(p=>p.key===key);if(!p)return false;p.rest=Date.now()+60000;p.anchor.visible=false;return true;},
     setVisible(value){enabled=value;if(!value)for(const p of nodes)p.anchor.visible=false;},
-    hint(lat,lon){const p=spiritObservation(lat,lon);return p&&p.distance<12?'附近有'+p.name+' · 靠近后按 E 观察与交流':'';},
+    hint(lat,lon){const p=spiritObservation(lat,lon);return p&&p.distance<12+p.radius?'附近有'+p.name+' · 按 E '+(p.boss?'挑战首领':'接触与对战'):'';},
     dispose(){for(const p of nodes){parent.remove(p.anchor);p.model.dispose();}}
   };
 }

@@ -60,7 +60,7 @@ function readSpiritTransfer(raw){
   const defeatedMushroom=raw.bosses.includes(47);
   if(raw.flameTool!==undefined&&typeof raw.flameTool!=='boolean')reject('火焰喷射器记录有误。');
   if(raw.flameTool===false&&(defeatedMushroom||raw.battle?.enemy?.speciesId===47))reject('此首领进度缺少已装备的火焰喷射器。');
-  if(raw.bankedXP!==undefined&&!uint(raw.bankedXP,defeatedMushroom?SPT_CHALLENGES.get(47).bankedXP:0))reject('先锋任务的积累经验余额有误。');
+  if(raw.bankedXP!==undefined&&!uint(raw.bankedXP))reject('积累经验余额有误。');
   const safari=raw.safari;
   if(safari!==undefined){
     if(!object(safari)||!uint(safari.endsAt)||safari.endsAt>Date.now()+15*60*1000||
@@ -92,6 +92,9 @@ function readSpiritTransfer(raw){
     for(const [uid,status] of Object.entries(b.conditions)){
       if((uid!=='wild'&&!partyIds.has(uid))||!object(status)||!Array.isArray(status.stages)||status.stages.length!==6||
          !status.stages.every(s=>Number.isInteger(s)&&Math.abs(s)<=6))reject('战斗中的能力等级有误。');
+      if(status.typeTurns!==undefined&&(!uint(status.typeTurns,999)||
+         status.typeTurns>0&&(!uint(status.typeId)||!Object.hasOwn(SEER_SPIRIT_DATA.types,status.typeId))))
+        reject('战斗中的临时属性记录有误。');
     }
   }
   const clean=createSpiritSystem(raw).snapshot();
@@ -107,6 +110,8 @@ function readSpiritTransfer(raw){
      (raw.battle&&(!samePet(raw.battle.enemy,clean.battle?.enemy)||raw.battle.kind!==clean.battle.kind))||
      raw.bosses.some(id=>!clean.bosses.includes(id)))
     reject('有伙伴、首领或对战数据无法完整还原，当前进度已保留。');
+  if(raw.bankedXP!==undefined&&raw.bankedXP!==clean.bankedXP)
+    reject('积累经验无法完整还原，当前进度已保留。');
   if(safari){
     const current=clean.safari,e=safari.encounter;
     if(safari.endsAt!==current.endsAt||safari.rod!==current.rod||safari.crystals!==current.crystals||
@@ -160,7 +165,8 @@ function renderSpiritTransfer(host,{getSnapshot,importSnapshot,report}){
       const names=new Map(SEER_SPIRIT_DATA.index.map(row=>[row[0],row[1]]));
       const members=save.party.map(p=>names.get(p.speciesId)+' Lv.'+p.level).join('、');
       preview.textContent='将导入队伍 '+save.party.length+' 只'+(members?'（'+members+'）':'')+
-        '，仓库 '+save.storage.length+' 只，已见 '+save.seen.length+' 种'+(save.bosses.includes(47)?'，已战胜蘑菇怪，积累经验 '+save.bankedXP:'')+
+        '，仓库 '+save.storage.length+' 只，已见 '+save.seen.length+' 种，积累经验 '+save.bankedXP+
+        (save.bosses.length?'，已完成首胜 '+save.bosses.map(id=>names.get(id)).join('、'):'')+
         (save.battle?'，对战第 '+save.battle.turn+' 回合':'')+
         (save.safari.endsAt>Date.now()?'，捕猎场'+safariRemaining(save.safari.endsAt)+'，专用胶囊 '+save.safari.balls+
           (save.safari.encounter?'，正在接触'+names.get(save.safari.encounter.pet.speciesId):''):'')+'。';

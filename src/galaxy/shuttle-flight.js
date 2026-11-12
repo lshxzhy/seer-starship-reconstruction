@@ -9,7 +9,7 @@ function shuttleCruiseSpeed(limit,boost=false){
   return boost?limit:Math.min(limit,Math.max(16,limit*.76));
 }
 
-function createShuttleFlight(T,body,dock,saved){
+function createShuttleFlight(T,body,dock,saved,planetId='klose'){
   const clamp=T.MathUtils.clamp,R=body.radius,highSpeed=8000;
   const position=dock.position.clone(),quaternion=dock.quaternion.clone(),velocity=new T.Vector3();
   const dockForward=new T.Vector3(0,0,-1).applyQuaternion(dock.quaternion);
@@ -25,7 +25,8 @@ function createShuttleFlight(T,body,dock,saved){
   const attitude=new T.Quaternion(),inclination=new T.Quaternion(),transport=new T.Quaternion(),basis=new T.Matrix4(),bankPitch=new T.Euler(0,0,0,'YXZ');
   let phase='docked',auto=null,leg='',target=null,detour=null,detourClock=0;
   let pitch=0,roll=0,riseLevel=0,latitude=0,longitude=0,altitude=0,ground=0,power=0;
-  let pad=null,range=0,timeScale=1,stage='泊位锁定';
+  let pad=null,range=0,timeScale=1,stage='泊位锁定',boostPower=0;
+  let tour=[],tourIndex=0,coastSign=1;
   const next=new T.Vector3(),error=new T.Vector3(),delta=new T.Vector3();
   const tangent=new T.Vector3(),destUp=new T.Vector3(),probe=new T.Vector3();
   function angles(p){
@@ -82,19 +83,22 @@ function createShuttleFlight(T,body,dock,saved){
         attitude.slerp(target,T.MathUtils.smoothstep(gap,.08,2.8));
       }
     }
-    quaternion.slerp(attitude,1-Math.exp(-4.5*dt)).normalize();
+    // A manual turn changes the actual nose and the forward track together.
+    // Keeping an independent, slowly following body pose caused long sideways slides.
+    if(!auto&&!atDock)quaternion.copy(attitude);
+    else quaternion.slerp(attitude,1-Math.exp(-4.5*dt)).normalize();
   }
   function settleDock(){
     phase='docked';auto=null;leg='';target=detour=null;velocity.set(0,0,0);
     position.copy(dock.position);quaternion.copy(dock.quaternion);heading.copy(dockForward);
-    pitch=roll=power=range=0;timeScale=1;stage='泊位锁定';
+    pitch=roll=power=range=boostPower=0;tour=[];tourIndex=0;timeScale=1;stage='泊位锁定';
     levelHeading(currentFrame());
   }
   function settleSurface(info){
     phase='landed';auto=null;leg='';target=detour=null;velocity.set(0,0,0);
     const support=gearSupport(latitude,longitude);
     position.copy(up).multiplyScalar(R+support.height);altitude=support.height;ground=info.height;
-    pitch=roll=power=range=0;timeScale=1;stage='起落架已承重';
+    pitch=roll=power=range=boostPower=0;tour=[];tourIndex=0;timeScale=1;stage='起落架已承重';
     levelHeading(body.frame(latitude,longitude));quaternion.copy(gearAttitude(support.normal));
   }
   function validSite(p){
@@ -122,30 +126,56 @@ function createShuttleFlight(T,body,dock,saved){
     return true;
   }
   function manual(){
-    auto=null;target=detour=null;range=0;timeScale=1;
+    auto=null;target=detour=null;tour=[];tourIndex=0;range=0;timeScale=1;boostPower=0;
+    coastSign=1;
     if(phase==='flying'){
       if(leg==='latch')leg='undock';
       if(leg!=='rise'&&leg!=='undock')leg='';
       stage=leg==='undock'?'出坞导向':leg==='rise'?'垂直起飞':'手动驾驶';
     }
   }
+  function scenicRoute(){
+    // Cave interiors cannot be seen from the sky. The remaining named maps
+    // form a short, ordered viewing circuit before the final landing approach.
+    const sites=(body.sites||[]).filter(s=>validSite(s)&&s.id!=='core');
+    if(!sites.length)return [];
+    const cx=sites.reduce((sum,s)=>sum+(s.x||0),0)/sites.length;
+    const cz=sites.reduce((sum,s)=>sum+(s.z||0),0)/sites.length;
+    const pending=sites.map(s=>{
+      let dx=(s.x||0)-cx,dz=(s.z||0)-cz,length=Math.hypot(dx,dz);
+      if(length<1){dx=1;dz=0;length=1;}
+      const offset=body.move(s.lat,s.lon,140*dx/length,-140*dz/length);
+      return {id:s.id,name:s.name,...offset,focusLat:s.lat,focusLon:s.lon};
+    });
+    const ordered=[];let from=position.clone().normalize();
+    while(pending.length){
+      let best=0,score=-Infinity;
+      for(let i=0;i<pending.length;i++){
+        const s=pending[i],dot=body.frame(s.lat,s.lon).up.dot(from);
+        if(dot>score){score=dot;best=i;}
+      }
+      const marker=pending.splice(best,1)[0];ordered.push(marker);
+      from=body.frame(marker.lat,marker.lon).up;
+    }
+    return ordered;
+  }
   function autopilot(destination,site){
     if(destination!=='surface'&&destination!=='dock')return false;
     if(destination==='dock'&&phase==='docked')return false;
     const place=destination==='surface'?(resolveSite(site)||(!site&&home)):null;
     if(destination==='surface'&&(!validSite(place)||!body.landingInfo(place.lat,place.lon,padFootprint).ok))return false;
-    if(phase==='landed'&&place&&position.distanceTo(body.point(place.lat,place.lon))<1)return false;
     if(phase!=='flying')launch();
     if(leg==='latch'&&destination==='surface')leg='undock';
     if(leg!=='undock'&&leg!=='rise')leg='';
-    auto=destination;target=place;detour=null;detourClock=0;
+    auto=destination;target=place;detour=null;detourClock=0;boostPower=0;
+    tour=destination==='surface'&&place.id?scenicRoute():[];tourIndex=0;
     stage=leg==='undock'?'解锁出坞':leg==='rise'?'垂直起飞':'航线已接通';return true;
   }
   function departSystem(){
     if(phase!=='flying')launch();
     if(leg==='latch')leg='undock';
     if(leg!=='undock'&&leg!=='rise')leg='';
-    auto='outbound';target=detour=null;stage='驶向星际航路';return true;
+    auto='outbound';target=detour=null;tour=[];tourIndex=0;boostPower=0;stage='驶向星际航路';return true;
   }
   function canCapture(){
     return phase==='flying'&&position.distanceTo(gate)<65&&velocity.length()<22;
@@ -162,10 +192,10 @@ function createShuttleFlight(T,body,dock,saved){
     return autopilot('surface',{lat:latitude,lon:longitude,name:'当前着陆点'});
   }
   function manualLimit(agl){
-    if(agl<12)return 16+Math.max(0,agl)*1.5;
-    if(agl<120)return 34+1.85*(agl-12);
-    if(agl<1400)return 233.8+.79*(agl-120);
-    return Math.min(highSpeed,1245+.41*(agl-1400));
+    if(agl<12)return 22+2.5*Math.max(0,agl);
+    if(agl<120)return 52+2.8*(agl-12);
+    if(agl<1400)return 354.4+1.4*(agl-120);
+    return Math.min(highSpeed,2146.4+.65*(agl-1400));
   }
   // Limit both commanded speed and braking distance. Fine approach speed
   // tends continuously to zero when the position error vanishes.
@@ -231,7 +261,7 @@ function createShuttleFlight(T,body,dock,saved){
     const endHeight=goal.length()-R;
     // Climb early for long cross-country flights. At the destination the
     // great-circle leg becomes a level, slow vertical landing on its pad.
-    const cruise=Math.min(36000,arc*.36);
+    const cruise=Math.min(180,arc*.22);
     let height=toDock?endHeight:Math.max(endHeight+cruise,ground+Math.min(105,arc*1.2));
     if(!toDock&&arc<8)height=endHeight+Math.max(0,arc-.75)*.75;
     if(!toDock&&arc<1&&pad?.ok)height=pad.height;
@@ -250,19 +280,51 @@ function createShuttleFlight(T,body,dock,saved){
       dz>80?'爬升巡航':altitude-ground<320?'地表进近':'下降巡航';
     if(!toDock&&arc<.85&&pad?.ok&&altitude-pad.height<.09&&velocity.length()<.9)settleSurface(pad);
   }
+  function scenicGuidance(limit,accel){
+    const marker=tour[tourIndex],frame=body.frame(marker.lat,marker.lon);
+    const dot=clamp(frame.up.dot(up),-1,1);
+    tangent.copy(frame.up).addScaledVector(up,-dot);
+    const sine=tangent.length(),arc=Math.atan2(sine,dot)*(R+altitude);
+    if(sine>.00001)tangent.multiplyScalar(1/sine);else tangent.copy(heading);
+    // Look ahead far enough to climb over the same ridges and canopies used by
+    // the collision sweep. The ordinary viewing band is 110–180 m above land.
+    const ahead=body.move(latitude,longitude,tangent.dot(eastAxis)*Math.min(arc,90),tangent.dot(northAxis)*Math.min(arc,90));
+    const floor=Math.max(ground,body.flightHeight(latitude,longitude,padFootprint),
+      body.flightHeight(ahead.lat,ahead.lon,padFootprint));
+    const scenicHeight=Math.max(body.flightHeight(marker.lat,marker.lon,padFootprint)+110,floor+80);
+    // Adjacent viewing bands join continuously instead of commanding hard
+    // 12/20/28 m/s steps as a compact-world waypoint draws closer.
+    const speed=Math.min(limit,12+8*T.MathUtils.smoothstep(arc,100,350)+8*T.MathUtils.smoothstep(arc,350,600));
+    const vertical=clamp((scenicHeight-altitude)*.45,-Math.max(8,Math.min(180,(altitude-scenicHeight)*.3)),38);
+    // A waypoint may need more time to reach its safe viewing height. Let
+    // horizontal speed tend to zero there instead of repeatedly flying past it.
+    desired.copy(tangent).multiplyScalar(Math.min(speed,arc*.6)).addScaledVector(up,vertical);
+    range=position.distanceTo(body.point(target.lat,target.lon));
+    stage='观景 '+(tourIndex+1)+'/'+tour.length+' · '+marker.name;
+    if(arc<16&&Math.abs(altitude-scenicHeight)<28)tourIndex++;
+    // The next step may use the next marker; this step's pose and velocity
+    // must still refer to the marker that produced the current guidance.
+    return marker;
+  }
   function manualGuidance(input,dt,limit){
     const value=k=>clamp(Number(input[k])||0,-1,1);
     const turn=value('turn');
-    heading.applyAxisAngle(up,-turn*dt*(1.36-.72*clamp(velocity.length()/2200,0,1)));
+    heading.applyAxisAngle(up,-turn*dt*(1.70-.60*clamp(velocity.length()/2200,0,1))-(Number(input.lookYaw)||0));
     right.crossVectors(heading,up).normalize();
-    pitch=clamp(pitch+value('pitch')*dt*.67,-1.1,1.1);
-    roll+=(-turn*.23-roll)*(1-Math.exp(-3*dt));
+    pitch=clamp(pitch+value('pitch')*dt*.95+(Number(input.lookPitch)||0),-1.32,1.32);
+    const banking=clamp(turn+(Number(input.lookYaw)||0)/Math.max(dt,.0001)*.35,-1,1);
+    roll+=(-banking*.23-roll)*(1-Math.exp(-3*dt));
     const forward=value('forward'),side=value('strafe'),lift=value('lift');
-    const cruise=shuttleCruiseSpeed(limit,input.boost);
-    desired.copy(heading).multiplyScalar(forward*Math.cos(pitch)).addScaledVector(right,side*.64)
-      .addScaledVector(up,lift+forward*Math.sin(pitch)).clampLength(0,1).multiplyScalar(cruise);
+    boostPower=clamp(boostPower+(input.boost ? .22 : -.32)*dt,0,1);
+    const cruise=limit*(.52+.48*boostPower);
+    // Holding afterburner is itself forward thrust. This also gives the screen
+    // afterburner button a useful effect without a second simultaneous button.
+    const drive=forward||(input.boost?1:0);
+    if(drive)coastSign=Math.sign(drive);
+    desired.copy(heading).multiplyScalar(drive*Math.cos(pitch)).addScaledVector(right,side*.64)
+      .addScaledVector(up,lift+drive*Math.sin(pitch)).clampLength(0,1).multiplyScalar(cruise);
     if(input.brake)desired.set(0,0,0);
-    stage='手动驾驶';range=position.distanceTo(dock.position);
+    stage=input.boost?'手动加力 · '+Math.round(boostPower*100)+'%':'手动驾驶';range=position.distanceTo(dock.position);
   }
   function hitsHull(a,b){
     if(!dock.isBlocked||b.distanceToSquared(dock.position)>1800*1800)return false;
@@ -281,9 +343,24 @@ function createShuttleFlight(T,body,dock,saved){
     const downLimit=.65+Math.sqrt(2*.29*accel*agl);
     const vr=desired.dot(up);
     if(vr<-downLimit)desired.addScaledVector(up,-downLimit-vr);
+    if(!auto&&!leg&&velocity.lengthSq()>.000001){
+      // Arcade flight has no uncommanded lateral inertia: preserve speed while
+      // steering it onto the nose, including the coast after releasing W/S.
+      // With no thrust the desired velocity stays zero, so braking still follows.
+      const speed=velocity.length();
+      if(desired.lengthSq()>.01)velocity.copy(desired).setLength(speed);
+      else velocity.copy(heading).multiplyScalar(Math.cos(pitch)).addScaledVector(up,Math.sin(pitch)).multiplyScalar(speed*coastSign);
+      const descent=velocity.dot(up);
+      if(descent<-downLimit)velocity.addScaledVector(up,-downLimit-descent);
+    }
     delta.subVectors(desired,velocity);
     const demand=clamp(delta.length()/Math.max(1,accel*.65),0,1);
-    power+=(Math.max(demand,clamp(velocity.length()/highSpeed,0,1)) - power)*(1-Math.exp(-4*dt));
+    const engine=auto?Math.max(demand,clamp(velocity.length()/highSpeed,0,1)):
+      inputs.forward||inputs.boost? .38+.62*boostPower : demand*.18;
+    power+=(engine-power)*(1-Math.exp(-4*dt));
+    // Ease automatic velocity changes at route and approach boundaries while
+    // retaining the same acceleration ceiling and the manual thrust response.
+    if(auto)delta.multiplyScalar(1-Math.exp(-2.4*dt));
     const dv=delta.dot(up);
     delta.addScaledVector(up,-dv).clampLength(0,.71*accel*dt);
     velocity.add(delta).addScaledVector(up,clamp(dv,-.70*accel*dt,.70*accel*dt));
@@ -347,15 +424,15 @@ function createShuttleFlight(T,body,dock,saved){
         }
       }
     }
-    if(!nearDock)heading.applyQuaternion(transport);
+    if(!nearDock){heading.applyQuaternion(transport);quaternion.premultiply(transport).normalize();}
     position.copy(next);
   }
   function step(dt,input){
     const frame=currentFrame();
     levelHeading(frame);
     const agl=Math.max(0,altitude-ground),limit=manualLimit(agl),near=position.distanceTo(dock.position);
-    let accel=clamp(26+agl*.24,26,520);
-    let dockPose=false;
+    let accel=clamp(32+agl*.26,32,650);
+    let dockPose=false,viewingMarker=null;
     if(leg==='undock'){
       const end=dock.position.clone().addScaledVector(dockForward,corridor+5);
       const distance=seek(end,13,5,.85);stage='解锁出坞';accel=5;dockPose=true;
@@ -372,17 +449,30 @@ function createShuttleFlight(T,body,dock,saved){
       }else{desired.copy(up).multiplyScalar(shuttleCruiseSpeed(limit));stage='爬升至转移轨道';}
     }else if(auto==='dock'&&((near<2400&&velocity.length()<132)||leg)){
       dockGuidance(dt);accel=leg==='latch'?5:28;dockPose=leg==='latch'||leg==='gate';
-    }else if(auto)planetaryGuidance(shuttleCruiseSpeed(limit),accel);
+    }else if(auto){
+      if(auto==='surface'&&tourIndex<tour.length)viewingMarker=scenicGuidance(limit,accel);
+      else planetaryGuidance(Math.min(limit,auto==='dock'?600:Math.max(10,Math.min(120,10+agl*.32))),accel);
+    }
     else{
       const dockLimit=Math.min(22+near*.27,Math.sqrt(22*22+2*.63*accel*near));
       manualGuidance(input,dt,Math.min(limit,dockLimit));
+      accel*=1+2.4*boostPower;
       if(input.brake)accel*=2.5;
     }
     if(phase!=='flying')return;
     if(auto){
-      if(!dockPose&&desired.lengthSq()>1)alignHeading(desired,dt);
-      const climbAngle=Math.asin(clamp(desired.dot(up)/Math.max(.01,desired.length()),-1,1));
-      const nosePitch=dockPose||agl<45?0:clamp(climbAngle,-.35,.35);
+      const viewing=Boolean(viewingMarker);
+      const track=velocity.lengthSq()>1?velocity:desired;
+      if(!dockPose&&track.lengthSq()>1&&!viewing)alignHeading(track,dt);
+      const climbAngle=Math.asin(clamp(track.dot(up)/Math.max(.01,track.length()),-1,1));
+      if(viewing){
+        const marker=viewingMarker;
+        error.copy(body.point(marker.focusLat,marker.focusLon)).sub(position);
+        // During the viewing pass the pilot presents the landscape through the
+        // front glass; the route itself remains at its safe viewing altitude.
+        if(error.lengthSq()>1)alignHeading(error,dt);
+      }
+      const nosePitch=dockPose||agl<45?0:viewing?-.48:clamp(climbAngle,-.45,.35);
       pitch+=(nosePitch-pitch)*(1-Math.exp(-2.6*dt));roll*=Math.exp(-3*dt);
     }
     pose(dt,dockPose);advance(dt,accel,input);
@@ -398,18 +488,24 @@ function createShuttleFlight(T,body,dock,saved){
     const rate=timeScale,budget=realDt*rate;
     let remaining=budget;
     while(remaining>1e-7&&phase==='flying'){
-      const dt=Math.min(remaining,1/30);step(dt,input);remaining-=dt;
+      const dt=Math.min(remaining,1/30);
+      const controls={...input,lookYaw:(Number(input.lookYaw)||0)*dt/budget,lookPitch:(Number(input.lookPitch)||0)*dt/budget};
+      step(dt,controls);remaining-=dt;
     }
     currentFrame();
     return budget-remaining+remaining/rate;
   }
   function snapshot(){
-    return {version:1,phase,auto,leg,target:target?{id:target.id,name:target.name,lat:target.lat,lon:target.lon}:null,
-      p:position.toArray(),v:velocity.toArray(),q:quaternion.toArray(),heading:heading.toArray(),pitch,roll,riseLevel};
+    return {version:5,planetId,planetRadius:R,systemScale:compactVoyageSystemScale,
+      phase,auto,leg,target:target?{id:target.id,name:target.name,lat:target.lat,lon:target.lon}:null,
+      p:position.toArray(),v:velocity.toArray(),q:quaternion.toArray(),heading:heading.toArray(),pitch,roll,riseLevel,
+      boostPower,tour,tourIndex};
   }
   function restore(s){
     const tuple=(v,n)=>Array.isArray(v)&&v.length===n&&v.every(Number.isFinite);
-    if(s?.version!==1||!['landed','flying','docked'].includes(s.phase)||!tuple(s.p,3)||
+    if(!s||![1,2,3,4,5].includes(s.version))return false;
+    s=compactVehicleRecord({...s,planetId:s.planetId||planetId},dock);
+    if(s?.version!==5||!['landed','flying','docked'].includes(s.phase)||!tuple(s.p,3)||
         !tuple(s.v,3)||!tuple(s.q,4)||!tuple(s.heading,3))return false;
     if(s.phase==='docked'){settleDock();return true;}
     next.fromArray(s.p);
@@ -417,7 +513,8 @@ function createShuttleFlight(T,body,dock,saved){
     position.copy(next);const frame=currentFrame();
     phase=s.phase;heading.fromArray(s.heading);levelHeading(frame);quaternion.fromArray(s.q).normalize();
     velocity.fromArray(s.v).clampLength(0,highSpeed);
-    pitch=clamp(Number(s.pitch)||0,-1.1,1.1);roll=clamp(Number(s.roll)||0,-.3,.3);
+    pitch=clamp(Number(s.pitch)||0,-1.32,1.32);roll=clamp(Number(s.roll)||0,-.3,.3);
+    coastSign=velocity.dot(heading)*Math.cos(pitch)+velocity.dot(up)*Math.sin(pitch)<0?-1:1;
     if(phase==='landed'){
       // A parked craft already has a berth. Keep its latitude and longitude
       // even if an animal is now inside the flight planner's approach margin.
@@ -430,6 +527,10 @@ function createShuttleFlight(T,body,dock,saved){
     if(!auto&&['outer','gate','latch'].includes(leg))leg='';
     riseLevel=Number.isFinite(s.riseLevel)?s.riseLevel:altitude+10;
     if(leg==='rise')riseLevel=Math.max(riseLevel,ground+10);
+    boostPower=clamp(Number(s.boostPower)||0,0,1);
+    tour=auto==='surface'&&Array.isArray(s.tour)?s.tour.filter(m=>validSite(m)&&Number.isFinite(m.focusLat)&&Number.isFinite(m.focusLon)):[];
+    if(auto==='surface'&&target?.id&&!tour.length)tour=scenicRoute();
+    tourIndex=clamp(Math.floor(Number(s.tourIndex)||0),0,tour.length);
     stage=auto?'续航中':'手动驾驶';range=0;power=0;detour=null;detourClock=0;timeScale=1;return true;
   }
   function status(){

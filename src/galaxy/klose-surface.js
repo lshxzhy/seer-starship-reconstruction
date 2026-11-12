@@ -34,9 +34,22 @@ function createSurfaceLayout(radius,sites,groups,scale=1.7){
     return move(region.lat,region.lon,(x-region.x)*scale,-(z-region.z)*scale);
   }
   function chart(lat,lon){
-    let best=null;
-    for(const region of regions){const p=displacement(region,lat,lon);if(!best||p.distance<best.distance)best={...p,region};}
-    return {x:best.region.x+best.x/scale,z:best.region.z+best.z/scale,region:best.region,distance:best.distance};
+    let best=null,second=Infinity;
+    for(const region of regions){
+      const p=displacement(region,lat,lon);
+      if(!best||p.distance<best.distance){second=best?.distance??Infinity;best={...p,region};}
+      else second=Math.min(second,p.distance);
+    }
+    return {x:best.region.x+best.x/scale,z:best.region.z+best.z/scale,region:best.region,distance:best.distance,edge:second-best.distance};
+  }
+  // Every point belongs to a real spherical district, including both poles.
+  // Only neighbouring district boundaries blend; there is no unassigned belt.
+  function weights(lat,lon){
+    const samples=regions.map(region=>({...displacement(region,lat,lon),region}));
+    const nearest=Math.min(...samples.map(p=>p.distance)),band=Math.min(180,radius*.24);
+    let total=0;
+    for(const p of samples){p.weight=Math.max(0,1-(p.distance-nearest)/band)**2;total+=p.weight;}
+    return samples.filter(p=>p.weight>0).map(p=>({...p,x:p.region.x+p.x/scale,z:p.region.z+p.z/scale,weight:p.weight/total}));
   }
   function detail(p){
     if(!p.region)return 1;
@@ -47,13 +60,14 @@ function createSurfaceLayout(radius,sites,groups,scale=1.7){
     }
     const edge=Math.max(0,Math.min(1,(other-own)/24));
     const extent=Math.max(0,Math.min(1,(360-own)/100));
-    return edge*edge*(3-2*edge)*extent*extent*(3-2*extent);
+    const border=Math.max(0,Math.min(1,(p.edge??Infinity)/140));
+    return edge*edge*(3-2*edge)*extent*extent*(3-2*extent)*border*border*(3-2*border);
   }
-  return {radius,scale,regions,source,move,chart,fromXZ,detail,displacement};
+  return {radius,scale,regions,source,move,chart,weights,detail,fromXZ,displacement};
 }
 
 const KLOSE_WORLD = (() => {
-  const radius = 9600, latitude = .32, longitude = .54;
+  const radius = 900, latitude = .32, longitude = .54;
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
@@ -78,8 +92,8 @@ const KLOSE_WORLD = (() => {
     ['forest','林间南缘',-305,-40],['vineway','藤蔓通道外沿',-242,124],
     ['wetland','湿地东岸',47,-173],['flame','烈焰丛林东缘',179,-109],
     ['sanctuary','神宠高地东坪',177,68],
-    ['ridge','蓝脊山鞍部',2880,-1480],['delta','金河口高岸',-2720,-2940],
-    ['grove','绯叶林台',4500,1980]
+    ['ridge','蓝脊山鞍部',570,-295],['delta','金河口高岸',-545,-590],
+    ['grove','绯叶林台',900,395]
   ].map(([id,name,x,z])=>({id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude))}));
   const layout=createSurfaceLayout(radius,[...sites,...landingSites.filter(p=>!sites.some(s=>s.id===p.id))],[
     [['grassland'],latitude,longitude],[['swamp'],.16,2.12],[['forest'],.65,-2.48],
@@ -193,12 +207,12 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   // One continuous field describes its drainage, forest cover and relief at
   // every scale. The broad colour belts remain visible from deep space.
   function landform(lat,lon,x,z,out){
-    const d=Math.hypot(x,z),globalWeight=smooth(6600,15200,d);
+    const d=Math.hypot(x,z),globalWeight=smooth(1100,2200,d);
     let h=120,water=0,rock=0,forest=0;
     if(d>350 && globalWeight<1){
       // The survey watershed and its three landing shelves share a 1:5 map
       // scale. The connected classic clearings still have metre-scale actors.
-      const sx=x*5,sz=z*5;
+      const sx=x*25,sz=z*25;
       const hills=fractal(sx*.00032,18,sz*.00032),grain=noise(sx*.0015,5,sz*.0015);
       const crest=sx-(12500+sz*.14+2600*Math.sin(sz/7800)+950*Math.sin(sz/2300));
       const ridge=Math.exp(-((crest/3400)**2));
@@ -216,7 +230,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
       const upland=138+70*hills+15*grain+ridge*ridgeline+130*shoulders+shelf*145;
       const channel=56+Math.max(0,drainage)*.09;
       h=T.MathUtils.lerp(upland,channel,valley);
-      const inner=smooth(350,820,d);
+      const inner=smooth(350,580,d);
       h=120+(h-120)*inner;forest*=inner;rock*=inner;water*=inner;
     }
     if(globalWeight>0){
@@ -234,8 +248,6 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
     out.height=h;out.water=water;out.rock=rock;out.forest=forest;
     return out;
   }
-  const districtHeights=new Map((definition.layout.regions||[]).map(region=>
-    [region,landform(region.lat,region.lon,region.x,region.z,{}).height]));
   const pads=landingSites.map(s=>({...s,elevation:landform(s.lat,s.lon,s.x,s.z,{}).height}));
   function closestPad(x,z,limit){
     let best=null,bestDistance=limit;
@@ -249,15 +261,25 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   function sample(lat,lon,x,z,out){
     landform(lat,lon,x,z,out);
     const projected=chart(lat,lon),detail=definition.layout.detail(projected);
+    const c=Math.cos(lat),sx=c*Math.cos(lon),sy=Math.sin(lat),sz=-c*Math.sin(lon);
+    const field=fractal(sx*9,sy*9,sz*9),ridge=1-Math.min(1,Math.abs(fractal(sx*18,sy*18,sz*18))*2.8);
+    const broad={height:0,water:0,rock:0,forest:0},biomes=definition.layout.weights(lat,lon);
+    for(const p of biomes){
+      const id=p.region.ids[0];let h=120+15*field,water=0,rock=.12,forest=.40;
+      if(id==='swamp'){h=114+8*field;water=.65*smooth(-.14,.16,field);forest=.43;}
+      else if(id==='forest'){h=122+26*field;forest=.92;rock=.18;}
+      else if(id==='vineway'){h=106+34*field+17*ridge;forest=.70;rock=.55;}
+      else if(id==='wetland'){h=113+9*field;water=.72*smooth(-.08,.20,field);forest=.52;}
+      else if(id==='flame'){h=136+32*field+24*ridge;forest=.66;rock=.48;}
+      else if(id==='sanctuary'){h=143+20*field+20*ridge*ridge;forest=.37;rock=.43;}
+      else if(id==='ridge'){h=172+42*field+80*ridge*ridge;forest=.13;rock=.89;}
+      else if(id==='delta'){h=96+13*field;water=.78*(1-smooth(.06,.20,Math.abs(field)));forest=.47;}
+      else if(id==='grove'){h=128+24*field;forest=.96;rock=.14;}
+      broad.height+=h*p.weight;broad.water+=water*p.weight;broad.rock+=rock*p.weight;broad.forest+=forest*p.weight;
+    }
+    out.biomes=biomes;out.region=projected.region;out.coreDetail=detail;
     if(detail<1){
-      const c=Math.cos(lat),field=fractal(c*Math.cos(lon)*9,Math.sin(lat)*9,-c*Math.sin(lon)*9);
-      // The old inter-map road can become the edge of a new district. Match
-      // its plateau first, then descend over a broad belt into the wilderness;
-      // fading directly to the global datum made a 50 m wall at that seam.
-      const plateau=districtHeights.get(projected.region)??out.height;
-      const outer=T.MathUtils.lerp(plateau,68+42*field,smooth(600,2200,projected.distance||0));
-      out.height=T.MathUtils.lerp(outer,out.height,detail);
-      out.water*=detail;out.rock*=detail;out.forest*=detail;
+      for(const key of ['height','water','rock','forest'])out[key]=T.MathUtils.lerp(broad[key],out[key],detail);
     }
     const pad=closestPad(x,z,54);
     if(pad&&detail>.5){
@@ -351,7 +373,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     return output;
   }
   function atlas() {
-    const w=2048,h=1024,body=document.createElement('canvas');
+    const w=512,h=256,body=document.createElement('canvas');
     body.width=w;body.height=h;
     const ctx=body.getContext('2d'),land=ctx.createImageData(w,h),sample=new T.Color();
     const cosines=new Float32Array(w),sines=new Float32Array(w);
@@ -363,12 +385,12 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       const lat=(.5-(row+.5)/h)*Math.PI,c=Math.cos(lat),y=Math.sin(lat);
       for (let col=0;col<w;col++) {
         const x=c*cosines[col],z=-c*sines[col],i=(row*w+col)*4;
-        const field=bedrock(x,y,z);
-        orbitalAlbedo(x,y,z,field,sample);
-        const relief=1+.073*field+.040*fractal(x*55,y*55,z*55);
-        land.data[i]=255*sample.r*relief;
-        land.data[i+1]=255*sample.g*relief;
-        land.data[i+2]=255*sample.b*relief;
+        const lon=((col+.5)/w-.5)*tau,p=chart(lat,lon),landscape={};
+        ground.sample(lat,lon,p.x,p.z,landscape);
+        sample.copy(shade(p.x,p.z,x,y,z,landscape,1)).convertLinearToSRGB();
+        land.data[i]=255*sample.r;
+        land.data[i+1]=255*sample.g;
+        land.data[i+2]=255*sample.b;
         land.data[i+3]=255;
       }
     }
@@ -419,7 +441,9 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     core:     ['#785c35','#b79666','#92744a'],
     wetland:  ['#234d80','#4c79b1','#436996'],
     flame:    ['#112d59','#26608b','#995040'],
-    sanctuary:['#197ba5','#43acda','#d58d64']
+    sanctuary:['#197ba5','#43acda','#d58d64'],
+    ridge:['#587f9b','#8aa4b1','#aa9489'],delta:['#a89762','#c4b375','#8d9b72'],
+    grove:['#815c7d','#b57a94','#a5806f']
   };
   for (const name of Object.keys(soil)) soil[name]=soil[name].map(color);
   const grassBlue=color('#2a8cbd'),grassTip=color('#58b5d9'),grassMoss=color('#98af45');
@@ -440,17 +464,19 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   function shade(x,z,ux,uy,uz,land,detail) {
     const d=Math.hypot(x,z);
     orbitalAlbedo(ux,uy,uz,0,beltColor).convertSRGBToLinear();
-    groundColor.copy(plains).lerp(beltColor,.28);
+    groundColor.setRGB(0,0,0);
+    for(const p of land.biomes||[]){const tone=soil[p.region.ids[0]][0];groundColor.r+=tone.r*p.weight;groundColor.g+=tone.g*p.weight;groundColor.b+=tone.b*p.weight;}
     groundColor.lerp(forestColor,clamp(land.forest*1.4));
     groundColor.lerp(stoneColor,.86*land.rock);
     groundColor.lerp(d<13000?goldWater:deepWater,land.water);
-    if(d>660)return groundColor.lerp(beltColor,1-detail);
+    if(d>660)return groundColor;
     const variation=smooth(-.66,.66,noise(x*.066,8,z*.066));
     const trailCoverage=1-smooth(1.2,4.4,trail(x,z));
     const daylight=.94+.09*variation;
     for (const site of sites) {
+      if(!land.region.ids.includes(site.id))continue;
       const dx=x-site.x,dz=z-site.z;
-      const weight=1-smooth(50,132,Math.hypot(dx,dz));
+      const weight=(1-smooth(50,132,Math.hypot(dx,dz)))*land.coreDetail;
       if (!weight)continue;
       const [shade,light,path]=soil[site.id];
       regionColor.copy(shade).lerp(light,.15+.73*variation);
@@ -464,7 +490,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       regionColor.copy(lowerBed).lerp(sunlitBed,ledge);
       groundColor.lerp(regionColor,smooth(.02,4.6,bluff));
     }
-    return groundColor.multiplyScalar(daylight).lerp(beltColor,1-detail);
+    return groundColor.multiplyScalar(daylight);
   }
   function soilMap() {
     const canvas=document.createElement('canvas');canvas.width=canvas.height=192;
@@ -604,15 +630,15 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     const items=[],land={};
     for(let i=0;i<34;i++){
       const lat=((row+random())/tileRows-.5)*Math.PI,lon=((col+random())/n-.5)*tau;
-      const {x,z}=chart(lat,lon);
-      if(sites.some(site=>Math.abs(x-site.x)<87&&Math.abs(z-site.z)<87)||closestPad(x,z,35))continue;
+      const {x,z,region}=chart(lat,lon);
+      if(sites.some(site=>region.ids.includes(site.id)&&Math.abs(x-site.x)<87&&Math.abs(z-site.z)<87)||closestPad(x,z,35))continue;
       sample(lat,lon,x,z,land);
       if(land.water>.15)continue;
       const chance=random(),tree=chance<land.forest*.86;
       if(!tree && chance>.08+land.forest*.86+land.rock*.29)continue;
       const size=(tree?4.2:1.25)*(1+.9*random()+.55*random());
       const reach=size*(tree?.75:1.1),h=size*(tree?1.85:.76);
-      const yaw=random()*tau,paint=tree?(z>700&&x>2500?0x975879:standPaint[Math.floor(yaw/tau*3)]):(land.rock>.4?0x816276:0xc18e70);
+      const yaw=random()*tau,id=region.ids[0],paint=tree?(id==='grove'?0x975879:id==='flame'?0x975547:standPaint[Math.floor(yaw/tau*3)]):(land.rock>.4?0x816276:0xc18e70);
       items.push(vegetation(lat,lon,land,size,tree,reach,h,yaw,paint));
     }
     if(stands.has(key))items.push(...stands.get(key));
@@ -737,7 +763,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   const groundGroup=new T.Group(); local.add(groundGroup);
   let lastFocus=null,terrain=null,details=null,groundTime=0,safariState=null;
-  const diskRadius=radius*.57;
+  const diskRadius=radius*.82;
   const groundInverse=new T.Quaternion(),groundQuery=new T.Vector3();
   // A 37 cm animal can visibly sink between samples of a coarser terrain
   // ring. Interpolate the rendered triangle directly beneath its feet.
@@ -828,7 +854,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       pos.setXYZ(i,east*ring.sin*distance,ring.cos*distance-anchorRadius,south*ring.sin*distance);
       const s=shade(x,z,dir.x,dir.y,dir.z,land,ring.detail);
       col.setXYZ(i,s.r,s.g,s.b);uv.setXY(i,x/2.4,z/2.4);
-      terrain.writeBed(i,x,z);
+      terrain.writeBed(i,x,z,vlat,vlon);
     }
     pos.needsUpdate=col.needsUpdate=uv.needsUpdate=true;geo.computeVertexNormals();
     groundInverse.copy(f.quaternion).invert();
@@ -836,7 +862,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   function setMode(next) {
     if(next===mode&&next!=='hidden')return;
-    mode=next;root.visible=next!=='hidden';orbital.visible=next==='orbit'||next==='flight';
+    mode=next;root.visible=next!=='hidden';orbital.visible=next!=='hidden';
     local.visible=next==='surface';shellCut.value=2;lastFocus=null;groundTime=0;
     if (orbital.visible) buildOrbit();
     if(atmosphereRim)atmosphereRim.visible=next==='orbit';
@@ -846,19 +872,19 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     if(mode!=='surface'&&mode!=='flight')return;
     altitude=mode==='surface'?0:Math.max(0,altitude);
     if(atmosphereRim)atmosphereRim.visible=altitude>radius*.05;
-    local.visible=altitude<radius*.19;
+    local.visible=mode==='surface'||altitude<radius*.68;
     if(!local.visible){shellCut.value=2;lastFocus=null;return;}
     buildGround();groundTime+=dt;
-    const moved=lastFocus?Math.hypot((lat-lastFocus.lat)*radius,unwrap(lon-lastFocus.lon)*radius*Math.cos(lat)):Infinity;
-    const tolerance=mode==='surface'?4:clamp(4+altitude*.2,4,1700);
+    const moved=lastFocus?definition.layout.displacement(lastFocus,lat,lon).distance:Infinity;
+    // The metre mesh stays fixed during a flyby. Recentring/relighting every
+    // few metres rebuilt thousands of terrain vertices on the flight frame.
+    const tolerance=mode==='surface'?4:diskRadius*.16;
     const rising=lastFocus&&Math.abs(altitude-lastFocus.altitude)>Math.max(14,altitude*.1);
-    if((moved>tolerance||rising)&&(mode==='surface'||groundTime>.09||moved>Math.max(250,tolerance*3))){
-      placeGround(lat,lon,altitude);groundTime=0;
+    if(!lastFocus||((moved>tolerance||(mode==='surface'&&rising))&&(mode==='surface'||groundTime>.28))){
+      placeGround(lat,lon,mode==='flight'?120:altitude);groundTime=0;
     }
-    shellCut.value=mode==='flight'?Math.cos(.95*diskRadius/radius):2;
+    shellCut.value=Math.cos(.95*diskRadius/radius);
     details.update(lat,lon,dt,altitude,mode==='surface',shuttleStatus);updateGroves(lat,lon,altitude);
-    const viewer=point(lat,lon);
-    for(const group of sceneGroups)group.visible=group.visible&&group.position.distanceTo(viewer)<1200;
   }
   // The flight solver samples the entire footprint before setting the gear
   // down. Keep the lidar envelope separate from the underlying foot height:
@@ -954,8 +980,14 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       if(o.isInstancedMesh && o.dispose)o.dispose();});
     geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());world.remove(root);
   }
+  let flightPrepared=false;
+  function prepareFlight(){
+    if(flightPrepared)return;
+    buildOrbit();buildGround();details.prepareFlight();
+    flightPrepared=true;
+  }
   setMode('hidden');
-  return {root,sites,radius,frame,height,groundCorrection,point,move,chart,walk,resolveArrival,resolveMigration,siteAt,update,setMode,dispose,
+  return {root,sites,radius,frame,height,groundCorrection,point,move,chart,walk,resolveArrival,resolveMigration,siteAt,update,setMode,dispose,prepareFlight,
     landingSites,landingSite:id=>landings.get(id)||null,flightHeight,landingInfo,
     nearestPipi:(lat,lon,id)=>details?.nearestPipi(lat,lon,id)||null,
     nearbySpirit:(lat,lon)=>details?.spiritObservation(lat,lon)||null,
