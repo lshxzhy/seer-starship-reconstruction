@@ -2,34 +2,37 @@
 // Chart pixels are a projection; orbital lengths and times are game-scale choices.
 const PANO_ORBITS=(()=>{
   const scale=16000,period=10*86400;
-  const icon=(id,name,px,py,colour)=>{
+  const icon=(world,px,py,colour)=>{
     const z=(py-280)/.56, x=px-515-.28*z;
-    return {id,name,a:scale*Math.hypot(x,z),phase:Math.atan2(z,x),colour};
+    return {id:world.id,name:world.name,a:scale*Math.hypot(x,z),phase:Math.atan2(z,x),colour};
   };
-  const klose=icon('klose','克洛斯星',551,154,'#e8d34e');
-  const ocean=icon('ocean','海洋星',409,78,'#7ed9f5');
+  const klose=icon(KLOSE_WORLD,551,154,'#e8d34e');
+  const ocean=icon(OCEAN_WORLD,409,78,'#7ed9f5');
   for(const row of [klose,ocean])row.period=period*Math.pow(row.a/klose.a,1.5);
   return {klose,ocean};
 })();
+
+const PANO_NAVIGATION=createPlanetNavigation([KLOSE_WORLD,OCEAN_WORLD]);
+
+function panoCenter(id,time,out=new T.Vector3()){
+  if(id==='star')return out.set(0,0,0);
+  const orbit=PANO_ORBITS[id],angle=orbit.phase+2*Math.PI*((time%orbit.period)/orbit.period);
+  return out.set(orbit.a*Math.cos(angle),0,orbit.a*Math.sin(angle));
+}
 
 function createPanoSystem(T,world){
   const tau=Math.PI*2,ids=Object.keys(PANO_ORBITS);
   const root=new T.Group();root.name='帕诺星系 · 公转';world.add(root);
   const starRadius=480000,far=32000000;
-  function center(id,time,out=new T.Vector3()){
-    if(id==='star')return out.set(0,0,0);
-    const orbit=PANO_ORBITS[id],angle=orbit.phase+tau*((time%orbit.period)/orbit.period);
-    return out.set(orbit.a*Math.cos(angle),0,orbit.a*Math.sin(angle));
-  }
   function velocity(id,time,out=new T.Vector3()){
     if(id==='star')return out.set(0,0,0);
-    center(id,time,out);
+    panoCenter(id,time,out);
     const speed=tau/PANO_ORBITS[id].period,x=out.x;
     return out.set(-out.z*speed,0,x*speed);
   }
   const scratch=new T.Vector3();
   function offset(fromId,toId,time,out=new T.Vector3()){
-    return center(toId,time,out).sub(center(fromId,time,scratch));
+    return panoCenter(toId,time,out).sub(panoCenter(fromId,time,scratch));
   }
   const sun=new T.Mesh(new T.SphereGeometry(starRadius,48,28),new T.ShaderMaterial({
     fog:false,
@@ -72,21 +75,23 @@ function createPanoSystem(T,world){
     new T.MeshBasicMaterial({color:0xe4c54b,side:T.DoubleSide,fog:false}));
   band.quaternion.setFromUnitVectors(new T.Vector3(0,0,1),new T.Vector3().fromArray(rings.normal).normalize());
   proxies.klose.add(band);
-  const tracks=new T.Group();tracks.name='公转轨迹';root.add(tracks);
-  for(const id of ids){
-    const points=[];for(let i=0;i<200;i++)points.push(center(id,PANO_ORBITS[id].period*i/200));
-    tracks.add(new T.LineLoop(new T.BufferGeometry().setFromPoints(points),
-      new T.LineBasicMaterial({color:PANO_ORBITS[id].colour,transparent:true,opacity:.24,fog:false})));
-  }
-  function update(reference,time,{showOrbits=false}={}){
-    center(reference,time,root.position).negate();
+  function update(reference,time){
+    panoCenter(reference,time,root.position).negate();
     for(const id of ids){
       const sphere=proxies[id];sphere.visible=id!==reference;
-      center(id,time,sphere.position);sphere.material.uniforms.sunDir.value.copy(sphere.position).normalize().negate();
+      panoCenter(id,time,sphere.position);sphere.material.uniforms.sunDir.value.copy(sphere.position).normalize().negate();
     }
-    tracks.visible=showOrbits;
   }
-  function drawChart(svg,{time=0,current='klose',selected=current,onSelect,vehicle=null,vehiclePlanet=current,carrier=null}={}){
+  function dispose(){
+    const geometries=new Set(),materials=new Set();
+    root.traverse(o=>{if(o.geometry&&!o.isSprite)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
+    for(const g of geometries)g.dispose();for(const m of materials){m.map?.dispose();m.dispose();}world.remove(root);
+  }
+  return {root,far,starRadius,center:panoCenter,velocity,offset,update,dispose};
+}
+
+function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,vehicle=null,vehiclePlanet=current,carrier=null}={}){
+    const ids=Object.keys(PANO_ORBITS);
     svg.replaceChildren();svg.setAttribute('viewBox','0 0 510 286');
     const scale=201/PANO_ORBITS.ocean.a,project=p=>[252+(p.x+.28*p.z)*scale,139+p.z*scale*.56];
     function mark(tag,attrs,words=''){
@@ -96,13 +101,13 @@ function createPanoSystem(T,world){
     }
     for(const id of ids){
       const orbit=PANO_ORBITS[id],path=[];
-      for(let i=0;i<100;i++){const [x,y]=project(center(id,orbit.period*i/100));path.push((i?'L':'M')+x.toFixed(1)+','+y.toFixed(1));}
+      for(let i=0;i<100;i++){const [x,y]=project(panoCenter(id,orbit.period*i/100));path.push((i?'L':'M')+x.toFixed(1)+','+y.toFixed(1));}
       mark('path',{d:path.join('')+'Z',fill:'none',stroke:orbit.colour,'stroke-width':1,'stroke-opacity':.45});
     }
     mark('circle',{cx:252,cy:139,r:7,fill:'#ffe4a1'});
     mark('text',{x:264,y:145,fill:'#e2cda3','font-size':11},'帕诺星系中心');
-    const shipPoint=carrier?project(center('klose',time).add(carrier)):null;
-    const boatPoint=vehicle&&PANO_ORBITS[vehiclePlanet]?project(center(vehiclePlanet,time).add(vehicle)):null;
+    const shipPoint=carrier?project(panoCenter('klose',time).add(carrier)):null;
+    const boatPoint=vehicle&&PANO_ORBITS[vehiclePlanet]?project(panoCenter(vehiclePlanet,time).add(vehicle)):null;
     const together=shipPoint&&boatPoint&&Math.hypot(shipPoint[0]-boatPoint[0],shipPoint[1]-boatPoint[1])<15;
     if(boatPoint&&!together){
       const [x,y]=boatPoint;
@@ -110,7 +115,7 @@ function createPanoSystem(T,world){
       mark('text',{x:x+11,y:y+21,fill:'#d4ecec','font-size':10},'L-01');
     }
     for(const id of ids){
-      const orbit=PANO_ORBITS[id],[x,y]=project(center(id,time));
+      const orbit=PANO_ORBITS[id],[x,y]=project(panoCenter(id,time));
       const hit=mark('g',{'data-pano-planet':id,role:'button',tabindex:'0','aria-label':orbit.name,'aria-pressed':String(selected===id),style:'cursor:pointer'});
       for(const [tag,args,words] of [
         ['circle',{cx:x,cy:y,r:18,fill:'transparent'}],
@@ -123,15 +128,8 @@ function createPanoSystem(T,world){
     if(shipPoint){
       const [x,y]=shipPoint;
       mark('rect',{x:x-2.5,y:y-2.5,width:5,height:5,fill:'#fff','pointer-events':'none'});
-      const label=mark('text',{x:x+9,y:y+23,fill:'#d4ecec','font-size':11,style:'cursor:pointer',role:'button',tabindex:0},together?'赛尔号 ／ L-01':'赛尔号');
+      const label=mark('text',{x:x+9,y:y+23,fill:'#d4ecec','font-size':11,style:'cursor:pointer;pointer-events:auto',role:'button',tabindex:0},together?'赛尔号 ／ L-01':'赛尔号');
       label.onclick=()=>onSelect?.('dock');
       label.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect?.('dock');}};
     }
-  }
-  function dispose(){
-    const geometries=new Set(),materials=new Set();
-    root.traverse(o=>{if(o.geometry&&!o.isSprite)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
-    for(const g of geometries)g.dispose();for(const m of materials){m.map?.dispose();m.dispose();}world.remove(root);
-  }
-  return {root,far,starRadius,center,velocity,offset,update,drawChart,dispose};
 }

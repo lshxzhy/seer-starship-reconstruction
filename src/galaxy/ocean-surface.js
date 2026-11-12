@@ -114,16 +114,64 @@ function createOceanSurface(T,world){
   // Local geometry is surveyed in the same east/south chart as the collision model.
   function groundY(x,z){return seaFloor(x,z)-(x*x+z*z)/(2*radius);}
   const blockers=[],shapes=new Map(),entries=new Map();
-  const makeMat=()=>new T.MeshStandardMaterial({color:0xffffff,roughness:.70,metalness:.08});
-  function shape(name,g,m=makeMat()){shapes.set(name,{g,m});}
-  shape('rock',new T.IcosahedronGeometry(1,0));
+  const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
+  const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
+  const organic=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide});
+  function shape(name,g,m=painted){shapes.set(name,{g,m});}
+  // Closed contour rings share vertices and colours between adjacent faces.
+  // One indexed mesh per shape is reused by every colony, shell and outcrop.
+  function ringMesh(sides,rows,sample){
+    const positions=[],tints=[],indices=[];
+    for(let j=0;j<rows;j++)for(let i=0;i<sides;i++){
+      const [x,y,z,light]=sample(j,i,tau*i/sides);
+      positions.push(x,y,z);tints.push(light,light,light);
+      if(j+1===rows)continue;
+      const a=j*sides+i,b=j*sides+(i+1)%sides;
+      indices.push(a,a+sides,b,b,a+sides,b+sides);
+    }
+    const g=new T.BufferGeometry();
+    g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+    g.setAttribute('color',new T.Float32BufferAttribute(tints,3));
+    g.setIndex(indices);g.computeVertexNormals();return g;
+  }
+  const beds=[[-.97,0,.54],[-.72,.78,.66],[-.32,.99,.84],[-.17,.91,.66],
+    [-.10,1,.96],[.22,.95,.88],[.34,.89,.68],[.43,.95,.98],[.77,.78,.93],[.87,.49,1],[.90,0,1]];
+  shape('rock',ringMesh(13,beds.length,(j,i,a)=>{
+    const [y,r,light]=beds[j];
+    const radius=r*(.92+.07*Math.sin(3*a+.4)+.04*Math.cos(5*a-.6)+.035*Math.sin(4*a+.49*j));
+    const x=radius*Math.cos(a),z=radius*Math.sin(a);
+    return [x+.075*y,y+x*.07+z*.08,z,light*(.95+.05*Math.cos(a*3-.3))];
+  }),mineral);
+  const facets=[[-.75,0,.51],[-.49,.70,.65],[.53,1,.88],[.82,.52,1],[1,0,1]];
+  shape('crystal',ringMesh(6,facets.length,(j,i,a)=>{
+    const [y,r,light]=facets[j];
+    return [Math.cos(a)*r+y*.15,y,Math.sin(a)*r,light*(i%2?.80:1)];
+  }),mineral);
   shape('lobe',new T.SphereGeometry(1,12,8));
   shape('rod',new T.CylinderGeometry(.76,1,1,7));
   shape('box',new T.BoxGeometry(1,1,1));
   shape('disk',new T.CylinderGeometry(1,1,1,48));
   shape('ring',new T.TorusGeometry(1,.11,7,22));
-  shape('tube',new T.LatheGeometry([[.51,0],[.83,.5],[1,.89],[.98,1],[.71,1.02],[.64,.79],[.50,.60]].map(([a,b])=>new T.Vector2(a,b)),14),
-    new T.MeshStandardMaterial({color:0xffffff,roughness:.58,side:T.DoubleSide}));
+  const spongeRim=[[0,.53,.67],[.31,.66,.76],[.67,.88,.84],[.81,.90,.87],
+    [.9,1.02,.97],[.99,.98,1.22],[1,.79,1.12],[.90,.68,.57],[.68,.49,.22],[.55,0,.13]];
+  shape('tube',ringMesh(24,spongeRim.length,(j,i,a)=>{
+    const [y,r,light]=spongeRim[j],flute=.97+.055*Math.cos(8*a+.9*y)+.023*Math.sin(3*a);
+    return [r*flute*Math.cos(a)+.18*y*y,y*(1+.024*Math.cos(a*3+.6)),r*flute*Math.sin(a),light*flute];
+  }),organic);
+  // A continuous widening whorl curls into a flared aperture with a dark interior.
+  const shellSteps=54;
+  const whorl=ringMesh(11,shellSteps+4,(j,i,a)=>{
+    const t=Math.min(j,shellSteps)/shellSteps,angle=tau*(2.25*t+.12),coil=.015+.34*t*t;
+    const lip=j-shellSteps;
+    const radius=(.015+.133*t*t)*(lip===1?1.11:lip===2?.72:lip===3?.04:1);
+    const rib=1+.05*Math.cos(t*tau*20);
+    const reach=coil+radius*rib*Math.cos(a);
+    const x=reach*Math.cos(angle),y=.36+.78*reach*Math.sin(angle);
+    return [x,y,.17*(1-t)+radius*rib*Math.sin(a)-Math.max(0,lip-1)*.035,
+      lip===3?.16:lip===2?.64:(.84+.13*Math.cos(t*tau*12))*(1+.12*Math.cos(a))];
+  });
+  whorl.rotateX(-.47);whorl.computeBoundingBox();whorl.translate(0,-whorl.boundingBox.min.y,0);
+  shape('shell',whorl,organic);
   const temp=new T.Object3D();
   function record(id,tint){
     if(!entries.has(id))entries.set(id,[]);
@@ -132,10 +180,11 @@ function createOceanSurface(T,world){
   function stamp(id,x,y,z,w,h,d,tint,rx=0,ry=0,rz=0){
     temp.position.set(x,y,z);temp.rotation.set(rx,ry,rz);temp.scale.set(w,h,d);temp.updateMatrix();record(id,tint);
   }
+  const rodAxis=v(0,1,0);
   function rod(x,y,z,xx,yy,zz,r,tint){
     const dir=v(xx-x,yy-y,zz-z),len=dir.length();
     temp.position.set((x+xx)*.5,(y+yy)*.5,(z+zz)*.5);
-    temp.quaternion.setFromUnitVectors(v(0,1,0),dir.divideScalar(len));
+    temp.quaternion.setFromUnitVectors(rodAxis,dir.divideScalar(len));
     temp.scale.set(r,len,r);temp.updateMatrix();record('rod',tint);
   }
   let seed=832491;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
@@ -153,25 +202,39 @@ function createOceanSurface(T,world){
   }
   function fan(x,z,s,tint){
     const base=groundY(x,z),tilt=random()*tau,c=Math.cos(tilt),d=Math.sin(tilt);
+    const lattice=[[],[],[]];
     function branch(u,h,angle,length,thick,n){
       const uu=u+Math.sin(angle)*length,hh=h+Math.cos(angle)*length;
       rod(x+c*u,base+h,z+d*u,x+c*uu,base+hh,z+d*uu,thick,tint);
+      if(n<=2)lattice[n].push([uu,hh]);
       if(n){branch(uu,hh,angle-.37-random()*.16,length*.68,thick*.71,n-1);branch(uu,hh,angle+.34+random()*.20,length*.72,thick*.68,n-1);}
     }
     branch(0,0,-.17,s*.42,s*.075,4);
+    for(const [level,tips] of lattice.entries()){
+      for(let j=1;j<tips.length;j++){
+        const [u,h]=tips[j-1],[uu,hh]=tips[j];
+        if(uu<=u||uu-u>.32*s)continue;
+        rod(x+c*u,base+h,z+d*u,x+c*uu,base+hh,z+d*uu,s*(.010+level*.004),tint);
+      }
+    }
   }
   function shell(x,z,s){
-    const y=groundY(x,z),c=0xd4b887;
-    stamp('lobe',x,y+.15*s,z,.62*s,.20*s,.48*s,c,0,.23);
-    for(let j=0;j<3;j++)stamp('ring',x-.07*s,y+(.22+.03*j)*s,z,(.42-.11*j)*s,(.30-.08*j)*s,.3*s,0xa98a60,-Math.PI/2,.04);
+    stamp('shell',x,groundY(x,z)-.025*s,z,1.24*s,.87*s,1.4*s,0xd6bb8a,0,Math.sin(x-z)*.85);
   }
-  function belfry(x,z,s){
+  function careStation(x,z,s){
     const base=groundY(x,z);
-    stamp('disk',x,base+.16*s,z,1.65*s,.27*s,1.35*s,0x686880);
-    stamp('rod',x,base+1.05*s,z,.65*s,1.75*s,.65*s,0xcac6cb);
-    stamp('lobe',x,base+1.72*s,z,1.15*s,.65*s,.84*s,0x596d86);
-    stamp('lobe',x,base+1.79*s,z+.72*s,.79*s,.31*s,.13*s,0x9cf1d4);
-    rod(x-.69*s,base+1.1*s,z,x-1.42*s,base+1.75*s,z+.3*s,.12*s,0xc8cee0);
+    stamp('disk',x,base+.16*s,z,1.45*s,.29*s,1.15*s,0x384756);
+    stamp('disk',x,base+.30*s,z,1.40*s,.11*s,1.12*s,0x8fa3aa);
+    stamp('box',x,base+.69*s,z,1.78*s,.75*s,1.14*s,0x456478);
+    stamp('lobe',x,base+1.18*s,z,1.04*s,.54*s,.70*s,0x406d86);
+    stamp('box',x,base+1.21*s,z+.61*s,1.22*s,.47*s,.085*s,0x263e4d,-.17);
+    stamp('box',x,base+1.23*s,z+.67*s,.92*s,.26*s,.045*s,0x8ce3cd,-.17);
+    for(const side of [-1,1]){
+      stamp('box',x+side*.93*s,base+.82*s,z,.17*s,.8*s,.94*s,0xd0aa51);
+      for(let k=0;k<3;k++)stamp('box',x+side*.76*s,base+(1.18+k*.12)*s,z+.49*s,.15*s,.04*s,.09*s,0x153c52);
+    }
+    stamp('lobe',x-.85*s,base+1.05*s,z,.21*s,.21*s,.21*s,0xc2b978);
+    rod(x-.85*s,base+1.05*s,z,x-1.42*s,base+1.75*s,z+.3*s,.095*s,0xaebfc0);
     stamp('tube',x-1.42*s,base+1.7*s,z+.3*s,.23*s,.32*s,.23*s,0xf2e1bf);
     blockers.push({x,z,r:1.2*s,top:base+2.4*s});
   }
@@ -226,12 +289,46 @@ function createOceanSurface(T,world){
   }
   for(let i=0;i<8;i++)stamp('tube',12+Math.sin(i*2.4)*2.1,groundY(12,4)-.17,4+Math.cos(i*2.4)*1.8,.38,.63,.41,0x6fb99e);
   const depths=sites[1],floor=sites[2],end=sites[3];
-  belfry(depths.x+8,depths.z-11,1.35);
+  careStation(depths.x+8,depths.z-11,1.35);
+  // The map 21 skyline alternates pale overhangs and narrow teal fissures.
+  // The taller limestone stays at the sides of the navigation and fish passages.
+  for(const [i,[dx,dz,w,h]] of [[-19,-14,3.8,8.0],[-22,-26,4.2,11.8],[-8,-27,2.9,9.2],
+    [3,-35,4.3,12.5],[17,-20,4.2,9.5],[25,-8,3.7,7.2]].entries()){
+    const x=depths.x+dx,z=depths.z+dz,base=groundY(x,z),turn=dx*.10;
+    if(corridorGap(x,z)<w+4)continue;
+    const side=Math.sign(dx),overhang=i===1||i===4;
+    stamp('rock',x,base+.61,z,w*1.12,1.85,w*.95,0x64737e,.04,turn);
+    if(overhang){
+      // An undercut shaft supports the off-centre pale ledge.
+      stamp('rock',x,base+.54*h,z,w*.56,.67*h,w*.66,0x858995,.04,turn,-side*.17);
+      stamp('rock',x+side*.28*w,base+1.01*h,z,w*.91,h*.14,w*.74,0x617782,-.04,turn,.13*side);
+      stamp('rock',x+side*.43*w,base+1.16*h,z,w*1.10,h*.18,w*.84,0xd5d5cb,-.15,turn,.12*side);
+      rod(x-side*.22*w,base+.39*h,z+.44*w,x+side*.04*w,base+.64*h,z+.51*w,.105,0x6ca6a0);
+      rod(x+side*.04*w,base+.64*h,z+.51*w,x-side*.06*w,base+.71*h,z+.46*w,.080,0x8ebdaf);
+    }else if(i===2||i===5){
+      // Split bedding planes form a lower pair of diagonally exposed slabs.
+      stamp('rock',x-side*.18*w,base+.37*h,z,w*.55,.49*h,w*.82,0x9b9ea5,.12,turn,side*.27);
+      stamp('rock',x+side*.42*w,base+.54*h,z-.23*w,w*.41,.65*h,w*.61,0xb3b6b4,-.16,turn+.24,side*.19);
+      stamp('rock',x+side*.56*w,base+.98*h,z-.27*w,w*.38,.17*h,w*.62,0xcfd1c8,-.14,turn+.21,side*.33);
+    }else{
+      // The receding outer wall exposes a tilted succession of wide beds.
+      stamp('rock',x,base+.39*h,z,w*1.12,.54*h,w*.91,0x7f8792,-.09,turn,side*.20);
+      stamp('rock',x+side*.32*w,base+.77*h,z-.50*w,w*.98,.34*h,w*1.06,0xb5b5b5,-.04,turn+.12,side*.15);
+      stamp('rock',x+side*.61*w,base+1.01*h,z-.76*w,w*.79,.18*h,w*.92,0xd2d1c7,.11,turn,side*.19);
+    }
+    blockers.push({x,z,r:w*.83,top:base+1.42*h});
+  }
   for(let i=0;i<13;i++){
     const x=depths.x-10+(i%4)*.51,z=depths.z-8+Math.floor(i/4)*.58,h=1.2+random()*1.1;
-    stamp('rock',x,groundY(x,z)+h*.45,z,.31,h,.41, i%3?0xe8ba48:0xffdf7c,.10,.13,i*.09-.48);
+    stamp('crystal',x,groundY(x,z)+h*.45,z,.31,h,.41,i%3?0xe8ba48:0xffdf7c,.10,.13,i*.09-.48);
   }
   grotto(floor.x,floor.z-16,1,0x525269);
+  for(const side of [-1,1]){
+    const x=floor.x+side*6.4,z=floor.z-15.8,y=groundY(x,z);
+    stamp('rock',x,y+.12,z,2.2,.54,2.40,0x4f7078,0,.6*side);
+    stamp('rock',x,y+.54,z-.38,1.87,.24,2.03,0x789891,0,.6*side);
+    shell(x+side*2.4,z+2.8,1.65);
+  }
   grotto(end.x-26,end.z-7,1.29,0x264c69,true);grotto(end.x+17,end.z-23,1.16,0x2b526b,true);
   for(let j=0;j<4;j++){
     const x=end.x+10,z=end.z-10,y=groundY(x,z);
@@ -253,13 +350,12 @@ function createOceanSurface(T,world){
     railLast=[x,pierY+.84,z];
   }
   const rampStart=pierRadius-.2,rampEnd=pierDistance+.6,rampRun=rampEnd-rampStart,rampDrop=pierLevel-seaFloor(0,0);
-  const plank=new T.BoxGeometry(4.4,.23,Math.hypot(rampRun,rampDrop));shape('ramp',plank);
   const rampMid=(rampStart+rampEnd)*.5;
   const rampOrientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(
     v(acrossZ,0,-acrossX),v(acrossX*rampDrop,rampRun,acrossZ*rampDrop).normalize(),
     v(acrossX*rampRun,-rampDrop,acrossZ*rampRun).normalize()));
   temp.position.set(pad.x+acrossX*rampMid,(pierLevel+seaFloor(0,0))*.5-.13,pad.z+acrossZ*rampMid);
-  temp.quaternion.copy(rampOrientation);temp.scale.set(1,1,1);temp.updateMatrix();record('ramp',0x7696a0);
+  temp.quaternion.copy(rampOrientation);temp.scale.set(4.4,.23,Math.hypot(rampRun,rampDrop));temp.updateMatrix();record('box',0x7696a0);
   for(const sign of [-1,1]){
     let last=null;
     for(let along=rampStart;along<rampEnd+.1;along+=rampRun/8){
@@ -275,11 +371,13 @@ function createOceanSurface(T,world){
     batch.instanceMatrix.needsUpdate=batch.instanceColor.needsUpdate=true;batch.receiveShadow=true;batch.castShadow=true;
     district.add(batch);
   }
+  entries.clear();
   const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),rise=[];
   for(let i=0;i<bubbleCount;i++){
     const s=sites[i%4],spring=i%4===0&&i%3===0;
     const x=spring?12+random()*3-1.5:s.x+(random()-.5)*66,z=spring?4+random()*3-1.5:s.z+(random()-.5)*65;
-    rise.push({x,z,y:groundY(x,z),h:Math.max(4,-groundY(x,z)-.3),phase:random(),speed:.22+random()*.38});
+    const y=groundY(x,z);
+    rise.push({x,z,y,h:Math.max(4,-y-.3),phase:random(),speed:.22+random()*.38});
   }
   const bubblesAttr=new T.BufferAttribute(bubbles,3);lights.setAttribute('position',bubblesAttr);
   const bubbleShade=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},
@@ -295,12 +393,13 @@ function createOceanSurface(T,world){
     if(j===1)indices.push(0,next,n);else indices.push(n-sectors,next,n,next-sectors,next,n-sectors);
   }
   const groundGeo=new T.BufferGeometry(),seaGeo=new T.BufferGeometry();
+  groundGeo.setIndex(indices);seaGeo.setIndex(groundGeo.index);
+  const chartUV=new T.BufferAttribute(new Float32Array(coords.length*2),2);
   for(const g of [groundGeo,seaGeo]){
-    g.setIndex(indices);
-    g.setAttribute('position',new T.Float32BufferAttribute(new Float32Array(coords.length*3),3));
-    g.setAttribute('uv',new T.Float32BufferAttribute(new Float32Array(coords.length*2),2));
+    g.setAttribute('position',new T.BufferAttribute(new Float32Array(coords.length*3),3));
+    g.setAttribute('uv',chartUV);
   }
-  groundGeo.setAttribute('color',new T.Float32BufferAttribute(new Float32Array(coords.length*3),3));
+  groundGeo.setAttribute('color',new T.BufferAttribute(new Float32Array(coords.length*3),3));
   const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92}),tideTime={value:0};
   sandMat.onBeforeCompile=s=>{
     s.uniforms.tideTime=tideTime;
@@ -310,7 +409,7 @@ function createOceanSurface(T,world){
   };
   sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
   const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;
-  const seaMat=new T.ShaderMaterial({uniforms:{uTime:{value:0}},side:T.DoubleSide,transparent:true,depthWrite:false,
+  const seaMat=new T.ShaderMaterial({uniforms:{uTime:tideTime},side:T.DoubleSide,transparent:true,depthWrite:false,
     vertexShader:'varying vec2 wuv;varying float vz;void main(){wuv=uv;vec4 p=modelViewMatrix*vec4(position,1.);vz=max(0.,-p.z);gl_Position=projectionMatrix*p;}',
     fragmentShader:`varying vec2 wuv;varying float vz;uniform float uTime;void main(){
       float a=sin(.52*wuv.y+.9*sin(.23*wuv.x+uTime*.38)+uTime*.72);
@@ -328,16 +427,16 @@ function createOceanSurface(T,world){
   function placePatch(lat,lon){
     const f=frame(lat,lon);terrain.position.copy(f.up).multiplyScalar(radius);terrain.quaternion.copy(f.quaternion);
     const gp=groundGeo.attributes.position,wp=seaGeo.attributes.position,gc=groundGeo.attributes.color;
-    const gu=groundGeo.attributes.uv,wu=seaGeo.attributes.uv,tone=new T.Color();
+    const tone=new T.Color();
     for(const [i,[dx,dz,j]] of coords.entries()){
       const range=radii[j],ang=range/radius,cs=Math.cos(ang),ss=Math.sin(ang);
       const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=seaFloor(x,z),r=radius+h;
       gp.setXYZ(i,dx*ss*r,cs*r-radius,dz*ss*r);wp.setXYZ(i,dx*ss*radius,cs*radius-radius,dz*ss*radius);
-      gu.setXY(i,x,z);wu.setXY(i,x,z);
+      chartUV.setXY(i,x,z);
       tone.copy(shallowsColor).lerp(deepColor,smooth(-h,10,28)).lerp(floorColor,smooth(-h,31,49)).lerp(abyssColor,smooth(-h,50,65));
       tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
     }
-    for(const attr of [gp,wp,gu,wu,gc])attr.needsUpdate=true;
+    for(const attr of [gp,wp,chartUV,gc])attr.needsUpdate=true;
     groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(90000/radius);
   }
   function canSwim(lat,lon,margin=.4){
@@ -404,7 +503,7 @@ function createOceanSurface(T,world){
     const c=chart(lat,lon);district.visible=near&&altitude<1250&&Math.hypot(c.x+80,c.z-60)<2700;
     if(!near){last=null;cut.value=2;return;}
     if(!last||Math.hypot(c.x-last.x,c.z-last.z)>Math.min(1800,4+altitude*.18)){placePatch(lat,lon);last=c;}
-    elapsed+=dt;tideTime.value=seaMat.uniforms.uTime.value=elapsed;
+    elapsed+=dt;tideTime.value=elapsed;
     if(district.visible)for(const [i,p] of rise.entries()){
       const y=p.y+.18+p.h*((p.phase+elapsed*p.speed/p.h)%1);
       bubblesAttr.setXYZ(i,p.x+.14*Math.sin(1.8*y+p.phase),y,p.z+.16*Math.cos(.7*y));

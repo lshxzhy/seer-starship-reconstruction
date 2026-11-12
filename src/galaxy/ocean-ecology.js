@@ -140,7 +140,7 @@ function createOceanEcology(T,parent,definition,surface){
   const schools=[
     ['ocean-shallows',30,5,-3.4,-5.2],['ocean-shallows',30,6,5.6,-4.4],
     ['ocean-depths',33,15,-3.6,-6.8],['ocean-depths',33,16,5.9,-4.1],
-    ['ocean-floor',34,25,0,-8.1],
+    [SPT_CHALLENGES.get(34).site,34,SPT_CHALLENGES.get(34).level,0,-8.1],
     ['ocean-shallows',108,16,6.1,5.8],['ocean-depths',108,16,-7.5,3.4],['ocean-floor',108,16,6.8,3.9]
   ];
   const names={30:'贝尔',33:'利牙鱼',34:'钢牙鲨',108:'布鲁'};

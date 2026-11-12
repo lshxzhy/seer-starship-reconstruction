@@ -1,6 +1,6 @@
 // The terminal issues commands to the rules engine. Only a committed turn
 // can consume an item or remove a creature from the landscape.
-function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setSafari,setFlameTool,visitMushroomSite,enterWetland,withdraw,requestFrame}){
+function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setSafari,setFlameTool,visitChallengeSite,enterWetland,withdraw,requestFrame}){
   const overlay=root.querySelector('[data-spirit-overlay]'),panel=overlay.querySelector('[role=dialog]');
   const content=panel.querySelector('[data-spirit-content]'),tabs=panel.querySelector('[data-spirit-tabs]');
   const feedback=panel.querySelector('[data-spirit-feedback]'),title=panel.querySelector('h2'),dismiss=panel.querySelector('[data-spirit-close]');
@@ -166,32 +166,28 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
   }
   function travelSpt(site){
     if(busy)return;
-    close(false);visitMushroomSite(site);
+    close(false);visitChallengeSite(site);
     if(site==='laboratory')open(null,canvas,{op:'spt'});
   }
   function sptMission(host,state){
     const switcher=el(host,'div','spirit-row');
-    for(const [id,label] of [[47,'克洛斯星 · 蘑菇怪'],[34,'海洋星 · 钢牙鲨']]){
-      button(switcher,label,()=>{chiefId=id;render();},{selected:chiefId===id,action:'spt-'+id});
-    }
+    for(const [id,challenge] of SPT_CHALLENGES)
+      button(switcher,PANO_NAVIGATION.regions[challenge.planet].definition.name+' · '+game.species(id,false).name,()=>{chiefId=id;render();},{selected:chiefId===id,action:'spt-'+id});
+    const challenge=SPT_CHALLENGES.get(chiefId),species=game.species(chiefId,false);
+    const site=PANO_NAVIGATION.regions[challenge.planet].byId.get(challenge.site);
+    const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
+    figure(art,[{id:chiefId,name:species.name}]);
+    el(detail,'span','spirit-catalog-number',number(chiefId)+'　'+types(species)+'　·　SPT 先锋队');
+    el(detail,'h3','spirit-name',chiefId===47?'发狂的蘑菇怪':species.name);
+    el(detail,'p','',site.name+'　·　Lv.'+challenge.level+'　·　'+challenge.hp+' 体力');
     if(chiefId===34){
-      const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
-      figure(art,[{id:34,name:'钢牙鲨'}]);
-      el(detail,'span','spirit-catalog-number','#034　水系　·　SPT 先锋队');
-      el(detail,'h3','spirit-name','钢牙鲨');
-      el(detail,'p','','海洋星海底　·　Lv.25　·　200 体力');
-      el(detail,'p','spirit-sub',state.defeatedShark?'已完成首胜　·　持有黑晶矿 ×'+state.materials.blackCrystal:'首胜奖励　·　黑晶矿 ×1');
+      el(detail,'p','spirit-sub',state.defeatedShark?'已完成首胜　·　持有黑晶矿 ×'+state.materials.blackCrystal:'首胜奖励　·　黑晶矿 ×'+challenge.blackCrystal);
       el(detail,'p','','深水区可以捕获利牙鱼。将它培养到 20 级，会进化成自己的钢牙鲨。');
-      button(detail,'前往海底 · 钢牙鲨',()=>travelSpt('ocean-floor'),{primary:true,action:'spt-ocean-floor'});
+      button(detail,'前往海底 · 钢牙鲨',()=>travelSpt(challenge.site),{primary:true,action:'spt-ocean-floor'});
       return;
     }
     const lab=siteId()==='laboratory';
-    const cols=el(host,'div','spirit-columns'),art=el(cols,'div'),detail=el(cols,'div');
-    figure(art,[{id:47,name:'蘑菇怪'}]);
-    el(detail,'span','spirit-catalog-number','#047　草系　·　SPT 先锋队');
-    el(detail,'h3','spirit-name','发狂的蘑菇怪');
-    el(detail,'p','','克洛斯星林间　·　Lv.10　·　100 体力');
-    el(detail,'p','spirit-sub',state.defeatedMushroom?'已完成首胜　·　小蘑菇已领取':'首胜奖励　·　1 级小蘑菇和 3,000 点积累经验');
+    el(detail,'p','spirit-sub',state.defeatedMushroom?'已完成首胜　·　小蘑菇已领取':'首胜奖励　·　1 级'+game.species(challenge.partner,false).name+'和 '+challenge.bankedXP.toLocaleString('zh-CN')+' 点积累经验');
     if(state.bankedXP>0){
       el(detail,'p','','待分配经验　'+state.bankedXP);
       button(detail,'到队伍分配经验',()=>{page='party';report('');render();},{action:'party-xp'});
@@ -202,7 +198,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       else button(detail,'前往赛尔号实验室',()=>travelSpt('laboratory'),{primary:true,action:'spt-lab'});
     }else{
       el(detail,'p','','火焰喷射器已装备。面向淡蓝色护膜连续照射三次，等它消散后点蘑菇怪发起挑战。');
-      button(detail,'前往林间 · 蘑菇怪',()=>travelSpt('forest'),{primary:true,action:'spt-forest'});
+      button(detail,'前往林间 · 蘑菇怪',()=>travelSpt(challenge.site),{primary:true,action:'spt-forest'});
     }
   }
   function fieldPage(host,state){
@@ -258,7 +254,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       el(info,'span','spirit-catalog-number',number(s.id)+'　'+types(s)+'　'+(s.owned?'已获得':s.seen?'已观察':'未发现'));el(info,'h3','spirit-name',s.name);
       const where=origins.get(s.id);
       el(info,'p','spirit-sub',where?[...where].join(' ／ '):'全星系图鉴记录 · 本期没有收录其出现地点');
-      if(s.id===47||s.id===34)button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:s.id===47?'mushroom-spt':'shark-spt'});
+      if(SPT_CHALLENGES.has(s.id))button(info,'查看 SPT 首领任务',()=>{chiefId=s.id;page='spt';render();},{action:s.id===47?'mushroom-spt':'shark-spt'});
       const row=SEER_SPIRIT_DATA.index.find(item=>item[0]===s.id);
       if(row?.[3]||row?.[4])el(info,'p','spirit-sub',[row[3]&&('身高 '+row[3]+' cm'),row[4]&&('体重 '+row[4]+' kg')].filter(Boolean).join('　'));
       const artLink=el(info,'a','spirit-source','查看原版头像');artLink.href='https://seerh5.61.com/resource/assets/pet/head/'+s.id+'.png';

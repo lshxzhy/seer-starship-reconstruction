@@ -40,7 +40,7 @@ function readSpiritTransfer(raw){
   if(raw.owned.some(id=>!seen.has(id))||[...raw.party,...raw.storage].some(p=>!owned.has(p.speciesId)))
     reject('持有的伙伴与图鉴收藏记录不一致。');
   if(raw.materials!==undefined&&(!object(raw.materials)||!uint(raw.materials.photo)||!uint(raw.materials.air)))reject('融合材料数量有误。');
-  if(raw.materials?.blackCrystal!==undefined&&!uint(raw.materials.blackCrystal,raw.bosses.includes(34)?1:0))reject('钢牙鲨的黑晶矿数量有误。');
+  if(raw.materials?.blackCrystal!==undefined&&!uint(raw.materials.blackCrystal,raw.bosses.includes(34)?SPT_CHALLENGES.get(34).blackCrystal:0))reject('钢牙鲨的黑晶矿数量有误。');
   if(raw.bead!=null&&(!object(raw.bead)||!(raw.bead.phase==='fresh'&&raw.bead.readyAt===null||
       raw.bead.phase==='incubating'&&uint(raw.bead.readyAt)&&raw.bead.readyAt>0)))reject('元神珠的孵化记录有误。');
   if(raw.collectionRewardClaimed!==undefined&&typeof raw.collectionRewardClaimed!=='boolean')reject('图鉴奖励记录有误。');
@@ -48,7 +48,7 @@ function readSpiritTransfer(raw){
   const defeatedMushroom=raw.bosses.includes(47);
   if(raw.flameTool!==undefined&&typeof raw.flameTool!=='boolean')reject('火焰喷射器记录有误。');
   if(raw.flameTool===false&&(defeatedMushroom||raw.battle?.enemy?.speciesId===47))reject('此首领进度缺少已装备的火焰喷射器。');
-  if(raw.bankedXP!==undefined&&!uint(raw.bankedXP,defeatedMushroom?3000:0))reject('先锋任务的积累经验余额有误。');
+  if(raw.bankedXP!==undefined&&!uint(raw.bankedXP,defeatedMushroom?SPT_CHALLENGES.get(47).bankedXP:0))reject('先锋任务的积累经验余额有误。');
   const safari=raw.safari;
   if(safari!==undefined){
     if(!object(safari)||!uint(safari.endsAt)||safari.endsAt>Date.now()+15*60*1000||

@@ -52,7 +52,7 @@
         .sm-radar [hidden] {display:none!important}
       </style>
       <section class="sm-radar">
-        <div class="sm-toolbar"><label data-sm-area-label>区域 <select class="form-select" data-sm-area><option value="ship">赛尔号</option><option value="system">帕诺星系 · 轨道图</option><option value="klose">克洛斯星</option><option value="ocean">海洋星</option></select></label><label data-sm-deck-label>甲板 <select class="form-select" data-sm-deck></select></label><label data-sm-site-label hidden>目的地 <select class="form-select" data-sm-site></select></label><span class="sm-position" data-sm-position></span></div>
+        <div class="sm-toolbar"><label>区域 <select class="form-select" data-sm-area><option value="ship">赛尔号</option><option value="system">帕诺星系 · 轨道图</option></select></label><label data-sm-deck-label>甲板 <select class="form-select" data-sm-deck></select></label><label data-sm-site-label hidden>目的地 <select class="form-select" data-sm-site></select></label><span class="sm-position" data-sm-position></span></div>
         <div class="sm-chart"><svg role="img" aria-label="舰内平面图"></svg></div>
         <div class="sm-keys"><span><i class="sm-crew-dot"></i>当前位置</span><span><i class="sm-stop-dot"></i>升降站</span><span><i class="sm-route-dash"></i>步行路线</span></div>
         <div class="sm-choices" role="group" aria-label="本层舱室与升降站"></div>
@@ -63,20 +63,17 @@
     const picker=panel.querySelector('[data-sm-deck]'),choices=panel.querySelector('.sm-choices');
     const travel=panel.querySelector('[data-sm-travel]'),text=panel.querySelector('.sm-route');
     const areaPicker=panel.querySelector('[data-sm-area]'),sitePicker=panel.querySelector('[data-sm-site]');
-    const planets={klose:KLOSE_WORLD,ocean:OCEAN_WORLD};
-    let locations=new Map(),systemDestination='ocean';
+    const {regions}=PANO_NAVIGATION;
+    const planets=Object.values(regions).map(region=>region.definition);
+    for(const planet of planets)areaPicker.add(new Option(planet.name,planet.id));
+    let systemDestination='ocean';
     function selectArea(area,target){
       areaPicker.value=area;sitePicker.replaceChildren();
-      locations=new Map();
       if(area==='system'){
-        for(const p of Object.values(planets))sitePicker.add(new Option(p.name,p.id));
+        for(const p of planets)sitePicker.add(new Option(p.name,p.id));
         sitePicker.value=systemDestination;
-      }else if(planets[area]){
-        for(const site of kloseMapDestinations(planets[area])){
-          locations.set(site.id,site);sitePicker.add(new Option(site.name,site.id));
-        }
-        const ramp=parkedRamp();
-        if(ramp&&(ramp.planetId||'klose')===area)sitePicker.add(new Option('停放的登陆艇 · 尾坡','shuttle-ramp'));
+      }else if(regions[area]){
+        appendSurfaceOptions(sitePicker,regions[area],rampOnPlanet(parkedRamp(),area));
         if(target)sitePicker.value=target;
       }
       lastView='';refresh();
@@ -203,19 +200,19 @@
         if(area==='system'){
           systemDestination=sitePicker.value;
           panel.querySelector('[data-sm-position]').textContent='帕诺星系';
-          panel.querySelector('.sm-target').textContent=planets[systemDestination]?.name||'';
+          panel.querySelector('.sm-target').textContent=regions[systemDestination]?.definition.name||'';
           chart.setAttribute('aria-label','帕诺星系轨道及两颗行星的位置');
-          drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(planets[id]){sitePicker.value=id;refresh();}});
+          drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(regions[id]){sitePicker.value=id;refresh();}});
           text.textContent='在登陆艇驾驶席打开航线，可沿星际航线飞往所选行星。';
           travel.textContent='查看地表地图';travel.hidden=false;return;
         }
-        const parked=parkedRamp(),ramp=parked&&(parked.planetId||'klose')===area?parked:null;
-        const site=sitePicker.value==='shuttle-ramp'?ramp:locations.get(sitePicker.value);
+        const region=regions[area],ramp=rampOnPlanet(parkedRamp(),area);
+        const site=sitePicker.value==='shuttle-ramp'?ramp:region.byId.get(sitePicker.value);
         panel.querySelector('[data-sm-position]').textContent='帕诺星系';
         panel.querySelector('.sm-target').textContent=site?.name||'';
         text.textContent=site?.description||'';
-        chart.setAttribute('aria-label',planets[area].name+'地点图，可使用目的地列表选择');
-        drawKloseMap(chart,{definition:planets[area],sites:[...locations.values()],selected:sitePicker.value,ramp,
+        chart.setAttribute('aria-label',region.definition.name+'地点图，可使用目的地列表选择');
+        drawKloseMap(chart,{region,selected:sitePicker.value,ramp,
           onSelect:id=>{sitePicker.value=id;refresh();}});
         travel.hidden=!site;travel.textContent='传送到此';return;
       }
@@ -223,7 +220,7 @@
       const target=targets.get(selected),route=routeFrom(pose,target);
       picker.value=level;
       const place=pose?habitat.location(pose):null;
-      panel.querySelector('[data-sm-position]').textContent=place?'当前 · '+place.name:remote?'当前 · '+(planets[stage.dataset.planet]?.name||'行星地表'):'舰外总览';
+      panel.querySelector('[data-sm-position]').textContent=place?'当前 · '+place.name:remote?'当前 · '+(regions[stage.dataset.planet]?.definition.name||'行星地表'):'舰外总览';
       // Keep the native buttons stable while state refreshes, including focus.
       if(choices.dataset.level!==level){
         choices.replaceChildren();
@@ -262,8 +259,9 @@
     panel.addEventListener('click',select);
     travel.addEventListener('click',()=>{
       if(areaPicker.value==='system'){selectArea(systemDestination);return;}
-      if(planets[areaPicker.value]){
-        if(locations.has(sitePicker.value)||(sitePicker.value==='shuttle-ramp'&&parkedRamp()))onPlanetTravel(sitePicker.value,areaPicker.value);
+      const region=regions[areaPicker.value];
+      if(region){
+        if(region.byId.has(sitePicker.value)||(sitePicker.value==='shuttle-ramp'&&rampOnPlanet(parkedRamp(),areaPicker.value)))onPlanetTravel(sitePicker.value,areaPicker.value);
         return;
       }
       const target=targets.get(selected);

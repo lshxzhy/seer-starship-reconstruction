@@ -3,11 +3,9 @@ function createSpiritSystem(saved){
   const data=SEER_SPIRIT_DATA;
   const roster=new Set(data.playable),starters=[1,4,7];
   const wild=new Set([10,16,27,30,33,34,47,83,108,164,442,4694]);
-  const chiefs={34:{site:'ocean-floor',level:25,hp:200},47:{site:'forest',level:10,hp:100}};
   const index=new Map(data.index.map(row=>[row[0],row]));
   const statKeys=['attack','defense','spAttack','spDefense','speed'];
   const category={1:'物理',2:'特殊',4:'属性'};
-  const mushroomRewardXP=3000;
   const statuses={poison:'中毒',burn:'烧伤',freeze:'冻伤',paralysis:'麻痹',fear:'害怕',sleep:'睡眠',tired:'疲惫',bleed:'流血'};
   const faintStatuses=['fear','sleep','tired','paralysis'];
   const effectArgSizes={1:0,2:0,3:0,4:3,5:3,6:1,7:0,8:0,9:2,10:1,11:1,12:1,13:1,14:1,15:1,16:1,20:2,31:2,
@@ -62,7 +60,7 @@ function createSpiritSystem(saved){
   function stats(p){
     const nature=data.natures[p.nature],st=data.species[p.speciesId].base;
     return st.map((base,i)=>{
-      if(i===0&&p.uid==='wild'&&chiefs[p.speciesId])return chiefs[p.speciesId].hp;
+      if(i===0&&p.uid==='wild'&&SPT_CHALLENGES.has(p.speciesId))return SPT_CHALLENGES.get(p.speciesId).hp;
       const value=Math.floor((base*2+p.iv+Math.floor(p.ev[i]/4))*p.level/100);
       return i?Math.floor((value+5)*nature[i]):value+10+p.level;
     });
@@ -327,12 +325,14 @@ function createSpiritSystem(saved){
       if(b.kind==='boss'&&!state.bosses.includes(enemy.speciesId)){
         remember(state.bosses,enemy.speciesId);
         if(enemy.speciesId===47){
-          state.bankedXP+=mushroomRewardXP;
-          const where=receive(makePet(46,1,''));
-          reward='首次击败蘑菇怪。小蘑菇已进入'+where+'，获得 3000 点积累经验。';
+          const quest=SPT_CHALLENGES.get(47);
+          state.bankedXP+=quest.bankedXP;
+          const where=receive(makePet(quest.partner,1,''));
+          reward='首次击败蘑菇怪。小蘑菇已进入'+where+'，获得 '+quest.bankedXP+' 点积累经验。';
         }else if(enemy.speciesId===34){
-          state.materials.blackCrystal++;
-          reward='首次击败钢牙鲨，获得黑晶矿 ×1。';
+          const amount=SPT_CHALLENGES.get(34).blackCrystal;
+          state.materials.blackCrystal+=amount;
+          reward='首次击败钢牙鲨，获得黑晶矿 ×'+amount+'。';
         }
       }
       for(const uid of b.participants){
@@ -356,7 +356,7 @@ function createSpiritSystem(saved){
     const id=Number(encounter?.speciesId),key=encounter?.key;
     if(!wild.has(id)||typeof key!=='string'||!key.length||key.length>120||
       !['wild','rare','boss','common','shiny'].includes(encounter.kind))return fail('该精灵当前仅可观察。');
-    const chief=chiefs[id];
+    const chief=SPT_CHALLENGES.get(id);
     if(chief?encounter.siteId!==chief.site||encounter.kind!=='boss':encounter.kind==='boss')return fail('请在首领所在区域发起挑战。');
     if(id===47&&!state.flameTool)return fail('先到赛尔号实验室领取火焰喷射器，回林间破开护膜。');
     if((state.recent[key]||0)>Date.now())return fail('这只精灵刚刚离开，请寻找附近的其他个体。');
@@ -548,15 +548,17 @@ function createSpiritSystem(saved){
     if(state.party.some(p=>p.uid===saved.followerUid))state.followerUid=saved.followerUid;
     for(const key of ['seen','owned'])for(const id of Array.isArray(saved[key])?saved[key]:[])if(index.has(id))remember(state[key],id);
     state.starterClaimed=typeof saved.starterClaimed==='boolean'?saved.starterClaimed:starters.some(id=>state.owned.includes(id));
-    state.bosses=Array.isArray(saved.bosses)?saved.bosses.filter(id=>chiefs[id]):[];
+    state.bosses=Array.isArray(saved.bosses)?saved.bosses.filter(id=>SPT_CHALLENGES.has(id)):[];
     const defeated=state.bosses.includes(47);
     state.flameTool=defeated||saved.flameTool===true;
     // A v0.11.0 first-win record already awarded the baby, but had no experience bank.
-    state.bankedXP=defeated?integer(saved.bankedXP,0,mushroomRewardXP,mushroomRewardXP):0;
+    const rewardXP=SPT_CHALLENGES.get(47).bankedXP;
+    state.bankedXP=defeated?integer(saved.bankedXP,0,rewardXP,rewardXP):0;
     state.capsules=integer(saved.capsules,0,9999,10);state.potions=integer(saved.potions,0,9999,5);
     state.collectionRewardClaimed=saved.collectionRewardClaimed===true;
     for(const k of ['photo','air'])state.materials[k]=integer(saved.materials?.[k],0,Number.MAX_SAFE_INTEGER);
-    state.materials.blackCrystal=state.bosses.includes(34)?integer(saved.materials?.blackCrystal,0,1,1):0;
+    const rewardMineral=SPT_CHALLENGES.get(34).blackCrystal;
+    state.materials.blackCrystal=state.bosses.includes(34)?integer(saved.materials?.blackCrystal,0,rewardMineral,rewardMineral):0;
     if(saved.bead?.phase==='fresh')state.bead={phase:'fresh',readyAt:null};
     if(saved.bead?.phase==='incubating'&&Number.isSafeInteger(saved.bead.readyAt)&&saved.bead.readyAt>0)
       state.bead={phase:'incubating',readyAt:saved.bead.readyAt};
@@ -565,7 +567,7 @@ function createSpiritSystem(saved){
     for(const [key,t] of Object.entries(saved.recent||{}))if(key.length<=120&&t>Date.now()&&t<=Date.now()+60000)state.recent[key]=t;
     const old=saved.battle,enemy=readPet(old?.enemy,'wild');
     if(!old||!enemy||(!wild.has(enemy.speciesId)&&enemy.speciesId!==701)||!enemy.hp||!state.party.some(p=>p.hp)||!state.party.some(p=>p.uid===old.activeUid))return;
-    const chief=chiefs[enemy.speciesId];
+    const chief=SPT_CHALLENGES.get(enemy.speciesId);
     if(chief&&(old.area!==chief.site||enemy.level!==chief.level||old.kind!=='boss'))return;
     if(enemy.speciesId===47)state.flameTool=true;
     state.safari.encounter=null;

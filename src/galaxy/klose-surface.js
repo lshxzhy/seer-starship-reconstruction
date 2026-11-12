@@ -31,14 +31,9 @@ const KLOSE_WORLD = (() => {
   return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites};
 })();
 
-function createKloseSurface(T, world, definition = KLOSE_WORLD) {
+function createKloseTerrain(T, definition = KLOSE_WORLD) {
   const {radius,sites,routes,landingSites} = definition;
   const origin = sites[0], byId = new Map(sites.map(site=>[site.id,site]));
-  const root = new T.Group(), orbital = new T.Group(), local = new T.Group();
-  root.name = '帕诺星系 · 克洛斯星'; root.add(orbital,local); world.add(root);
-  let mode = 'hidden';
-  const landings = new Map(landingSites.map(site=>[site.id,site]));
-  landings.set('core',landings.get('vineway'));
   const tau = 2*Math.PI, clamp = (v,a=0,b=1)=>Math.max(a,Math.min(b,v));
   function smooth(a,b,v) {
     const t = clamp((v-a)/(b-a)); return t*t*(3-2*t);
@@ -202,6 +197,19 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD) {
     return result;
   }
 
+  return {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
+    closestPad,sample,heightSample,height,point,siteAt};
+}
+
+function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createKloseTerrain(T,definition)) {
+  const {radius,landingSites}=definition;
+  const {sites,origin,tau,clamp,smooth,unwrap,frame,move,chart,trail,pools,noise,fractal,bedrock,
+    closestPad,sample,heightSample,height,point,siteAt}=ground;
+  const root = new T.Group(), orbital = new T.Group(), local = new T.Group();
+  root.name = '帕诺星系 · 克洛斯星'; root.add(orbital,local); world.add(root);
+  let mode = 'hidden';
+  const landings = new Map(landingSites.map(site=>[site.id,site]));
+  landings.set('core',landings.get('vineway'));
   const color = hex=>new T.Color(hex).convertSRGBToLinear();
   // Bright-side fills in Taomei's labelled Pano chart, icon 27. The tilted
   // belts and the ring have a single pole in the planet's Cartesian frame.

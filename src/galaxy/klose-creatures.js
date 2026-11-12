@@ -394,7 +394,7 @@ function createKloseSpiritModel(T,id){
 const KLOSE_TERRITORIES={
     grassland:[[164,-7,-5,1,'rare']],
     swamp:[[16,2,-5,11,'wild'],[16,-6,7,12,'wild'],[16,10,6,12,'wild'],[27,-6,-4,11,'rare']],
-    forest:[[47,7,-11,10,'boss'],[83,-5,3,15,'rare'],[442,-9,-4,15,'rare']],
+    forest:[[47,7,-11,SPT_CHALLENGES.get(47).level,'boss'],[83,-5,3,15,'rare'],[442,-9,-4,15,'rare']],
     flame:[[821,-8,-5,30,'event']],
     vineway:[[4690,3,-7,35,'event']],
     core:[[4694,4.4,-4.8,12,'rare'],[4693,-7,6,35,'event']],

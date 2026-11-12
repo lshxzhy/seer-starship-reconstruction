@@ -9,23 +9,49 @@ function kloseDisplacement(a,b,radius=KLOSE_WORLD.radius){
 function kloseDistanceText(m){
   return m>=1000?(m/1000).toFixed(m>=10000?0:1)+' km':Math.round(m)+' m';
 }
-function kloseMapDestinations(definition=KLOSE_WORLD){
-  const {sites,landingSites}=definition;
-  const classic=new Set(sites.map(site=>site.id));
+function createPlanetNavigation(definitions){
+  const regions={},flights=new Map([['dock',{id:'dock',planetId:'klose',name:'赛尔号泊位'}]]);
   const outlands={ridge:'山脊之间的鞍部',delta:'能俯瞰河口水道的高岸',grove:'绯叶山林边缘的台地'};
-  return [...sites,...landingSites.map(pad=>classic.has(pad.id)?
-    {...pad,id:pad.id+'-pad',area:pad.id,description:pad.description||'经典探索区旁的自然着陆坪'}:
-    {...pad,area:'grassland',description:outlands[pad.id]||'外围自然着陆点'})];
+  for(const definition of definitions){
+    const {sites,landingSites,routes}=definition;
+    const byId=new Map(sites.map(site=>[site.id,site]));
+    const walkingLinks=[...routes],pads=[],outlying=[];
+    for(const pad of landingSites){
+      flights.set(pad.id,{...pad,planetId:definition.id});
+      const local=byId.has(pad.id);
+      // The walking address and the flight address must remain distinct even
+      // when the original scene and its landing pad share an id.
+      const place=local?{...pad,id:pad.id+'-pad',area:pad.id,description:pad.description||'经典探索区旁的自然着陆坪'}:
+        {...pad,area:sites[0].id,description:pad.description||outlands[pad.id]||'外围自然着陆点'};
+      byId.set(place.id,place);walkingLinks.push([place.area,place.id]);
+      (local?pads:outlying).push(place);
+    }
+    regions[definition.id]={definition,byId,places:[...byId.values()],walkingLinks,
+      groups:[['经典探索区',sites],['外围地形',outlying],['探索区着陆坪',pads]]};
+  }
+  return {regions,flights};
 }
-function drawKloseMap(chart,{definition=KLOSE_WORLD,sites,selected,ramp,observer,flying=false,onSelect}){
+function rampOnPlanet(ramp,planetId){
+  return ramp&&(ramp.planetId||KLOSE_WORLD.id)===planetId?ramp:null;
+}
+function appendSurfaceOptions(select,region,ramp){
+  for(const [label,places] of region.groups){
+    if(!places.length)continue;
+    const group=document.createElement('optgroup');group.label=label;
+    for(const place of places)group.append(new Option(place.name,place.id));
+    select.append(group);
+  }
+  if(ramp)select.add(new Option('L-01 · 登陆艇尾坡',ramp.id));
+}
+function drawKloseMap(chart,{region,selected,ramp,observer,onSelect}){
+  const {definition,places:sites}=region;
   const home=definition.sites[0],places=ramp?[...sites,ramp]:sites;
   const offset=p=>kloseDisplacement(home,p,definition.radius);
   const points=new Map(places.map(p=>[p.id,offset(p)]));
-  const regional=flying||points.get(selected)?.distance>800;
+  const regional=points.get(selected)?.distance>800;
   const entries=places.filter(p=>{
     if(p.id===selected||p.id===home.id)return true;
     const d=points.get(p.id).distance;
-    if(flying)return d>=900;
     if(p.id==='shuttle-ramp')return regional||d<=800;
     return regional?d>800:!p.area;
   });

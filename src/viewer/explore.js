@@ -85,7 +85,7 @@
     siteId:()=>expedition.active?expedition.fieldSite:liveBoard?boarding.roomId:null,
     setFollower:id=>{boarding.setEscortSpecies(id);expedition.setEscortSpecies(id);},
     setFlameTool:value=>{boarding.setFlameTool(value);expedition.setFlameTool(value);},
-    visitMushroomSite:id=>{
+    visitChallengeSite:id=>{
       if(id==='laboratory'){travelToShip('laboratory');return;}
       if(id==='ocean-floor'){travelToPlanet(id,false,'ocean');return;}
       if(!expedition.approachForestBoss())travelToPlanet('forest',true);

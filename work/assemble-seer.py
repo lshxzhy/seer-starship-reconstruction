@@ -25,7 +25,7 @@ ship = root / 'src' / 'ship'
 habitat = root / 'src' / 'habitat'
 population = root / 'src' / 'population'
 spirits = root / 'src' / 'spirits'
-scripts = [viewer/'start.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
+scripts = [viewer/'start.js', spirits/'challenges.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
 scripts.extend(ship/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
 scripts.extend([habitat/'exterior-scale.js', ship/'interior.js', habitat/'registry.js', habitat/'kit.js'])
 scripts.extend(habitat/name for name in ('engineering.js','science.js','transporter.js','civic.js','crew.js'))
@@ -47,7 +47,6 @@ def script_source(path):
         return '/* spirit-catalog:start */\nconst SEER_SPIRIT_DATA = '+raw.strip().replace('<',r'\u003c')+';\n/* spirit-catalog:end */'
     return raw
 source = '\n'.join(script_source(path) for path in scripts)
-publish_text(output/'seer-model.js',source)
 layout = (work/'seer-layout.html').read_text('utf-8') + '<style>' + (viewer/'flight-deck.css').read_text('utf-8') + (spirits/'terminal.css').read_text('utf-8') + '</style>'
 library = (work/'three-r128.min.js').read_text('utf-8').replace('</script','<\\/script')
 fragment = layout + '\n<script>\n' + library + '\n</script>\n<script>\n' + source + '\n</script>\n'

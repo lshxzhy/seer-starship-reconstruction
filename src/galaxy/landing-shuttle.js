@@ -31,6 +31,7 @@ function createLandingShuttle(T) {
   const barrel=trackGeometry(new T.CylinderGeometry(1,1,1,16));
   const orb=trackGeometry(new T.SphereGeometry(1,16,10));
   const plane=trackGeometry(new T.PlaneGeometry(1,1));
+  const fixedPanels=new Map(),windowPanes=new Map();
   const vector=(x,y,z)=>new T.Vector3(x,y,z);
   function put(g,m,p,x=0,y=0,z=0,sx=1,sy=1,sz=1){
     const mesh=new T.Mesh(g,m);
@@ -46,19 +47,24 @@ function createLandingShuttle(T) {
     const mesh=put(barrel,m,p,c.x,c.y,c.z,r,direction.length(),r);
     mesh.quaternion.setFromUnitVectors(vector(0,1,0),direction.normalize());return mesh;
   }
-  function panel(p,m,points){
-    const verts=[];
+  function panel(m,points,pane=null){
+    // Sort the three transparent glazing assemblies by their own centres.
+    // Opaque hull and console faces need only one batch per coating.
+    const bins=pane?windowPanes:fixedPanels,key=pane||m;
+    if(!bins.has(key))bins.set(key,[]);
+    const verts=bins.get(key);
     for(let i=1;i+1<points.length;i++)verts.push(...points[0],...points[i],...points[i+1]);
-    const geo=new T.BufferGeometry();
-    geo.setAttribute('position',new T.Float32BufferAttribute(verts,3));geo.computeVertexNormals();
-    return put(trackGeometry(geo),m,p);
   }
   // A wing or fin is a closed, tapered solid. Both faces have actual thickness.
-  function plate(p,m,upper,lower){
-    panel(p,m,upper);panel(p,m,lower.slice().reverse());
+  function plate(m,upper,lower,faces=null){
+    if(faces){
+      for(const face of faces){
+        panel(m,face.map(i=>upper[i]));panel(m,face.slice().reverse().map(i=>lower[i]));
+      }
+    }else{panel(m,upper);panel(m,lower.slice().reverse());}
     for(let i=0;i<upper.length;i++){
       const j=(i+1)%upper.length;
-      panel(p,m,[upper[i],lower[i],lower[j],upper[j]]);
+      panel(m,[upper[i],lower[i],lower[j],upper[j]]);
     }
   }
   function screenTexture(canvas){
@@ -66,13 +72,25 @@ function createLandingShuttle(T) {
     const mat=new T.MeshBasicMaterial({map:tex,side:T.FrontSide,toneMapped:false});
     materials.add(mat);return mat;
   }
-  function inscription(lines,w=512,h=180){
-    const c=document.createElement('canvas');c.width=w;c.height=h;
-    const ctx=c.getContext('2d');ctx.fillStyle='#254b63';ctx.fillRect(0,0,w,h);
-    ctx.fillStyle='#75e1e4';ctx.fillRect(0,0,8,h);ctx.fillStyle='#f0ead7';
-    ctx.font='600 66px "Microsoft YaHei",sans-serif';ctx.fillText(lines[0],24,82);
-    ctx.fillStyle='#e8b451';ctx.font='500 32px sans-serif';ctx.fillText(lines[1],26,143);
-    return screenTexture(c);
+  // Screen printing for the hull, sill and switches shares a single atlas.
+  const prints=document.createElement('canvas');prints.width=prints.height=512;
+  const ink=prints.getContext('2d');
+  ink.fillStyle='#203c4b';ink.fillRect(0,0,512,512);
+  function placard(y,title,caption){
+    ink.fillStyle='#77d9d6';ink.fillRect(8,y+8,7,148);
+    ink.fillStyle='#f0ead7';ink.font='600 63px "Microsoft YaHei",sans-serif';ink.fillText(title,28,y+82);
+    ink.fillStyle='#e8b451';ink.font='31px sans-serif';ink.fillText(caption,28,y+137,455);
+  }
+  placard(0,'L-01','SEER  /  ORBITAL LANDER');
+  placard(170,'登 陆 艇','SEER L-01  /  REAR AIRLOCK');
+  const keys=[['auto','航线',cyan],['manual','接管',amber],['view','视角',green]];
+  ink.textAlign='center';ink.font='600 48px "Microsoft YaHei",sans-serif';ink.fillStyle='#f1f4e9';
+  keys.forEach(([,label],i)=>ink.fillText(label,170*i+85,450));
+  const printMaterial=screenTexture(prints);
+  function printTile(x,y,w,h){
+    const g=trackGeometry(plane.clone()),uv=g.getAttribute('uv');
+    for(let i=0;i<uv.count;i++)uv.setXY(i,(x+uv.getX(i)*w)/512,1-(y+(1-uv.getY(i))*h)/512);
+    return g;
   }
 
   // Cross-sections leave the cockpit canopy and the cabin's side windows
@@ -94,10 +112,10 @@ function createLandingShuttle(T) {
       const canopy=i===2&&j>=3&&j<=7;
       const window=(i===4||i===5||i===6)&&(j===3||j===7);
       const m=canopy||window?glass:j===0?edge:j===1||j===8?blue:j===2||j===9?white:cream;
-      panel(staticBody,m,[rings[i][j],rings[i+1][j],rings[i+1][k],rings[i][k]]);
+      panel(m,[rings[i][j],rings[i+1][j],rings[i+1][k],rings[i][k]],canopy?'windscreen':window?j:null);
     }
   }
-  panel(staticBody,white,rings[0]);
+  panel(white,rings[0]);
   for(const i of [2,3,4,5,6,7]){
     const r=rings[i];
     for(let j=3;j<=7;j++){
@@ -122,8 +140,7 @@ function createLandingShuttle(T) {
       cover.rotation.z=-s*.025;
       for(const offset of [-.37,.37])box(staticBody,edge,s*.66,3.748,z+offset,.15,.019,.035);
     }
-    const rail=rod(staticBody,alloy,vector(s*1.1,1.53,-4.91),vector(s*1.72,1.72,-2.11),.085);
-    rail.castShadow=true;
+    rod(staticBody,alloy,vector(s*1.1,1.53,-4.91),vector(s*1.72,1.72,-2.11),.085);
     const optic=ellipse(staticBody,edge,s*.84,1.41,-5.16,.16,.13,.17);
     optic.rotation.y=s*.29;
     ellipse(staticBody,cyan,s*.84,1.43,-5.30,.094,.056,.03);
@@ -131,7 +148,7 @@ function createLandingShuttle(T) {
 
   // Forked swept wings carry two independent engine nacelles. The light and
   // dark panels are separate pieces with narrow expansion joints.
-  const wingStencil=inscription(['L-01','SEER  /  ORBITAL LANDER']);
+  const wingStencil=printTile(0,0,512,166);
   const fanProfile=[[0,.05],[.27,.12],[.45,.30],[.53,.60],[.52,1.53],
     [.63,1.71],[.68,2.78],[.64,3.25],[.54,3.42],[.48,3.56],[0,3.56]];
   const nacelleGeo=trackGeometry(new T.LatheGeometry(fanProfile.map(([r,z])=>new T.Vector2(r,z)),28));
@@ -147,11 +164,11 @@ function createLandingShuttle(T) {
     const lower=upper.map(([x,y,z])=>[x,y-(Math.abs(x)>4.5?.14:.32),z]);
     // Split the concave wing at its root to keep both shoulders well defined.
     const indices=[[0,1,2,3,4],[0,4,5,6]];
-    for(const face of indices)plate(staticBody,cream,face.map(i=>upper[i]),face.map(i=>lower[i]));
+    plate(cream,upper,lower,indices);
     const stripe=[[2.05,-1.38,1.692],[2.26,-1.34,1.656],[5.24,2.84,1.30],[4.88,2.74,1.34]];
-    panel(staticBody,gold,stripe.map(([x,z,y])=>[side*x,y,z]));
+    panel(gold,stripe.map(([x,z,y])=>[side*x,y,z]));
     const tip=[[4.66,2.13,1.37],[5.38,2.77,1.28],[5.22,3.56,1.25],[4.63,3.46,1.35]];
-    panel(staticBody,blue,tip.map(([x,z,y])=>[side*x,y,z]));
+    panel(blue,tip.map(([x,z,y])=>[side*x,y,z]));
     ellipse(staticBody,side<0?red:green,side*5.31,1.29,2.94,.075,.062,.20);
     const engine=put(nacelleGeo,white,staticBody,side*2.58,1.78,1.46);
     engine.rotation.x=Math.PI/2;
@@ -170,15 +187,15 @@ function createLandingShuttle(T) {
     // Twin canted stabilizers straddle the rear hatch, preserving its approach.
     const fin=[[side*2.08,2.15,1.71],[side*2.81,3.92,3.18],[side*2.78,4.07,4.10],
       [side*2.16,2.25,4.41]];
-    plate(staticBody,blue,fin,fin.map(([x,y,z])=>[x-side*.15,y,z]));
-    panel(staticBody,gold,[[side*2.70,3.73,2.98],[side*2.82,3.94,3.18],[side*2.79,4.09,4.1],[side*2.70,3.83,4.16]]);
-    const badge=put(plane,wingStencil,staticBody,side*2.029,1.56,.60,1.31,.42,1);
+    plate(blue,fin,fin.map(([x,y,z])=>[x-side*.15,y,z]));
+    panel(gold,[[side*2.70,3.73,2.98],[side*2.82,3.94,3.18],[side*2.79,4.09,4.1],[side*2.70,3.83,4.16]]);
+    const badge=put(wingStencil,printMaterial,staticBody,side*2.029,1.56,.60,1.31,.42,1);
     badge.rotation.y=side*Math.PI/2;
     // Small overlapping shoulder panels tie the lower fuselage to its wing.
     const shoulder=[[1.55,-2.75,1.57],[2.03,-1.61,1.73],[2.43,.40,1.64],
       [2.37,1.61,1.58],[1.90,.43,1.65]];
     const shoulderTop=shoulder.map(([x,z,y])=>[side*x,y,z]);
-    plate(staticBody,white,shoulderTop,shoulderTop.map(([x,y,z])=>[x,y-.085,z]));
+    plate(white,shoulderTop,shoulderTop.map(([x,y,z])=>[x,y-.085,z]));
     for(const z of [2.73,3.01,3.29,3.57]){
       const rib=box(staticBody,blue,side*1.873,1.63,z,.068,.24,.11);
       rib.rotation.x=-.34;
@@ -201,6 +218,14 @@ function createLandingShuttle(T) {
       box(staticBody,blue,s*1.48,1.57,z,.54,.19,.84);
       box(staticBody,blue,s*1.70,1.97,z,.14,.64,.85);
       box(staticBody,gold,s*1.59,2.03,z,.055,.45,.095);
+      // Padded bolsters, two stowage catches and the recessed grab bar
+      // all lie on the seat side of the central passage.
+      for(const end of [-1,1]){
+        ellipse(staticBody,blue,s*1.46,1.61,z+end*.34,.245,.096,.105);
+        box(staticBody,alloy,s*1.39,1.47,z+end*.34,.27,.032,.083);
+        rod(staticBody,edge,vector(s*1.59,2.30,z+end*.24),vector(s*1.68,2.29,z+end*.31),.025);
+      }
+      rod(staticBody,alloy,vector(s*1.59,2.30,z-.24),vector(s*1.59,2.30,z+.24),.029);
     }
     box(staticBody,lining,s*1.37,2.04,3.61,.41,1.96,1.08);
     box(staticBody,edge,s*1.145,2.04,3.61,.028,1.78,.93);
@@ -215,12 +240,15 @@ function createLandingShuttle(T) {
   }
   // The Seer robot rolls its feet onto a piloting pad; no human-height seat
   // back obstructs its head or the view through the forward sloped glass.
-  const desk=box(staticBody,edge,0,1.31,-4.22,1.70,.48,.38);desk.rotation.x=-.16;
-  box(staticBody,blue,0,1.21,-4.10,1.64,.34,.48);
+  const deskTop=[[-.82,1.46,-4.40],[.82,1.46,-4.40],[.90,1.48,-4.21],[.80,1.39,-3.87],
+    [-.80,1.39,-3.87],[-.90,1.48,-4.21]];
+  plate(blue,deskTop,deskTop.map(([x,y,z])=>[x*.86,y-.23,z-.04]));
   box(staticBody,edge,0,1.07,-2.73,1.22,.034,1.00);
   for(const s of [-1,1]){
     box(staticBody,gold,s*.59,1.094,-2.73,.038,.014,.92);
     box(staticBody,lining,s*.72,1.35,-3.14,.21,.55,.56);
+    const boot=put(barrel,rubber,staticBody,s*.72,1.62,-3.14,.091,.052,.10);
+    boot.rotation.x=-.28;
     rod(staticBody,edge,vector(s*.72,1.54,-3.09),vector(s*.72,1.75,-3.19),.047);
     ellipse(staticBody,blue,s*.72,1.77,-3.18,.10,.061,.12);
   }
@@ -228,16 +256,49 @@ function createLandingShuttle(T) {
   overhead.position.set(0,3.30,1.24);reading.position.set(.6,2.96,-2.22);root.add(overhead,reading);
   const display=document.createElement('canvas');display.width=768;display.height=256;
   const instrument=screenTexture(display);
-  const bezel=box(staticBody,alloy,0,1.71,-4.17,1.58,.45,.095);
-  bezel.rotation.x=-.30;
-  const face=put(plane,instrument,staticBody,0,1.729,-4.112,1.48,.397,1);face.rotation.x=-.30;
+  const trimAngle=-.30,cosTrim=Math.cos(trimAngle),sinTrim=Math.sin(trimAngle);
+  const trimPoint=(x,y,z)=>[x,1.728+y*cosTrim-z*sinTrim,-4.17+y*sinTrim+z*cosTrim];
+  function bezelRing(w,h,c,z){
+    return [[-w+c,-h],[w-c,-h],[w,-h+c],[w,h-c],[w-c,h],[-w+c,h],[-w,h-c],[-w,-h+c]]
+      .map(([x,y])=>trimPoint(x,y,z));
+  }
+  const bezelRings=[bezelRing(.83,.254,.071,-.112),bezelRing(.853,.268,.064,-.035),
+    bezelRing(.805,.248,.052,.064),bezelRing(.753,.207,.023,.060),bezelRing(.739,.197,.015,.034)];
+  const trimPaint=[blue,alloy,edge,rubber];
+  for(const [i,finish] of trimPaint.entries()){
+    const back=bezelRings[i],front=bezelRings[i+1];
+    for(let j=0;j<back.length;j++){
+      const k=(j+1)%back.length;
+      panel(finish,[back[j],back[k],front[k],front[j]]);
+    }
+  }
+  panel(edge,bezelRings[0].slice().reverse());
+  const face=put(plane,instrument,staticBody,...trimPoint(0,0,.032),1.485,.397,1);face.rotation.x=trimAngle;
+  const fastener=trackGeometry(new T.CylinderGeometry(1,1,1,6));
+  for(const side of [-1,1]){
+    for(const row of [-1,1]){
+      const bolt=put(fastener,alloy,staticBody,...trimPoint(side*.773,row*.174,.063),.017,.010,.017);
+      bolt.rotation.x=Math.PI/2+trimAngle;
+    }
+    // Vented shrouds join the coaming to the port and starboard control cradles.
+    const cover=[[-.10,1.35,-3.68],[.09,1.35,-3.68],[.11,1.58,-4.04],[.057,1.62,-4.23],[-.10,1.60,-4.23]]
+      .map(([x,y,z])=>[side*(.99+x),y,z]);
+    plate(edge,cover,cover.map(([x,y,z])=>[x,y-.091,z]));
+    for(let j=0;j<4;j++){
+      const vent=box(staticBody,alloy,.99*side,1.414+.039*j,-3.78-j*.063,.132,.021,.022);
+      vent.rotation.x=.55;
+    }
+  }
   const ctx=display.getContext('2d');
-  const actionPanel=box(staticBody,blue,0,1.414,-3.98,1.40,.085,.19);actionPanel.rotation.x=-.30;
-  for(const [i,act] of ['auto','manual','view'].entries()){
-    const m=[cyan,amber,green][i];
-    const key=box(root,m,(i-1)*.43,1.47,-3.98,.32,.068,.14);
-    key.rotation.x=-.30;key.name=['自动航行','手动接管','切换视角'][i];
+  const actionPanel=box(staticBody,edge,0,1.373,-4.012,1.40,.084,.17);actionPanel.rotation.x=-.30;
+  for(const [i,[act,name,m]] of keys.entries()){
+    const x=(i-1)*.435,angle=-.66;
+    const key=box(root,m,x,1.464,-3.932,.356,.123,.085);
+    key.rotation.x=angle;key.name=name;
     key.userData.shuttleAction=act;controls.push(key);
+    const print=put(printTile(i*170,370,170,124),printMaterial,staticBody,x,1.464-.044*Math.sin(angle),
+      -3.932+.044*Math.cos(angle),.299,.107,1);
+    print.rotation.x=angle;
   }
 
   // End rings form the pressure bulkhead, with a two-metre clear opening.
@@ -248,8 +309,16 @@ function createLandingShuttle(T) {
   }
   box(staticBody,white,0,3.31,5.54,2.50,.21,.20);
   box(staticBody,edge,0,.90,5.55,2.43,.29,.25);
-  const hatchSign=inscription(['登 陆 艇','SEER L-01  /  REAR AIRLOCK']);
-  put(plane,hatchSign,staticBody,0,3.25,5.652,1.51,.32,1);
+  put(printTile(0,170,512,166),printMaterial,staticBody,0,3.25,5.652,1.51,.32,1);
+  for(const s of [-1,1]){
+    rod(staticBody,rubber,vector(s*.995,1.105,5.615),vector(s*.995,3.115,5.615),.032);
+    rod(staticBody,rubber,vector(s*.995,3.115,5.615),vector(s*.90,3.198,5.615),.032);
+    for(const y of [1.47,2.76]){
+      box(staticBody,alloy,s*1.14,y,5.622,.14,.19,.064);
+      box(staticBody,edge,s*1.14,y,5.659,.062,.10,.019);
+    }
+  }
+  rod(staticBody,rubber,vector(-.90,3.198,5.615),vector(.90,3.198,5.615),.032);
   const rampHinge=new T.Group();rampHinge.position.set(0,layout.floorY,5.55);root.add(rampHinge);
   const rampTip=new T.Group();rampHinge.add(rampTip);
   const fixedRamp=2.21,rampRun=layout.rampEnd[2]-rampHinge.position.z;
@@ -263,6 +332,12 @@ function createLandingShuttle(T) {
     box(rampHinge,gold,s*.916,.012,fixedRamp/2,.090,.018,fixedRamp-.07);
     box(rampTip,gold,s*.845,-.009,travel/2,.055,.019,travel-.03);
     box(rampHinge,cream,s*.59,-.240,fixedRamp/2,.52,.05,1.57);
+    const outer=put(barrel,edge,staticBody,s*.93,layout.floorY-.065,5.55,.095,.21,.095);
+    outer.rotation.z=Math.PI/2;
+    const knuckle=put(barrel,alloy,rampHinge,s*.72,-.065,0,.090,.19,.090);
+    knuckle.rotation.z=Math.PI/2;
+    for(const z of [.29,1.82])box(rampHinge,cyan,s*.918,.026,z,.046,.012,.16);
+    box(rampTip,alloy,s*.812,-.115,travel*.52,.082,.08,travel*.96);
   }
   // Telescoping gear, rotating around its trunnion. The shoes stay level.
   for(const [fx,,fz] of layout.feet){
@@ -292,12 +367,12 @@ function createLandingShuttle(T) {
       const g=obj.geometry,indices=g.index,pos=g.getAttribute('position'),norm=g.getAttribute('normal'),uv=g.getAttribute('uv');
       const normals=new T.Matrix3().getNormalMatrix(obj.matrix);
       let bin=bins.get(obj.material);
-      if(!bin){bin={position:[],normal:[],uv:[],indices:[]};bins.set(obj.material,bin);}
+      if(!bin){bin={position:[],normal:[],uv:obj.material.map?[]:null,indices:[]};bins.set(obj.material,bin);}
       const base=bin.position.length/3,p=new T.Vector3();
       for(let i=0;i<pos.count;i++){
         p.fromBufferAttribute(pos,i).applyMatrix4(obj.matrix);bin.position.push(p.x,p.y,p.z);
         p.fromBufferAttribute(norm,i).applyMatrix3(normals).normalize();bin.normal.push(p.x,p.y,p.z);
-        bin.uv.push(uv?uv.getX(i):0,uv?uv.getY(i):0);
+        if(bin.uv)bin.uv.push(uv?uv.getX(i):0,uv?uv.getY(i):0);
       }
       for(let i=0;i<(indices?indices.count:pos.count);i++)bin.indices.push(base+(indices?indices.getX(i):i));
       group.remove(obj);
@@ -306,12 +381,26 @@ function createLandingShuttle(T) {
       const g=trackGeometry(new T.BufferGeometry());
       g.setAttribute('position',new T.Float32BufferAttribute(bin.position,3));
       g.setAttribute('normal',new T.Float32BufferAttribute(bin.normal,3));
-      if(m.map)g.setAttribute('uv',new T.Float32BufferAttribute(bin.uv,2));
+      if(bin.uv)g.setAttribute('uv',new T.Float32BufferAttribute(bin.uv,2));
       g.setIndex(bin.indices);g.computeBoundingSphere();put(g,m,group);
     }
   }
+  function panelGeometry(verts){
+    const g=trackGeometry(new T.BufferGeometry());
+    g.setAttribute('position',new T.Float32BufferAttribute(verts,3));g.computeVertexNormals();
+    return g;
+  }
+  for(const [m,verts] of fixedPanels)put(panelGeometry(verts),m,staticBody);
+  for(const verts of windowPanes.values()){
+    const g=panelGeometry(verts);g.computeBoundingBox();
+    const c=g.boundingBox.getCenter(new T.Vector3());g.translate(-c.x,-c.y,-c.z);
+    put(g,glass,staticBody,c.x,c.y,c.z);
+  }
+  fixedPanels.clear();windowPanes.clear();
   combine(staticBody);combine(rampHinge);combine(rampTip);
   for(const pad of pads){combine(pad.pivot);combine(pad.foot);}
+  const inUse=new Set();root.traverse(node=>{if(node.isMesh)inUse.add(node.geometry);});
+  for(const source of geometries)if(!inUse.has(source)){source.dispose();geometries.delete(source);}
 
   function floorAt(z){
     return z<=5.55?layout.floorY:layout.floorY*Math.max(0,1-(z-5.55)/rampRun);
@@ -340,18 +429,20 @@ function createLandingShuttle(T) {
     return p.z>=4.40?'exit':'cabin';
   }
   const clamp01=x=>T.MathUtils.clamp(Number(x)||0,0,1);
-  let readoutKey='',nextReadout=0,lastMode='',lastTarget='';
-  function readout(speed,altitude,mode,destination){
+  let readoutKey='',nextReadout=0,lastState='';
+  function readout(speed,altitude,mode,destination,door,gear){
     function metric(v,kmUnit,mUnit){
       return v>=1000?(v/1000).toFixed(v<10000?2:1)+' '+kmUnit:Math.round(v)+' '+mUnit;
     }
     const status=String(mode||'待机'),target=String(destination||'赛尔号');
-    const now=performance.now();
-    if(now<nextReadout&&status===lastMode&&target===lastTarget)return;
-    nextReadout=now+120;lastMode=status;lastTarget=target;
+    const hatch=door<=.01?'已锁闭':door>=.98?'已展开':'动作中';
+    const pads=gear<=.01?'已收起':gear>=.99?'已放下':'动作中';
+    const state=[status,target,hatch,pads].join('|'),now=performance.now();
+    if(now<nextReadout&&state===lastState)return;
+    nextReadout=now+120;lastState=state;
     const s=metric(Math.abs(Number(speed)||0),'km/s','m/s');
     const h=metric(Math.max(0,Number(altitude)||0),'km','m');
-    const next=[s,h,status,target].join('|');if(next===readoutKey)return;
+    const next=[s,h,state].join('|');if(next===readoutKey)return;
     readoutKey=next;
     ctx.fillStyle='#081924';ctx.fillRect(0,0,768,256);
     ctx.fillStyle='#163e4c';ctx.fillRect(14,10,740,46);
@@ -362,10 +453,9 @@ function createLandingShuttle(T) {
     ctx.fillStyle='#e9f2e8';ctx.font='600 46px monospace';ctx.fillText(s,28,146,332);ctx.fillText(h,400,146,335);
     ctx.fillStyle='#234651';ctx.fillRect(27,167,712,2);
     ctx.fillStyle='#ecc477';ctx.font='23px "Microsoft YaHei",sans-serif';ctx.fillText('航向目标  '+target,30,207,700);
-    ctx.font='19px "Microsoft YaHei",sans-serif';ctx.textAlign='center';
-    ctx.fillStyle='#8adee2';ctx.fillText('自动航行',185,242);
-    ctx.fillStyle='#e8b956';ctx.fillText('手动接管',384,242);
-    ctx.fillStyle='#91dac6';ctx.fillText('切换视角',581,242);ctx.textAlign='left';
+    ctx.font='20px "Microsoft YaHei",sans-serif';
+    ctx.fillStyle=hatch==='动作中'?'#f0b75e':'#94cfce';ctx.fillText('尾坡 '+hatch,29,242);
+    ctx.fillStyle=pads==='动作中'?'#f0b75e':'#94cfce';ctx.fillText('起落架 '+pads,402,242);
     instrument.map.needsUpdate=true;
   }
   function update({door=0,gear=1,thrust=0,speed=0,altitude=0,mode='',destination=''}={}){
@@ -379,7 +469,7 @@ function createLandingShuttle(T) {
       const length=.11+1.55*t;
       plume.visible=t>.015;plume.scale.set(.23+.12*t,length,.23+.12*t);plume.position.z=5.17+length/2;
     }
-    exhaustMat.opacity=.27+.36*t;readout(speed,altitude,mode,destination);
+    exhaustMat.opacity=.27+.36*t;readout(speed,altitude,mode,destination,d,g);
   }
   function dispose(){
     if(root.parent)root.parent.remove(root);

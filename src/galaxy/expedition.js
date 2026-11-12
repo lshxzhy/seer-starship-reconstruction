@@ -12,9 +12,9 @@
     const transportButton=atlas.querySelector('[data-site-transport]'),shipMapButton=atlas.querySelector('[data-browse-ship]');
     const optics=nav.querySelector('[data-flight-view]'),hand=stage.querySelector('[data-shuttle-hand]');
     const targetOnly=atlas.querySelector('[data-target-only]'),unseat=atlas.querySelector('[data-unseat]');
-    const planets={klose:KLOSE_WORLD,ocean:OCEAN_WORLD},bodies={};
-    let definition=KLOSE_WORLD,sites=definition.sites,groundSites=kloseMapDestinations(),radius=definition.radius;
-    let byId=new Map(groundSites.map(s=>[s.id,s])),home=sites[0],walkingLinks=[];
+    const {regions,flights}=PANO_NAVIGATION,bodies={};
+    let region=regions.klose,definition=region.definition,home=definition.sites[0],radius=definition.radius;
+    let kloseTerrain;
     const clamp=T.MathUtils.clamp;
     // The exposed sky strip in maps 10, 12, 550 and 943 sets the local horizon.
     // In enclosed areas, extend the distant canopy or cave mouth into the haze.
@@ -35,7 +35,7 @@
       'ocean-floor':air(0x22556b,0x142f4b,0x255565,.01,.62,.75),
       'ocean-sanctum':air(0x245a76,0x10273c,0x234354,0,.56,.71)
     };
-    let airWeights=new Float32Array(sites.length);
+    let airWeights=new Float32Array(definition.sites.length);
     let lastAirLat,lastAirLon;
     const keys=new Set(),touch=new Map(),pendingSteps=new Map(),events=new AbortController();
     const listen=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:events.signal});
@@ -59,10 +59,8 @@
     const displacement=(a,b)=>kloseDisplacement(a,b,radius);
     function usePlanet(id){
       body?.setMode('hidden');body=bodies[id]||bodies.klose;
-      definition=planets[id]||KLOSE_WORLD;sites=definition.sites;radius=definition.radius;
-      groundSites=kloseMapDestinations(definition);byId=new Map(groundSites.map(s=>[s.id,s]));home=sites[0];
-      walkingLinks=[...definition.routes,...groundSites.filter(s=>s.area).map(s=>[s.area,s.id])];
-      airWeights=new Float32Array(sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
+      region=regions[id]||regions.klose;definition=region.definition;radius=definition.radius;home=definition.sites[0];
+      airWeights=new Float32Array(definition.sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
       stage.dataset.planet=definition.id;
       if(sky){
         const rings=definition.rings;
@@ -71,19 +69,11 @@
       }
     }
     function localVehicle(){return flight?.planetId===definition.id;}
-    function destination(id){
-      if(id==='dock')return {planetId:'klose',name:'赛尔号泊位'};
-      for(const def of Object.values(planets)){
-        const site=def.landingSites.find(s=>s.id===id);
-        if(site)return {...site,planetId:def.id};
-      }
-      return null;
-    }
     function nearestSite(at){
-      return groundSites.reduce((a,b)=>displacement(at,a).distance<=displacement(at,b).distance?a:b);
+      return region.places.reduce((a,b)=>displacement(at,a).distance<=displacement(at,b).distance?a:b);
     }
     function groundDestination(id){
-      if(id!=='shuttle-ramp')return byId.get(id);
+      if(id!=='shuttle-ramp')return region.byId.get(id);
       return localVehicle()?parkedRamp():null;
     }
     function plotRoute(id){
@@ -100,18 +90,19 @@
       for(let i=0;i<queue.length;i++){
         const route=queue[i],last=route[route.length-1];
         if(last===goal){path=route;break;}
-        for(const [a,b] of walkingLinks){
+        for(const [a,b] of region.walkingLinks){
           const next=a===last?b:b===last?a:null;
           if(next&&!seen.has(next)){seen.add(next);queue.push([...route,next]);}
         }
       }
       if(id==='shuttle-ramp')path.push(id);
-      if(path.length>1&&displacement(position,byId.get(path[0])).distance<24)path.shift();
+      if(path.length>1&&displacement(position,region.byId.get(path[0])).distance<24)path.shift();
     }
     function buildWorld(){
       if(world)return;
       world=new T.Scene();world.background=new T.Color(0x071322);view=new T.PerspectiveCamera(49,1,.1,radius*8);
-      bodies.klose=createKloseSurface(T,world);bodies.ocean=createOceanSurface(T,world);
+      kloseTerrain??=createKloseTerrain(T);
+      bodies.klose=createKloseSurface(T,world,KLOSE_WORLD,kloseTerrain);bodies.ocean=createOceanSurface(T,world);
       pano=createPanoSystem(T,world);usePlanet('klose');
       body.setSafariState(safariState);
       craft=createLandingShuttle(T);world.add(craft.root);
@@ -177,7 +168,7 @@
       if(position.lat!==lastAirLat||position.lon!==lastAirLon){
         lastAirLat=position.lat;lastAirLon=position.lon;
         let total=0;
-        for(const [i,site] of sites.entries()){
+        for(const [i,site] of definition.sites.entries()){
           airWeights[i]=1-T.MathUtils.smoothstep(displacement(position,site).distance,35,96);
           total+=airWeights[i];
         }
@@ -186,7 +177,7 @@
         let weight=Math.max(0,1-total);
         u.horizon.value.copy(open.horizon);u.zenith.value.copy(open.zenith);world.fog.color.copy(open.haze);
         let sun=open.sun*weight,fill=open.fill*weight,clouds=open.clouds*weight,moon=0;
-        for(const [i,site] of sites.entries()){
+        for(const [i,site] of definition.sites.entries()){
           const w=airWeights[i],a=atmosphere[site.id];if(!w)continue;
           weight+=w;const blend=w/weight;
           u.horizon.value.lerp(a.horizon,blend);u.zenith.value.lerp(a.zenith,blend);world.fog.color.lerp(a.haze,blend);
@@ -241,7 +232,7 @@
     function open(saved){
       buildWorld();origin=saved.origin;configureDock();
       flight=createPanoFlight(T,bodies,dock,pano,saved.vehicle);
-      usePlanet(saved.phase==='surface'&&planets[saved.planetId]?saved.planetId:flight.planetId);
+      usePlanet(saved.phase==='surface'&&regions[saved.planetId]?saved.planetId:flight.planetId);
       const current=saved.format===2;
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
@@ -249,7 +240,7 @@
       door=clamp(current&&Number.isFinite(saved.door)?saved.door:1,0,1);gear=flight.status().phase==='flying'?0:1;
       feet.set(0,0,11.8);
       if(current&&Array.isArray(saved.feet)&&saved.feet.length===3&&saved.feet.every(Number.isFinite))feet.fromArray(saved.feet);
-      navTarget=destination(saved.navTarget)?saved.navTarget:home.id;
+      navTarget=flights.has(saved.navTarget)?saved.navTarget:definition.landingSites[0].id;
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
@@ -282,11 +273,11 @@
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
     function flightTarget(id=navTarget){
-      const s=destination(id)||destination(home.id);
+      const s=flights.get(id)||flights.get(definition.landingSites[0].id);
       const p=id==='dock'?dock.position.clone():bodies[s.planetId].point(s.lat,s.lon);
       return p.add(pano.offset(flight.planetId,s.planetId,flight.orbitTime));
     }
-    function targetName(){return destination(navTarget)?.name||home.name;}
+    function targetName(){return flights.get(navTarget)?.name||home.name;}
     function setPhase(next,keepWalking=false){
       phase=next;
       if(keepWalking){pendingSteps.clear();lastTime=null;}else resetInput();
@@ -396,7 +387,7 @@
       if(kind==='manual'){flight.manual();updateUI();persist();return;}
       if(flight.status().phase!=='flying'&&door>0){pending=kind;updateUI();requestFrame();persist();return;}
       if(kind==='auto'){
-        const dest=destination(navTarget);
+        const dest=flights.get(navTarget);
         if(!dest||!flight.autopilot(navTarget==='dock'?'dock':'surface',navTarget==='dock'?undefined:dest,dest.planetId))
           say('已位于目标，或该处暂时无法进场');
       }else flight.launch();
@@ -615,7 +606,7 @@
         boost:pressed('ShiftLeft')||pressed('ShiftRight'),brake:pressed('KeyX')||time<brakeUntil}:{});
       s=flight.status();
       if(phase!=='surface'&&definition.id!==flight.planetId)usePlanet(flight.planetId);
-      pano.update(definition.id,flight.orbitTime,{showOrbits:false});
+      pano.update(definition.id,flight.orbitTime);
       dock.root.position.copy(dockCenter).add(pano.offset(definition.id,'klose',flight.orbitTime));
       dock.root.updateMatrixWorld(true);
       if(s.phase!==previousFlight){
@@ -653,21 +644,21 @@
     function paintChart(){
       const flying=phase!=='surface';
       if(flying){
-        drawSystemChart(chart,destination(select.value)?.planetId||definition.id,id=>{
-          select.value=id==='dock'?'dock':planets[id].landingSites[0].id;showSelection();
+        drawSystemChart(chart,flights.get(select.value)?.planetId||definition.id,id=>{
+          select.value=id==='dock'?'dock':regions[id].definition.landingSites[0].id;showSelection();
         });return;
       }
-      drawKloseMap(chart,{definition,sites:groundSites,selected:select.value,
+      drawKloseMap(chart,{region,selected:select.value,
         ramp:groundDestination('shuttle-ramp'),observer:position,
         onSelect:id=>{select.value=id;showSelection();}});
     }
     function drawSystemChart(svg,selected,onSelect,storedVehicle){
-      buildWorld();
+      kloseTerrain??=createKloseTerrain(T);
       const current=phase==='hidden'?'klose':definition.id;
       const time=phase==='hidden'&&storedVehicle?storedVehicle.orbitTime||0:flight?.orbitTime||0;
-      const carrier=dock?.position||kloseCarrierStation(bodies.klose);
+      const carrier=dock?.position||kloseCarrierStation(kloseTerrain);
       const restored=phase==='hidden'?storedVehicle:null;
-      pano.drawChart(svg,{time,current,selected,onSelect,carrier,
+      drawPanoChart(svg,{time,current,selected,onSelect,carrier,
         vehicle:restored?.p?vec(...restored.p):flight?.position||carrier,vehiclePlanet:restored?.planetId||flight?.planetId||'klose'});
     }
     function showSelection(){
@@ -677,8 +668,8 @@
         summary.textContent=at?at.description+'　／　距你 '+distanceText(displacement(position,at).distance):'';
       }
       else{
-        const dest=flightTarget(id),name=destination(id);
-        summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':planets[name.planetId].name+' · '+name.name)+
+        const dest=flightTarget(id),name=flights.get(id);
+        summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':regions[name.planetId].definition.name+' · '+name.name)+
           '　／　直距 '+distanceText(dest.distanceTo(flight.position));
       }
       paintChart();
@@ -691,17 +682,9 @@
       const walking=phase==='surface',helm=phase==='helm';
       resetInput();select.replaceChildren();
       if(walking){
-        for(const [label,entries] of [
-          ['经典探索区',sites],['外围地形',groundSites.filter(s=>s.area&&!s.id.endsWith('-pad'))],
-          ['探索区着陆坪',groundSites.filter(s=>s.id.endsWith('-pad'))]
-        ]){
-          const group=document.createElement('optgroup');group.label=label;
-          for(const at of entries)group.append(new Option(at.name,at.id));
-          if(entries.length)select.append(group);
-        }
-        if(groundDestination('shuttle-ramp'))select.add(new Option('L-01 · 登陆艇尾坡','shuttle-ramp'));
+        appendSurfaceOptions(select,region,groundDestination('shuttle-ramp'));
       }else{
-        for(const def of Object.values(planets)){
+        for(const {definition:def} of Object.values(regions)){
           const group=document.createElement('optgroup');group.label=def.name;
           for(const site of def.landingSites)group.append(new Option(def.name+' · '+site.name,site.id));
           select.append(group);
