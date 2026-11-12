@@ -7,11 +7,17 @@
       {id:'map',name:'舰内导航图',type:'随船资料',
         note:'查看你所在的甲板、各舱室的入口与升降站。'},
       {id:'drill',name:'挖矿钻头',type:'采集装备',
-        note:'机械室配发的双臂钻头。装备后可靠近机械室的采样工位试钻。'},
+        note:'机械室配发的双臂钻头。在机械室试钻，或前往克洛斯草原、海洋星深水区采黄晶矿。'},
+      {id:'gas',name:'气体收集器',type:'手部作业工具',
+        note:'蓝色吸气机与挖矿钻头共用手部槽位。到海洋星浅水区的甲烷气泡泉，面向采集点按 E。'},
+      {id:'dive',name:'潜水套装',type:'潜水帽 · 手舵 · 腰带',
+        note:'三件一键穿戴，提供水下照明和稳定步速，可同时带钻头或气体收集器。头部与喷火器互斥。'},
       {id:'flame',name:'火焰喷射器',type:'先锋队装备',
-        note:'从赛尔号实验室领取。对准克洛斯星林间蘑菇怪的护膜连续命中，可开启首领挑战。'},
+        note:'到赛尔号实验室后，打开“精灵 → SPT 首领 → 蘑菇怪”，选择“领取并装备火焰喷射器”。对准林间蘑菇怪护膜连续命中，可开启首领挑战。'},
       {id:'sample',name:'训练矿样',type:'采集材料',
-        note:'在机械室采样工位用钻头取下的矿物标本。'}
+        note:'在机械室采样工位用钻头取下的矿物标本。'},
+      {id:'resources',name:'星球采集物',type:'黄晶矿 · 甲烷',
+        note:'本期三个明确采集点各取一份标本，永久记录，重复点击不再发放。到动力室交付：黄晶矿每份20豆，甲烷每份100豆。'}
     ];
     const box=document.createElement('section');
     box.className='seer-inventory';
@@ -58,14 +64,13 @@
           <button type="button" class="inv-action" data-inv-more>收回储存箱</button>
         </div></div>
       <div class="inv-rack" role="group" aria-label="已持有物品"></div>
-    </div><p class="inv-wallet" data-inv-wallet></p><button type="button" class="inv-find" data-inv-find>在舰图定位钻头领取处 · 机械室</button>`;
+    </div><p class="inv-wallet" data-inv-wallet></p>`;
     box.prepend(style);
     container.append(box);
     const preview=box.querySelector('[data-inv-image]');
     const name=box.querySelector('[data-inv-name]'),kind=box.querySelector('[data-inv-kind]');
     const note=box.querySelector('[data-inv-note]'),use=box.querySelector('[data-inv-use]');
     const stow=box.querySelector('[data-inv-more]'),rack=box.querySelector('.inv-rack');
-    const findDrill=box.querySelector('[data-inv-find]');
     const wallet=box.querySelector('[data-inv-wallet]');
 
     // Paint inventory illustrations once, at double resolution. Each small
@@ -127,6 +132,17 @@
           face('M-4 3Q-7 13 0 19L4 18Q0 12 3 3Z','#85835f');
           c.restore();
         }
+      }else if(id==='gas'){
+        face('M53 34L96 28Q119 37 117 64L75 80Q51 69 53 34Z','#3c91c4');
+        ellipse(58,54,21,25,steel);ellipse(58,54,15,19,'#2b637d');ellipse(58,54,10,14,'#172c37');
+        face('M94 63L108 59L111 88L94 92Z',steel);ellipse(106,42,6,7,'#f8d659');
+      }else if(id==='dive'){
+        face('M35 43Q75 16 121 42L114 52L42 53Z','#668d9e');
+        face('M69 35L89 8L97 37Z','#44788e');
+        face('M28 62L46 55L53 88L37 94L23 80Z','#668d9e');
+        face('M113 58L132 62L140 81L126 95L108 88Z','#668d9e');
+        ellipse(80,79,24,11,steel);ellipse(80,77,17,6,'#294550');
+        for(const x of [61,95])face(`M${x} 66v-13h5v18Z`,'#e5eeee');
       }else if(id==='map'){
         face('M34 24L111 13L132 73L55 94L30 34Z','#637e88');
         face('M32 25L110 11L128 69L52 88Z','#acc9cf');
@@ -166,14 +182,17 @@
     function refresh(){
       if(box.hidden)return;
       const s=getState();
-      const visible={flyer:true,map:!!s.hasMap,drill:!!s.drillOwned,flame:!!s.flameTool,sample:s.samples>0};
-      if(!visible[selected])selected='flyer';
+      const visible={flyer:!s.onSurface,map:!!s.hasMap,drill:true,gas:true,dive:true,flame:true,sample:s.samples>0,resources:(s.fieldResources?.ore||s.fieldResources?.gas)>0};
+      if(!visible[selected])selected=s.onSurface?'drill':'flyer';
       const summary={flyer:s.mounted?'驾驶中':s.flyerStored?'已收纳':s.nearFlyer?'停在身旁':'停在舰内',
-        map:'随身',drill:s.drillEquipped?'已装备':'已收纳',flame:'已装备',sample:'× '+(s.samples||0)};
-      const signature=JSON.stringify([visible,summary,selected,s.active,s.landing,s.credits]);
+        map:'随身',drill:!s.drillOwned?'机械室领取':s.drillEquipped?'已装备':'已收纳',
+        gas:!s.fieldKitOwned?'机械室领取':s.handTool==='gas'?'已装备':'已收纳',
+        dive:!s.fieldKitOwned?'机械室领取':s.divingSuit?'已穿戴':'已收纳',
+        flame:!s.flameTool?'实验室领取':s.flameEquipped?'已装备':'已收纳',sample:'× '+(s.samples||0),
+        resources:'黄晶矿 '+(s.fieldResources?.ore||0)+' · 甲烷 '+(s.fieldResources?.gas||0)};
+      const signature=JSON.stringify([visible,summary,selected,s.active,s.landing,s.credits,s.atExchange,s.onSurface]);
       if(last===signature)return;
       last=signature;
-      findDrill.hidden=s.drillOwned;
       wallet.textContent='赛尔豆余额　'+s.credits;
       for(const item of items){
         const slot=slots.get(item.id);
@@ -184,19 +203,25 @@
       preview.src=slot.image.src;name.textContent=item.name;
       kind.textContent=item.type+' · '+summary[selected];note.textContent=item.note;
       const actions={flyer:s.landing?'正在着陆':s.mounted?'着陆下机':s.flyerStored?'取出滑翔翼':
-        s.nearFlyer?'驾驶滑翔翼':'调到身旁',map:'打开舰图',drill:s.drillEquipped?'卸下钻头':'装备钻头'};
-      use.hidden=selected==='flame';use.textContent=selected==='sample'?'跟随路标交付':actions[selected]||'';
+        s.nearFlyer?'驾驶滑翔翼':'调到身旁',map:'打开导航图',
+        drill:!s.drillOwned?'前往机械室领取':s.drillEquipped?'卸下钻头':'装备钻头',
+        gas:!s.fieldKitOwned?'前往机械室领取':s.handTool==='gas'?'卸下收集器':'装备收集器',
+        dive:!s.fieldKitOwned?'前往机械室领取':s.divingSuit?'收起潜水装':'穿戴潜水装',
+        flame:!s.flameTool?'前往实验室领取':s.flameEquipped?'收起喷火器':'装备喷火器',
+        resources:s.atExchange?'交付采集物 · '+s.fieldResources.value+'豆':'前往动力室交付'};
+      use.hidden=false;use.textContent=selected==='sample'?'跟随路标交付':actions[selected]||'';
       use.disabled=!s.active || (selected==='flyer'&&s.landing===true);
-      stow.hidden=selected!=='flyer'||s.mounted||s.flyerStored;
+      const fieldDestination=['drill','gas','dive','flame'].includes(selected);
+      stow.hidden=fieldDestination?false:selected!=='flyer'||s.mounted||s.flyerStored;
+      stow.textContent=fieldDestination?({drill:'前往草原黄晶矿',gas:'前往浅水甲烷泉',dive:'前往海洋浅水区',flame:'前往林间调查区'}[selected]):'收回储存箱';
       stow.disabled=!s.active;
     }
     function click(e){
       const button=e.target.closest?.('button');
       if(!button || !box.contains(button)||button.disabled)return;
-      if(button===findDrill)onUse('locateDrill');
-      else if(button.dataset.invItem)selected=button.dataset.invItem;
+      if(button.dataset.invItem)selected=button.dataset.invItem;
       else if(button===use)onUse(selected==='sample'?'delivery':selected);
-      else if(button===stow)onUse('stowFlyer');
+      else if(button===stow)onUse(selected==='flyer'?'stowFlyer':'field:'+selected);
       refresh();
     }
     box.addEventListener('click',click);

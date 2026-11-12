@@ -9,7 +9,6 @@
     const carProgress=root.querySelector('[data-car-progress]');
     const movePad = root.querySelector('[data-move-pad]');
     const boardControls = root.querySelector('[data-boarding-controls]');
-    const boardButton = root.querySelector('[data-console="terminal"]');
     const tag = root.querySelector('[data-tag]');
     const info = root.querySelector('[data-detail]');
     const hint = root.querySelector('[data-controls-hint]');
@@ -31,15 +30,27 @@
     const escort=createSpiritEscort(T,scene,worldMetre);
     const flight=createPersonalFlight(worldMetre,population);
     const lifts=createLiftRide(habitat.plan.lifts,habitat.liftPlant);
+    const jump=createSeerJump(seerRobots.height);
     let liftSelectionKey='',tripSaveKey='',lastLiftReadout=-Infinity;
     function cabinFor(s){
       return s?.inside&&!flight.mounted?{center:s.center,bounds:habitat.liftPlant.cabinBounds,carried:lifts.riding}:null;
+    }
+    function walkSupport(at=pose){
+      const cabin=cabinFor(lifts.status(at));
+      const room=habitat.byId.get(habitat.location(at).roomId);
+      return {ground:cabin?cabin.center.y:at.y+contactFloor(at),
+        ceiling:cabin?cabin.center.y+cabin.bounds.height:at.y+(room?.spec.height||3.10)};
+    }
+    function clearWalk(from,to){
+      const support=walkSupport(to);
+      return jump.canMoveTo(support.ground,support.ceiling)&&
+        flight.clearsParked(from,to)&&population.clearsCrew(from,to);
     }
     const benchButton=root.querySelector('[data-bench]');
     const embarkButton=root.querySelector('[data-embark]');
     const dutyButton=root.querySelector('[data-duty-contact]');
     function nearbyDuty(){
-      return active&&pose&&!lifts.riding&&!flight.mounted?population.nearestNamed(pose,4):null;
+      return active&&pose&&!lifts.riding&&!flight.mounted&&!jump.airborne?population.nearestNamed(pose,4):null;
     }
     function meet(member){
       if(member)stage.dispatchEvent(new CustomEvent('seer-visit-crew',{detail:{characterId:member.characterId}}));
@@ -49,7 +60,7 @@
     const actions=[embarkButton,benchButton,exchangeButton,callButton,dutyButton];
     let primaryAction=null;
     function updatePrimaryAction(){
-      const next=active&&!lifts.riding&&!flight.mounted?actions.find(button=>!button.hidden&&!button.disabled):null;
+      const next=active&&!lifts.riding&&!flight.mounted&&!jump.airborne?actions.find(button=>!button.hidden&&!button.disabled):null;
       if(next===primaryAction)return;
       if(primaryAction){primaryAction.removeAttribute('data-primary-action');primaryAction.removeAttribute('aria-keyshortcuts');}
       primaryAction=next;
@@ -62,15 +73,21 @@
     const routeCancel=root.querySelector('[data-route-cancel]');
     const guide=createDeliveryGuide();
     const notice=root.querySelector('[data-notice]');
-    let noticeTimer=0,drillOwned=false,drillEquipped=false,samples=0,tracking=false;
+    let noticeTimer=0,drillOwned=false,samples=0,tracking=false;
     let flameTool=false;
+    let fieldKitOwned=false,handTool='none',divingSuit=false,flameStowed=false,fieldSamples=[],fieldSold=[];
     let batches=[];
     const delivered=()=>batches.reduce((sum,n)=>sum+n,0);
     const mined=()=>samples+delivered();
-    const goal=()=>tracking&&(samples||mined()<trainingTerms.capacity)?(samples?'deliver':'mine'):null;
+    function goal(){
+      if(!tracking)return null;
+      if(samples||fieldResourceSummary(pack()).value)return 'deliver';
+      return mined()<trainingTerms.capacity?'mine':null;
+    }
     const locker=createPilotLocker(restorePack);
     function pack(){
-      return {version:2,drillOwned,drillEquipped,samples,batches:[...batches],flyerStored:flight.stored,tracking};
+      return {version:3,drillOwned,drillEquipped:handTool==='drill',fieldKitOwned,handTool,divingSuit,flameStowed,
+        fieldSamples:[...fieldSamples],fieldSold:[...fieldSold],samples,batches:[...batches],flyerStored:flight.stored,tracking};
     }
     function updateSamples(){
       const items=habitat.byId.get('machine')?.group?.userData.trainingSamples;
@@ -79,8 +96,8 @@
     function restorePack(p){
       if(!normalizePilotPack(p))return;
       const merged=mergePilotPacks(pack(),p);
-      ({drillOwned,drillEquipped,samples,batches,tracking}=merged);
-      flight.setStored(merged.flyerStored);pilot.setDrill(drillEquipped);updateSamples();
+      ({drillOwned,fieldKitOwned,handTool,divingSuit,flameStowed,fieldSamples,fieldSold,samples,batches,tracking}=merged);
+      flight.setStored(merged.flyerStored);syncEquipment();updateSamples();
       if(active&&pose){
         flightControls();requestFrame();
         stage.dispatchEvent(new Event('seer-pack-change'));
@@ -90,13 +107,38 @@
       clearTimeout(noticeTimer);notice.textContent=message;notice.hidden=false;
       noticeTimer=setTimeout(()=>{notice.hidden=true;},3500);
     }
+    function equipmentState(){return {handTool,divingSuit,flameEquipped:flameTool&&!flameStowed&&!divingSuit};}
+    function syncEquipment(){
+      const state=equipmentState();
+      pilot.setDrill(state.handTool==='drill');pilot.setFieldEquipment(state);pilot.setFlameTool(state.flameEquipped);
+    }
+    function saveEquipment(){syncEquipment();locker.write(pack());stage.dispatchEvent(new Event('seer-pack-change'));requestFrame();persist();}
+    function useEquipment(id){
+      if(lifts.riding||flight.mounted)return false;
+      if(id==='drill'){if(!drillOwned)return false;setDrill(handTool!=='drill');return true;}
+      if(id==='gas'){if(!fieldKitOwned)return false;handTool=handTool==='gas'?'none':'gas';}
+      else if(id==='dive'){if(!fieldKitOwned)return false;divingSuit=!divingSuit;if(divingSuit)flameStowed=true;}
+      else if(id==='flame'){if(!flameTool)return false;flameStowed=!flameStowed;if(!flameStowed)divingSuit=false;}
+      else return false;
+      saveEquipment();notifyPlayer(id==='dive'?(divingSuit?'已穿戴潜水帽、手舵和腰带。':'已收起潜水装。'):id==='gas'?(handTool==='gas'?'已装备气体收集器。':'已收起气体收集器。'):(flameStowed?'已收起火焰喷射器。':'已装备火焰喷射器。'));return true;
+    }
+    function collectField(id){
+      const deposit=FIELD_DEPOSITS[id];if(!deposit||fieldSamples.includes(id))return {ok:false,message:'此处标本已采集。'};
+      if(handTool!==deposit.tool)return {ok:false,message:'装备已改变，采集取消。'};
+      fieldSamples.push(id);saveEquipment();return {ok:true,message:deposit.name+' × 1 已入包，可带到动力室交付。'};
+    }
+    function deliverField(){
+      if(!atExchange())return false;
+      const resources=fieldResourceSummary(pack());if(!resources.value)return false;
+      fieldSold=[...fieldSamples];saveEquipment();notifyPlayer('采集物已签收，到账 '+resources.value+' 赛尔豆。');return true;
+    }
     function atBench(){
-      if(!active||currentRoomId!=='machine'||flight.mounted)return false;
+      if(!active||currentRoomId!=='machine'||flight.mounted||jump.airborne)return false;
       const room=habitat.byId.get('machine'),sign=room.side===1?-1:1;
       return Math.hypot((pose.x-room.center[0])*sign+15.8,(pose.z-room.center[2])*sign-6.3)<3.25;
     }
     function atExchange(){
-      if(!active||currentRoomId!=='power'||flight.mounted)return false;
+      if(!active||currentRoomId!=='power'||flight.mounted||jump.airborne)return false;
       const room=habitat.byId.get('power'),sign=room.side===1?-1:1;
       const lx=(pose.x-room.center[0])*sign,lz=(pose.z-room.center[2])*sign;
       return Math.hypot(lx-powerExchangePoint.x,lz-powerExchangePoint.z)<=1.35;
@@ -114,7 +156,7 @@
         '动力室已签收 '+count+' 份，到账 '+receipt.reward+' 赛尔豆。'};
     }
     function trackRoute(on){
-      tracking=on&&(samples>0||mined()<trainingTerms.capacity);
+      tracking=on&&(samples>0||fieldResourceSummary(pack()).value>0||mined()<trainingTerms.capacity);
       locker.write(pack());flightControls();requestFrame();persist();
     }
     routeButton.addEventListener('click',()=>trackRoute(!tracking));
@@ -122,8 +164,8 @@
     routeCancel.addEventListener('click',cancelGuide);
     function useBench(){
       if(!atBench())return;
-      if(!drillOwned){drillOwned=true;notifyPlayer('已领取挖矿钻头。在背包中选择钻头即可装备。');}
-      else if(!drillEquipped){setDrill(true);return;}
+      if(!drillOwned||!fieldKitOwned){drillOwned=fieldKitOwned=true;notifyPlayer('已领取随船作业装备：挖矿钻头、气体收集器与潜水装。在背包 B 选择穿戴。');}
+      else if(handTool!=='drill'){setDrill(true);return;}
       else if(mined()<trainingTerms.capacity){
         samples++;tracking=true;pilot.workDrill();updateSamples();
         notifyPlayer('训练矿样已入包。跟随金色箭头前往动力室。');
@@ -133,7 +175,7 @@
     }
     function setDrill(on){
       if(!drillOwned)return;
-      drillEquipped=on;pilot.setDrill(on);locker.write(pack());requestFrame();persist();
+      handTool=on?'drill':'none';saveEquipment();
       notifyPlayer(on?'已装备双臂挖矿钻头。':'挖矿钻头已放回背包。');
     }
     benchButton.addEventListener('click',useBench);
@@ -351,7 +393,7 @@
       if(!active)return;
       crewDialogue.close();companion.greet();focusFlightControls();requestFrame();
     });
-    const walkHint='点击画面后用 WASD 行走 · Shift 快行 · 拖动环视 · V 切换视角';
+    const walkHint='点击画面后用 WASD 行走 · 空格跳跃 · Shift 快行 · 拖动环视 · V 切换视角';
     const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
     function flightControls(){
       const berth=currentBerth();
@@ -366,15 +408,16 @@
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
-      mount.disabled=flight.landing;
+      mount.disabled=flight.landing||jump.airborne;
       climb.hidden=descend.hidden=!active||!flight.mounted;
       benchButton.hidden=!atBench();
-      benchButton.textContent=!drillOwned?'领取挖矿钻头':mined()>=trainingTerms.capacity?'矿样已采完':!drillEquipped?'装备钻头':'钻取训练矿样';
-      benchButton.disabled=mined()>=trainingTerms.capacity;
+      benchButton.textContent=!fieldKitOwned?'领取作业装备':mined()>=trainingTerms.capacity?'矿样已采完':handTool!=='drill'?'装备钻头':'钻取训练矿样';
+      benchButton.disabled=fieldKitOwned&&mined()>=trainingTerms.capacity;
       exchangeButton.hidden=!atExchange();
       updatePrimaryAction();
-      routeButton.hidden=delivered()===trainingTerms.capacity;
-      routeButton.textContent=goal()?'暂停路标':samples?'引导至动力室':'引导至机械室矿架';
+      const fieldValue=fieldResourceSummary(pack()).value;
+      routeButton.hidden=delivered()===trainingTerms.capacity&&!fieldValue;
+      routeButton.textContent=goal()?'暂停路标':samples||fieldValue?'引导至动力室':'引导至机械室矿架';
       let record=(delivered()===trainingTerms.capacity?'任务已完成 · ':'')+'背包 '+samples+
         ' 份 · 累计签收 '+delivered()+' 份 · 奖励 '+delivered()*trainingTerms.unitReward+' 赛尔豆';
       if(batches.length)record+='。'+batches.map((n,i)=>'回执 '+(i+1)+'（'+n+' 份，'+n*trainingTerms.unitReward+' 豆）').join('，');
@@ -384,6 +427,7 @@
     }
     function operateFlyer(){
       if(!active||flight.landing||lifts.riding)return;
+      if(jump.airborne){notifyPlayer('落地后再乘坐滑翔翼。');return;}
       if(lifts.status(pose)?.inside){notifyPlayer('请先走出轿厢，再取出滑翔翼。');return;}
       crewDialogue.close();clearInputs(!flight.mounted);
       const result=flight.interact(pose,yaw);
@@ -407,7 +451,7 @@
     }
 
     function focusFlightControls() {
-      boardButton.focus({preventScroll:true});
+      canvas.focus({preventScroll:true});
     }
     function clearInputs(stopFlyer=true) {
       keys.clear();
@@ -507,6 +551,7 @@
       if(passenger)pose=passenger;
       else if (p && [p.x,p.y,p.z].every(Number.isFinite) && habitat.canStand(p)) pose={...p};
       else pose=habitat.move(entry,-Math.sin(entry.yaw||0)*3.45,-Math.cos(entry.yaw||0)*3.45);
+      jump.reset(walkSupport().ground);
       const room=habitat.byId.get(id);
       let initialYaw=entry.yaw||0,initialPitch=.02;
       if(room){
@@ -542,7 +587,7 @@
     function leave() {
       if (!active) return;
       crewDialogue.setBoarded(false);
-      active=false;clearInputs();restoreExteriorRig();clearTimeout(idleClock.timer);
+      active=false;clearInputs();jump.reset();restoreExteriorRig();clearTimeout(idleClock.timer);
       pilot.leave();population.setActive(false);populationText.hidden=true;
       companion.leave();escort.hide();flight.leave();
       habitat.setActive(false);
@@ -565,6 +610,7 @@
       const arrival=lifts.consumeArrival();
       if(arrival){
         pose=arrival;delete stage.dataset.liftTravel;movePad.hidden=false;
+        jump.reset(walkSupport().ground);
         habitat.updateLOD(pose);population.setActive(true);
         refreshPlace(true);clearInputs();tripSaveKey='';
         notifyPlayer('已平层开门，可以走出轿厢。');persist();
@@ -592,18 +638,20 @@
         if(result.notice){info.textContent=result.notice;notifyPlayer(result.notice);}
       }else if(magnitude && dt){
         const step=dt*(boost?walkPace.run:walkPace.walk);
-        pose=habitat.move(pose,dx*step,dz*step,.43,
-          (from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
+        pose=habitat.move(pose,dx*step,dz*step,.43,clearWalk);
         habitat.updateLOD(pose);
         refreshPlace();
       }
       const station=lifts.status(pose),cabin=cabinFor(station);
       const ride=lifts.riding?null:flight.draw(pose,dt);
+      const support=walkSupport();
+      if(lifts.riding||flight.mounted)jump.reset(support.ground);
+      else jump.update(dt,support.ground,support.ceiling);
       const contactInView=pilot.style==='eye'&&!ride&&!cabin?nearbyDuty()?.position:null;
       companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0,cabin,contactInView);
-      marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight+(ride?.footOffset||0),pose.z));
+      marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight+(ride?.footOffset||0)+jump.offset,pose.z));
       nearFill.position.copy(marker);nearFill.position.y+=.35*worldMetre;
-      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride,cabin);
+      const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride,cabin,jump);
       pose.yaw=pilot.facing;
       if(!lifts.riding)population.update(pose,dt,sight);
       if(ride||cabin||lifts.riding)escort.hide();
@@ -619,12 +667,12 @@
       routeCancel.hidden=!goal()||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
       if(time-lastLiftReadout>90||arrival){showLift(station);lastLiftReadout=time;}
-      const animate=moving||flight.inMotion||lifts.moving;
+      const animate=moving||jump.airborne||flight.inMotion||lifts.moving;
       if(!animate)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
       return animate;
     }
     function beginPassengerView(s){
-      clearInputs();crewDialogue.close();flight.leave();
+      clearInputs();jump.reset();crewDialogue.close();flight.leave();
       escort.hide();
       population.setActive(false);guide.hide();routeHint.hidden=routeCancel.hidden=true;
       stage.dataset.liftTravel='true';
@@ -636,7 +684,7 @@
       showLift(lifts.status(pose));focusFlightControls();requestFrame();persist();
     });
     function selectLiftFloor(dest){
-      if(!active||!dest||flight.mounted||lifts.riding)return;
+      if(!active||!dest||flight.mounted||lifts.riding||jump.airborne)return;
       const cabin=cabinFor(lifts.status(pose));
       if(cabin&&!companion.insideCar(cabin)){notifyPlayer('等待超能 NoNo 入厢。');return;}
       if(cabin&&lifts.depart(pose,dest)){
@@ -714,6 +762,16 @@
         !root.contains(target))return;
       if(target.isContentEditable || target.closest?.('input,select,textarea,[role="textbox"]'))return;
       const code=seerControlCode(e);
+      if(code==='Space'&&!flight.mounted){
+        if(target.closest?.('button,a,summary,[role="button"]'))return;
+        e.preventDefault();
+        if(e.repeat||keys.has(code)||lifts.riding)return;
+        const support=walkSupport();
+        if(jump.start(support.ground,support.ceiling)){
+          beginHold();keys.add(code);flightControls();requestFrame();
+        }
+        return;
+      }
       if(code==='KeyE'){
         if(e.repeat){e.preventDefault();return;}
         // Moving into or out of a workstation between two HUD refreshes must
@@ -730,7 +788,7 @@
         return;
       }
       if(!keyCodes.has(code) || ((code==='Space'||code==='KeyC')&&!flight.mounted))return;
-      if(code==='Space' && target.closest?.('button') && target!==boardButton)return;
+      if(code==='Space' && target.closest?.('button,a,summary,[role="button"]'))return;
       e.preventDefault();
       if(!keys.has(code)){beginHold();keys.add(code);}
       requestFrame();
@@ -770,7 +828,7 @@
           lifts.movePassenger(dx,dz);pose=lifts.passengerPose();requestFrame();persist();return;
         }
         if(flight.mounted)pose=flight.drive(pose,x,z,false,.055).pose;
-        else pose=habitat.move(pose,dx,dz,.43,(from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
+        else pose=habitat.move(pose,dx,dz,.43,clearWalk);
         habitat.updateLOD(pose);refreshPlace();requestFrame();persist();
       });
     }
@@ -780,7 +838,7 @@
     document.addEventListener('visibilitychange',onHidden);
     function currentBerth(){
       const room=habitat.byId.get(currentRoomId);
-      const port=active&&room&&!flight.mounted&&!lifts.riding?shipTransporters.nearby(room,pose):null;
+      const port=active&&room&&!flight.mounted&&!lifts.riding&&!jump.airborne?shipTransporters.nearby(room,pose):null;
       if(!port||port.id!==berthRoute?.id)return port;
       const route=port.routes.find(r=>r.destination===berthRoute.destination);
       return route?{...port,...route}:port;
@@ -788,12 +846,12 @@
     function snapshot(){return pose ? {pose:{x:pose.x,y:pose.y,z:pose.z,level:pose.level},yaw,pitch,expression,smiling:expression==='smile',berthRoute,flight:flight.snapshot(),lifts:lifts.snapshot(),roomId:currentRoomId||pose.level,...pilot.snapshot()} : null;}
     return {
       enter,leave,frame,refresh:()=>active && refreshPlace(true),
-      clearInputs,cancelGuide,pack,restorePack,deliver,setExpression,get expression(){return expression;},
+      clearInputs,cancelGuide,pack,restorePack,deliver,deliverField,equipmentState,useEquipment,collectField,setExpression,get expression(){return expression;},
       setEscortSpecies(id){escort.setSpecies(id);requestFrame();},
       setFlameTool(value){
         const equipped=Boolean(value);
         if(flameTool===equipped)return;
-        flameTool=equipped;pilot.setFlameTool(equipped);
+        flameTool=equipped;syncEquipment();
         stage.dispatchEvent(new Event('seer-pack-change'));requestFrame();
       },
       openSpiritDialogue:(context,onClose)=>crewDialogue.openSpirit?.(context,onClose)??false,
@@ -801,16 +859,18 @@
       openDutyChat:id=>crewDialogue.openCharacter?.(id),
       get inTransit(){return lifts.riding;},
       get commsOpen(){return crewDialogue.isOpen;},
-      consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
+      consoleState(){
+        const fieldResources=fieldResourceSummary(pack()),deliveredCount=delivered();
+        return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,
+        grounded:active&&!flight.mounted&&!lifts.riding&&!jump.airborne,jumpHeight:jump.offset,
         nearFlyer:active&&flight.reachable(pose),flyerStored:flight.stored,landing:flight.landing,
-        hasMap:true,companionActive:active,drillOwned,drillEquipped,flameTool,samples,tracking,delivered:delivered(),
-        credits:delivered()*trainingTerms.unitReward,unitReward:trainingTerms.unitReward,atExchange:atExchange(),
+        hasMap:true,companionActive:active,drillOwned,drillEquipped:handTool==='drill',flameTool,fieldKitOwned,...equipmentState(),fieldResources,samples,tracking,delivered:deliveredCount,
+        credits:deliveredCount*trainingTerms.unitReward+fieldResources.credits,unitReward:trainingTerms.unitReward,atExchange:atExchange(),
         receipts:batches.map((count,index)=>({number:index+1,count,reward:count*trainingTerms.unitReward}))};},
       useItem(id){
         if(!active||lifts.riding)return;
         if(id==='delivery'){trackRoute(true);notifyPlayer('已开启动力室交付路标。');}
         else if(id==='flyer')operateFlyer();
-        else if(id==='drill')setDrill(!drillEquipped);
         else if(id==='stowFlyer'&&!flight.mounted){
           flight.setStored(true);locker.write(pack());flightControls();requestFrame();persist();
           notifyPlayer('奥飞滑翔翼已收回储存箱。');

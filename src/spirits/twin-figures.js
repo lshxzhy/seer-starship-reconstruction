@@ -1,9 +1,292 @@
+// #089 迪达 / #090 迪尔克. Original Taomee battle vectors were viewed directly:
+// https://seer.61.com/resource/fightResource/pet/swf/89.swf (sprites 17 / 70)
+// https://seer.61.com/resource/fightResource/pet/swf/90.swf (sprites 23 / 62)
+// The low brow, inset almond eyes, flared/curling trunk, flame carapace and four
+// separate feet follow those frames. Unseen joint depth is a 3D reconstruction.
+function createDidaFamilyFigure(T,id){
+  const adult=id===90,root=new T.Group(),body=new T.Group();root.add(body);
+  root.name=adult?'迪尔克':'迪达';
+  const sphere=new T.SphereGeometry(1,40,28),geometries=new Set([sphere]),materials=new Map();
+  const v=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),tau=Math.PI*2;
+  const pink=0xf495a3,rose=0xc75c6c,white=0xfff6ed,orange=0xff9f21,gold=0xffc448,cream=0xffe9a1;
+  function mesh(g,c,parent=body,tissue='cuticle'){
+    geometries.add(g);const key=String(c);
+    if(!materials.has(key))materials.set(key,new T.MeshStandardMaterial({
+      color:new T.Color(c).convertSRGBToLinear(),roughness:.52}));
+    const m=new T.Mesh(g,materials.get(key));m.castShadow=m.receiveShadow=true;parent.add(m);
+    return tissue?finishSpiritPart(m,tissue,materials):m;
+  }
+  function oval(c,p,r,parent=body,tissue='cuticle'){
+    const m=mesh(sphere,c,parent,tissue);m.position.set(...p);m.scale.set(...r);return m;
+  }
+  function geometry(p,indices){
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));
+    g.setIndex(indices);g.computeVertexNormals();return g;
+  }
+  function stroke(c,points,r,parent=body){
+    return mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points),Math.max(24,points.length*3),r,8,false),c,parent);
+  }
+  function sweep(c,points,widths,depths,parent=body,tissue='cuticle'){
+    const curve=new T.CatmullRomCurve3(points.map(p=>v(...p))),rows=48,sides=28,p=[],indices=[];
+    // This family is symmetrical across X. Keeping the section's width on X
+    // makes broad blade-like armour instead of round banana-shaped horns.
+    for(let j=0;j<=rows;j++){
+      const t=j/rows,q=t*(widths.length-1),k=Math.min(widths.length-2,Math.floor(q));
+      const w=T.MathUtils.lerp(widths[k],widths[k+1],q-k),d=T.MathUtils.lerp(depths[k],depths[k+1],q-k);
+      const at=curve.getPointAt(t),tangent=curve.getTangentAt(t).normalize();
+      let n=v(1,0,0).addScaledVector(tangent,-tangent.x).normalize();
+      if(n.lengthSq()<.1)n=v(0,0,1);
+      const b=tangent.clone().cross(n).normalize();
+      for(let i=0;i<sides;i++){
+        const a=i*tau/sides,point=at.clone().addScaledVector(n,Math.cos(a)*w).addScaledVector(b,Math.sin(a)*d);
+        p.push(point.x,point.y,point.z);
+        if(j<rows){const index=j*sides+i,next=j*sides+(i+1)%sides;
+          indices.push(index,next,index+sides,next,next+sides,index+sides);}
+      }
+    }
+    return mesh(geometry(p,indices),c,parent,tissue);
+  }
+  const hipY=adult?.82:.59,hipX=adult?.285:.27,frontZ=adult?.34:.30,rearZ=adult?-.40:-.35;
+  const torsoY=adult?.78:.56,torsoR=adult?[.395,.29,.60]:[.35,.245,.52];
+  oval(adult?white:pink,[0,torsoY,-.075],torsoR);
+  // Measure the skin over the forelegs, excluding the helmet and flame tips.
+  const shoulderHeight=torsoY+torsoR[1]*Math.sqrt(1-((frontZ+.075)/torsoR[2])**2);
+  const head=new T.Group();head.position.set(0,adult?.86:.66,adult?.40:.35);body.add(head);
+  const headR=adult?[.285,.24,.33]:[.29,.215,.32];
+  oval(adult?white:pink,[0,0,0],headR,head);
+  function facePoint(a,b,lift=0){
+    const [x,y,z]=headR,p=v(x*Math.cos(b)*Math.sin(a),y*Math.sin(b),z*Math.cos(b)*Math.cos(a));
+    const n=v(p.x/(x*x),p.y/(y*y),p.z/(z*z)).normalize();return p.addScaledVector(n,lift);
+  }
+  function facePatch(side,colour,a,b,wa,hb,lift,almond=false){
+    const p=[],indices=[],rows=24,cols=36;
+    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
+      const u=-1+2*i/cols,t=-1+2*j/rows;
+      const height=almond?Math.sin((u+1)*Math.PI/2)**.86:Math.sqrt(Math.max(0,1-u*u));
+      const point=facePoint(side*(a+wa*u*(adult?.72:1)),b+hb*t*height*(adult?.80:1)+(almond?.10*u:0),lift);
+      p.push(point.x,point.y,point.z);
+      if(j<rows&&i<cols){const n=j*(cols+1)+i;
+        if(side>0)indices.push(n,n+1,n+cols+1,n+1,n+cols+2,n+cols+1);
+        else indices.push(n,n+cols+1,n+1,n+1,n+cols+1,n+cols+2);}
+    }
+    return mesh(geometry(p,indices),colour,head,colour===0xae1421?'iris':null);
+  }
+  for(const s of [-1,1]){
+    // Every layer lies on the same ellipsoidal skin. There are no eyeball spheres
+    // and no tall stacks of sclera/iris/pupil protruding through the brow.
+    facePatch(s,adult?0xcab1b7:rose,.96,.025,.43,.34,.0015,true);
+    facePatch(s,adult?white:0xffdcdf,.96,.032,.385,.285,.0022,true);
+    facePatch(s,0x341d22,.96,.022,.205,.245,.0029);
+    facePatch(s,0xae1421,.96,-.035,.171,.185,.0036);
+    facePatch(s,0x211319,.94,.060,.139,.167,.0043);
+    facePatch(s,0xfffcf3,.89,.147,.062,.084,.0050);
+  }
+  const nosePoints=adult?[[0,-.015,.22],[0,-.13,.33],[0,-.39,.40],[0,-.49,.42],[0,-.44,.31],[0,-.35,.30]]:
+    [[0,-.025,.22],[0,-.12,.38],[0,-.16,.53],[0,-.125,.67]];
+  sweep(adult?white:pink,nosePoints,adult?[.115,.084,.056,.047,.038,.008]:[.115,.087,.063,.087],
+    adult?[.088,.075,.052,.042,.032,.006]:[.095,.071,.056,.080],head);
+  if(!adult){
+    const lip=new T.Group();lip.position.set(0,-.125,.67);lip.rotation.x=-.23;head.add(lip);
+    const rim=mesh(new T.TorusGeometry(.073,.019,16,48),0xf8b1b9,lip);rim.scale.y=.90;
+    const inner=mesh(new T.CylinderGeometry(.054,.067,.035,40,1,true),0xbc5361,lip,null);
+    inner.rotation.x=Math.PI/2;inner.position.z=-.014;inner.scale.z=.90;inner.material.side=T.BackSide;
+    const hole=mesh(new T.CircleGeometry(.055,40),0x8a3342,lip,null);hole.position.z=-.033;hole.scale.y=.90;
+  }
+  const shellY=adult?.98:.79,shellW=adult?.43:.40,shellL=adult?.68:.61,shellH=adult?.30:.36;
+  function shellPoint(a,t,lift=0){
+    const r=Math.sin(t),front=Math.max(0,Math.cos(a));
+    return v((shellW+lift)*r*Math.sin(a),shellY+(shellH+lift)*Math.cos(t)-.105*r*r*front*front,
+      -.06+(shellL+lift)*r*Math.cos(a));
+  }
+  {
+    const p=[],indices=[],rows=36,sides=96;
+    for(let j=0;j<=rows;j++)for(let k=0;k<sides;k++){
+      const point=shellPoint(k*tau/sides,.001+(Math.PI/2-.001)*j/rows);p.push(point.x,point.y,point.z);
+      if(j<rows){const n=j*sides+k,next=j*sides+(k+1)%sides;
+        indices.push(n,n+sides,next,next,n+sides,next+sides);}
+    }
+    mesh(geometry(p,indices),orange,body,'horn');
+    const rim=[];for(let k=0;k<=96;k++)rim.push(shellPoint(k*tau/96,Math.PI/2,.002));
+    stroke(cream,rim,adult?.035:.030);
+  }
+  if(!adult){
+    // A broad rolled helmet border follows the dome instead of a thin hoop.
+    const p=[],indices=[],rows=12,cols=80;
+    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
+      const a=-2.5+5*i/cols,width=.34*Math.sin(Math.PI*i/cols)**.45;
+      const point=shellPoint(a,Math.PI/2-width*(1-j/rows),.005);p.push(point.x,point.y,point.z);
+      if(j<rows&&i<cols){const n=j*(cols+1)+i;indices.push(n,n+cols+1,n+1,n+1,n+cols+1,n+cols+2);}
+    }
+    mesh(geometry(p,indices),cream,body,'horn');
+  }
+  // Vent marks are shallow dark apertures on the shell, not attached balls.
+  for(const side of [-1,1])for(let j=0;j<3;j++){
+    const a=side*(.69+j*.29),t=.75+j*.035,p=shellPoint(a,t,.004);
+    const n=v(Math.sin(a)*Math.sin(t)/shellW,Math.cos(t)/shellH,Math.cos(a)*Math.sin(t)/shellL).normalize();
+    const vent=mesh(new T.CircleGeometry(1,28),0x723226,body,null);vent.position.copy(p);
+    vent.quaternion.setFromUnitVectors(v(0,0,1),n);vent.scale.set(.026,.041,1);
+  }
+  if(adult){
+    // The front armour is a cupped leaf shield: connected thick edges, a broad
+    // recessed face and a curled U-shaped lower lip, not a round tapered horn.
+    const spine=new T.CatmullRomCurve3([[0,1.02,.68],[0,1.17,.78],[0,1.47,.51],[0,1.76,.17],[0,1.94,-.09]].map(p=>v(...p)));
+    const widths=[.21,.385,.32,.19,.002],rows=56,cols=40,p=[],indices=[];
+    function shieldPoint(t,u,back=false,lift=0){
+      const at=spine.getPointAt(t),tangent=spine.getTangentAt(t).normalize();
+      const outward=v(1,0,0).cross(tangent).normalize(),q=t*(widths.length-1),k=Math.min(widths.length-2,Math.floor(q));
+      const width=T.MathUtils.lerp(widths[k],widths[k+1],q-k);
+      const depth=back?-.045:.025+.10*u*u-.055*(1-u*u)*Math.sin(Math.PI*t);
+      return at.add(v(width*u,0,0)).addScaledVector(outward,depth+lift)
+        .addScaledVector(tangent,.12*u*u*(1-t)**3);
+    }
+    const layerSize=(rows+1)*(cols+1);
+    for(const back of [false,true])for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
+      const at=shieldPoint(j/rows,-1+2*i/cols,back);p.push(at.x,at.y,at.z);
+      if(j<rows&&i<cols){const n=(back?layerSize:0)+j*(cols+1)+i;
+        if(back)indices.push(n,n+cols+1,n+1,n+1,n+cols+1,n+cols+2);
+        else indices.push(n,n+1,n+cols+1,n+1,n+cols+2,n+cols+1);}
+    }
+    const edge=[];
+    for(let i=0;i<=cols;i++)edge.push(i);
+    for(let j=1;j<=rows;j++)edge.push(j*(cols+1)+cols);
+    for(let i=cols-1;i>=0;i--)edge.push(rows*(cols+1)+i);
+    for(let j=rows-1;j>0;j--)edge.push(j*(cols+1));
+    for(let i=0;i<edge.length;i++){
+      const a=edge[i],b=edge[(i+1)%edge.length];indices.push(a,a+layerSize,b,b,a+layerSize,b+layerSize);
+    }
+    mesh(geometry(p,indices),orange,body,'horn');
+    const border=edge.map(i=>v(p[i*3],p[i*3+1],p[i*3+2]));border.push(border[0].clone());
+    stroke(gold,border,.026);
+    const inset=[],insetIndices=[];
+    for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
+      const t=.16+.78*j/rows,u=(-1+2*i/cols)*.62*Math.sin(Math.PI*j/rows)**.55;
+      const at=shieldPoint(t,u,false,.003);inset.push(at.x,at.y,at.z);
+      if(j<rows&&i<cols){const n=j*(cols+1)+i;insetIndices.push(n,n+1,n+cols+1,n+1,n+cols+2,n+cols+1);}
+    }
+    mesh(geometry(inset,insetIndices),cream,body,'horn');
+    for(const s of [-1,1]){
+      sweep(orange,[[s*.24,1.04,.58],[s*.34,1.15,.76],[s*.34,1.36,.66],[s*.28,1.46,.53]],
+        [.083,.087,.052,.003],[.065,.068,.040,.002],body,'horn');
+      sweep(orange,[[s*.23,1.13,-.15],[s*.27,1.38,-.25],[s*.24,1.70,-.26]],
+        [.107,.065,.003],[.083,.055,.002],body,'horn');
+      sweep(orange,[[s*.28,1.02,-.44],[s*.31,1.18,-.55],[s*.27,1.43,-.55]],
+        [.070,.050,.002],[.058,.044,.002],body,'horn');
+      const p=[],indices=[],rows=24,cols=48,hem=[],layerSize=(rows+1)*(cols+1);
+      for(const inner of [false,true])for(let j=0;j<=rows;j++)for(let i=0;i<=cols;i++){
+        const u=i/cols,t=j/rows,z=-.65+1.16*u;
+        const bottom=.73-.42*Math.exp(-(((u-.17)/.18)**2))-.41*Math.exp(-(((u-.79)/.18)**2));
+        const x=s*(.33+.080*Math.sin(Math.PI*t)+.034*Math.sin(Math.PI*u)-(inner?.038:0));
+        const y=T.MathUtils.lerp(.965-.055*Math.cos(tau*u),bottom,t);
+        p.push(x,y,z);
+        if(!inner&&j===rows)hem.push(v(x,y,z));
+        if(j<rows&&i<cols){const n=(inner?layerSize:0)+j*(cols+1)+i;
+          if((s>0)!==inner)indices.push(n,n+1,n+cols+1,n+1,n+cols+2,n+cols+1);
+          else indices.push(n,n+cols+1,n+1,n+1,n+cols+1,n+cols+2);}
+      }
+      const edge=[];
+      for(let i=0;i<=cols;i++)edge.push(i);
+      for(let j=1;j<=rows;j++)edge.push(j*(cols+1)+cols);
+      for(let i=cols-1;i>=0;i--)edge.push(rows*(cols+1)+i);
+      for(let j=rows-1;j>0;j--)edge.push(j*(cols+1));
+      for(let i=0;i<edge.length;i++){
+        const a=edge[i],b=edge[(i+1)%edge.length];
+        if(s>0)indices.push(a,a+layerSize,b,b,a+layerSize,b+layerSize);
+        else indices.push(a,b,a+layerSize,b,b+layerSize,a+layerSize);
+      }
+      mesh(geometry(p,indices),pink);stroke(0xf8b5c1,hem,.024);
+    }
+  }else{
+    const seam=[];for(let k=0;k<=40;k++){
+      const a=k/40*Math.PI,t=Math.abs(Math.PI/2-a);seam.push(shellPoint(a<Math.PI/2?0:Math.PI,t,.004));
+    }
+    stroke(0xe37e18,seam,.008);
+  }
+  const legs=[];
+  for(const s of [-1,1])for(const front of [true,false]){
+    const hip=v(s*hipX,hipY,front?frontZ:rearZ),foot=new T.Group();root.add(foot);
+    const legColour=adult?white:pink,upper=oval(legColour,[0,0,0],[1,1,1],root),lower=oval(legColour,[0,0,0],[1,1,1],root);
+    oval(legColour,[hip.x,hip.y-.025,hip.z],[adult?.12:.145,adult?.15:.175,adult?.14:.15]);
+    oval(legColour,[0,.065,.012],[adult?.135:.13,.065,adult?.145:.14],foot);
+    for(const dx of [-.049,.049])stroke(adult?0xcbb2b8:rose,[v(dx,.045,.132),v(dx,.016,.139)],.005,foot);
+    const phase=s<0?(front?0:.75):(front?.5:.25);
+    legs.push({s,front,hip,foot,upper,lower,contact:v(hip.x,0,hip.z),swing:null,nextLift:.69-phase});
+  }
+  function bone(part,a,b,r){
+    const d=b.clone().sub(a);part.position.copy(a).lerp(b,.5);part.quaternion.setFromUnitVectors(v(0,1,0),d.clone().normalize());
+    part.scale.set(r,d.length()/2+r*.35,r*.93);
+  }
+  let time=0,cycle=0,weight=0;
+  function update(dt,effort=0,locomotion={}){
+    const motionDt=Number.isFinite(dt)?Math.max(0,dt):0,animDt=Math.min(.12,motionDt);time+=animDt;
+    const scale=Math.max(.01,Math.abs(root.scale.y)),speed=Number.isFinite(locomotion.speed)?locomotion.speed/scale:Math.max(0,effort)*.38;
+    const lateralSpeed=Number.isFinite(locomotion.lateralSpeed)?locomotion.lateralSpeed/scale:0;
+    const turnRate=Number.isFinite(locomotion.turnRate)?locomotion.turnRate:0;
+    const velocities=legs.map(leg=>v(lateralSpeed+turnRate*leg.hip.z,0,speed-turnRate*leg.hip.x));
+    const pace=Math.max(...velocities.map(velocity=>velocity.length())),moving=pace>.00001;
+    weight+=(Math.min(1,pace/.12)-weight)*(1-Math.exp(-animDt*12));
+    const stride=adult?.36:.29,stance=.69,cycleRate=pace*stance/stride;cycle+=motionDt*cycleRate;
+    const angle=turnRate*motionDt,c=Math.cos(angle),s=Math.sin(angle),travel=speed*motionDt;
+    // Callers turn first, then move along their new +Z. Invert that exact order
+    // so planted feet (and swing endpoints) retain their ground positions.
+    function groundFrame(point){
+      const x=point.x,z=point.z;point.x=c*x-s*z-lateralSpeed*motionDt;point.z=s*x+c*z-travel;
+    }
+    body.position.y=.009*weight*Math.cos(cycle*tau*2);body.rotation.z=.014*weight*Math.sin(cycle*tau);
+    head.rotation.x=.012*Math.sin(time*1.5)+.018*weight*Math.cos(cycle*tau*2);
+    let lifted=legs.filter(leg=>leg.swing).length;
+    for(const [index,leg] of legs.entries()){
+      groundFrame(leg.contact);leg.foot.rotation.y-=angle;
+      if(leg.swing){
+        groundFrame(leg.swing.from);groundFrame(leg.swing.to);
+        leg.swing.fromYaw-=angle;leg.swing.toYaw-=angle;
+      }
+      const velocity=velocities[index];let started=false;
+      const reach=Math.hypot(leg.contact.x-leg.hip.x,leg.contact.z-leg.hip.z);
+      if(moving&&!leg.swing&&lifted<2&&(cycle>=leg.nextLift||reach>stride*.58)){
+        const duration=T.MathUtils.clamp((1-stance)/cycleRate,.10,.55);
+        const lead=duration+Math.min(stance/(2*cycleRate),.45);
+        const to=leg.hip.clone().addScaledVector(velocity,lead);to.y=0;
+        leg.swing={from:leg.contact.clone(),to,elapsed:0,duration,fromYaw:leg.foot.rotation.y,toYaw:turnRate*duration};
+        leg.nextLift+=Math.max(1,Math.floor(cycle-leg.nextLift)+1);started=true;lifted++;
+      }
+      let lift=0,rock=0;
+      if(leg.swing){
+        const step=leg.swing;if(!started)step.elapsed+=motionDt;
+        // A stopped animal finishes a raised step; grounded feet never snap
+        // back under the hips when speed/turnRate become zero.
+        if(!moving){
+          const dx=step.to.x-leg.hip.x,dz=step.to.z-leg.hip.z,d=Math.hypot(dx,dz),limit=stride*.55;
+          if(d>limit){step.to.x=leg.hip.x+dx*limit/d;step.to.z=leg.hip.z+dz*limit/d;}
+        }
+        const progress=Math.min(1,step.elapsed/step.duration),ease=progress*progress*(3-2*progress);
+        leg.contact.copy(step.from).lerp(step.to,ease);lift=.11*Math.sin(Math.PI*progress);
+        leg.foot.rotation.y=T.MathUtils.lerp(step.fromYaw,step.toYaw,ease);rock=-.12*Math.sin(Math.PI*progress);
+        if(progress===1){leg.contact.copy(step.to);leg.swing=null;lift=0;lifted--;}
+      }
+      leg.foot.position.set(leg.contact.x,lift,leg.contact.z);leg.foot.rotation.x=rock;
+      const ankle=leg.contact.clone();ankle.y=.115+lift;
+      const hip=leg.hip.clone().applyEuler(body.rotation).add(body.position);
+      const direction=ankle.clone().sub(hip),distance=direction.length();direction.normalize();
+      const upperLength=adult?.38:.275,lowerLength=adult?.38:.275;
+      const along=T.MathUtils.clamp((upperLength*upperLength-lowerLength*lowerLength+distance*distance)/(2*Math.max(.01,distance)),.02,upperLength);
+      const bend=v(0,0,leg.front?1:-1).addScaledVector(direction,-direction.z*(leg.front?1:-1)).normalize();
+      const knee=hip.clone().addScaledVector(direction,along).addScaledVector(bend,Math.sqrt(Math.max(0,upperLength*upperLength-along*along)));
+      bone(leg.upper,hip,knee,adult?.105:.125);bone(leg.lower,knee,ankle,adult?.076:.099);
+    }
+  }
+  update(0,0);
+  // About 1.6 / 2.2 times the 1.81 m player's body at the actual shoulders.
+  return {root,articulatedGait:true,shoulderHeight,fieldMinShoulderHeight:adult?4.0:2.9,update,
+    dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
+}
+
 // Classic twin-world figures. Identity/colour references: Taomee's numbered
 // main/spirit/{id}.html and seerh5.61.com pet/head/{id}.png.
 // Full silhouettes were compared with the preserved original battle artwork at
 // wiki.biligame.com/seer/精灵:{id}; unseen backs and joint motion are 3D adaptations.
 // This adds presentation only: no species stats, capture rules or boss rewards.
 function createTwinSpiritFigure(T,id){
+  if(id===89||id===90)return createDidaFamilyFigure(T,id);
   if(![88,89,90,91,97,98,105,106,113,119,120,184,185,188,189].includes(id))return null;
   const root=new T.Group(),body=new T.Group();root.add(body);
   root.name='twin-spirit-'+id;
@@ -43,7 +326,7 @@ function createTwinSpiritFigure(T,id){
       for(let i=0;i<sides;i++){
         const a=i*tau/sides,p=at.clone().addScaledVector(frames.normals[j],Math.cos(a)*r).addScaledVector(frames.binormals[j],Math.sin(a)*r);
         vertices.push(p.x,p.y,p.z);
-        if(j<steps){const n=j*sides+i,next=j*sides+(i+1)%sides;indices.push(n,n+sides,next,next,n+sides,next+sides);}
+        if(j<steps){const n=j*sides+i,next=j*sides+(i+1)%sides;indices.push(n,next,n+sides,next,next+sides,n+sides);}
       }
     }
     const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(vertices,3));g.setIndex(indices);g.computeVertexNormals();
@@ -74,12 +357,30 @@ function createTwinSpiritFigure(T,id){
   function joint(x,y,z,axis,amount,phase=0,parent=body){
     const g=new T.Group();g.position.set(x,y,z);parent.add(g);joints.push({g,axis,amount,phase});return g;
   }
+  function walkJoint(x,y,z,amount,phase=0,parent=body){
+    const g=joint(x,y,z,'x',amount,phase,parent),entry=joints[joints.length-1];
+    entry.walk=true;entry.baseY=y;entry.side=Math.sign(x)||1;entry.forward=z;return g;
+  }
+  function eyePatch(c,x,y,rx,ry,centre,radii,lift=.003,parent=body){
+    const p=[],indices=[],rows=12,sides=48;
+    for(let j=0;j<=rows;j++)for(let k=0;k<sides;k++){
+      const a=k*tau/sides,r=j/rows,px=x+rx*r*Math.cos(a),py=y+ry*r*Math.sin(a);
+      const dx=px-centre[0],dy=py-centre[1];
+      const dz=radii[2]*Math.sqrt(Math.max(.001,1-(dx/radii[0])**2-(dy/radii[1])**2));
+      const normal=v(dx/(radii[0]**2),dy/(radii[1]**2),dz/(radii[2]**2)).normalize();
+      const point=v(px,py,centre[2]+dz).addScaledVector(normal,lift);p.push(point.x,point.y,point.z);
+      if(j<rows){const n=j*sides+k,next=j*sides+(k+1)%sides;indices.push(n,n+sides,next,next,n+sides,next+sides);}
+    }
+    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setIndex(indices);g.computeVertexNormals();
+    return mesh(g,c,parent);
+  }
   function eye(x,y,z,r,parent=body,iris=0x647f7d){
-    oval(0x293a39,x,y,z,r*1.10,r*1.20,r*.34,parent);
-    oval(0xfcfff8,x,y,z+r*.23,r*.96,r*1.04,r*.23,parent);
-    finishSpiritPart(oval(iris,x,y,z+r*.40,r*.55,r*.73,r*.19,parent),'iris',materials);
-    oval(0x293b3b,x,y,z+r*.54,r*.34,r*.51,r*.12,parent);
-    oval(0xffffff,x-r*.17,y+r*.29,z+r*.64,r*.12,r*.17,r*.06,parent);
+    const centre=[0,1.215,0],radii=[.47,.276,.30];
+    eyePatch(0x293a39,x,y,r*1.10,r*1.20,centre,radii,.002,parent);
+    eyePatch(0xfcfff8,x,y,r*.96,r*1.04,centre,radii,.003,parent);
+    finishSpiritPart(eyePatch(iris,x,y,r*.55,r*.73,centre,radii,.004,parent),'iris',materials);
+    eyePatch(0x293b3b,x,y,r*.34,r*.51,centre,radii,.005,parent);
+    eyePatch(0xffffff,x-r*.17,y+r*.29,r*.12,r*.17,centre,radii,.006,parent);
   }
   function screw(c,x,y,z,h,r,turns,parent=body,metal=false){
     const points=[];
@@ -114,17 +415,18 @@ function createTwinSpiritFigure(T,id){
     }
     const spread=adult?.168:.139,eyeY=hy+.01,r=adult?.148:.125;
     for(const s of [-1,1]){
+      const eyeCentre=[0,hy,adult?0:.012],eyeRadii=[hw,adult?.325:.275,adult?.267:.225];
       if(adult){
-        oval(0x337a83,s*spread,eyeY,.225,r*1.32,r*1.47,.040);
-        oval(blue,s*spread,eyeY,.255,r*1.23,r*1.38,.029);
+        eyePatch(0x337a83,s*spread,eyeY,r*1.32,r*1.47,eyeCentre,eyeRadii,.012);
+        eyePatch(blue,s*spread,eyeY,r*1.23,r*1.38,eyeCentre,eyeRadii,.014);
       }
-      oval(0x835310,s*spread,eyeY,.249,r*1.03,r*1.20,.040);
-      oval(0xf0c150,s*spread,eyeY,.277,r*.93,r*1.09,.032);
-      finishSpiritPart(oval(0xad731c,s*spread,eyeY-.006,.301,r*.76,r*.91,.022),'iris',materials);
-      oval(0x171719,s*spread,eyeY+.012,.322,r*.55,r*.70,.014);
-      oval(0xffffff,s*spread-r*.25,eyeY+r*.38,.337,r*.22,r*.24,.008);
-      oval(0xffffff,s*spread-r*.34,eyeY+r*.03,.338,r*.095,r*.13,.007);
-      const leg=joint(s*(adult?.13:.12),adult?.18:.12,-.012,'x',.070,s);
+      eyePatch(0x835310,s*spread,eyeY,r*1.03,r*1.20,eyeCentre,eyeRadii,.016);
+      eyePatch(0xf0c150,s*spread,eyeY,r*.93,r*1.09,eyeCentre,eyeRadii,.018);
+      finishSpiritPart(eyePatch(0xad731c,s*spread,eyeY-.006,r*.76,r*.91,eyeCentre,eyeRadii,.020),'iris',materials);
+      eyePatch(0x171719,s*spread,eyeY+.012,r*.55,r*.70,eyeCentre,eyeRadii,.022);
+      eyePatch(0xffffff,s*spread-r*.25,eyeY+r*.38,r*.22,r*.24,eyeCentre,eyeRadii,.024);
+      eyePatch(0xffffff,s*spread-r*.34,eyeY+r*.03,r*.095,r*.13,eyeCentre,eyeRadii,.025);
+      const leg=walkJoint(s*(adult?.13:.12),adult?.18:.12,-.012,.27,s<0?0:Math.PI);
       rod(blue,[0,0,0],[s*.014,-.055,.022],adult?.033:.021,leg);
       for(let j=-1;j<=1;j++)taper(blue,[[s*.014,-.055,.022],[s*.014+j*.030,-.089,.09],[s*.014+j*.058,-.10,.155]],
         adult?[.022,.020,.002]:[.018,.015,.002],leg);
@@ -211,9 +513,12 @@ function createTwinSpiritFigure(T,id){
         const spine=mesh(new T.ConeGeometry(.035,.086,8),green);spine.position.set(0,headY+.17-k*.065,-.17-k*.035);spine.rotation.x=-.65;
       }
     }else for(const s of [-1,1]){
-      oval(dark,s*.109,.80,.185,.106,.139,.035);oval(0xfffdf3,s*.109,.80,.209,.093,.126,.028);
-      finishSpiritPart(oval(0x87356e,s*.109,.815,.231,.069,.095,.020),'iris',materials);
-      oval(0x151c24,s*.096,.831,.246,.048,.072,.012);oval(0xffffff,s*.105-.021,.865,.259,.025,.031,.007);
+      const centre=[0,headY,-.015],radii=[rx*1.15,.235,rx*1.03];
+      eyePatch(dark,s*.109,.80,.106,.139,centre,radii,.002);
+      eyePatch(0xfffdf3,s*.109,.80,.093,.126,centre,radii,.003);
+      finishSpiritPart(eyePatch(0x87356e,s*.109,.815,.069,.095,centre,radii,.004),'iris',materials);
+      eyePatch(0x151c24,s*.096,.831,.048,.072,centre,radii,.005);
+      eyePatch(0xffffff,s*.105-.021,.865,.025,.031,centre,radii,.006);
     }
   }else if(id===91){
     // A white floating teardrop, two long tipped antennae, large olive-black eyes.
@@ -225,77 +530,23 @@ function createTwinSpiritFigure(T,id){
       const antenna=joint(s*.12,.85,0,'z',.06,s);
       strand(0xf2f5ed,[[0,0,0],[s*.019,.10,-.015],[s*.038,.25,-.008],[s*.065,.32,.008]],.018,antenna);
       oval(0xfafff8,s*.065,.32,.008,.045,.053,.042,antenna);
-      const face=new T.Group();face.position.set(s*.172,-.018,.207);face.rotation.y=s*.38;head.add(face);
-      oval(0x9da39b,0,0,0,.117,.164,.035,face);
-      finishSpiritPart(oval(0x24291b,0,0,.026,.102,.149,.034,face),'iris',materials);
-      oval(0x4b5138,s*.018,-.047,.051,.061,.085,.017,face);
-      oval(0x080d0a,-s*.012,.024,.056,.074,.102,.020,face);
-      strand(0xffffff,[[-.042,.020,.073],[-.040,.073,.070],[-.018,.100,.068]],.008,face);
+      const centre=[0,0,0],radii=[.305,.30,.255];
+      eyePatch(0x9da39b,s*.172,-.018,.117,.164,centre,radii,.002,head);
+      finishSpiritPart(eyePatch(0x24291b,s*.172,-.018,.102,.149,centre,radii,.003,head),'iris',materials);
+      eyePatch(0x4b5138,s*.190,-.065,.061,.085,centre,radii,.004,head);
+      eyePatch(0x080d0a,s*.160,.006,.074,.102,centre,radii,.005,head);
+      eyePatch(0xffffff,s*.172-.031,.060,.012,.048,centre,radii,.006,head);
       rod(0xf6f8ef,[s*.045,.33,0],[s*.15,.19,.025],.023);
     }
     strand(0x777d77,[[-.059,.46,.220],[-.035,.445,.233],[0,.458,.239],[.036,.445,.233],[.060,.460,.22]],.007);
-  }else if(id===89||id===90){
-    const adult=id===90,pink=adult?0xf0b3be:0xee9da7,orange=0xee8c17,gold=0xffbd45,cream=0xffe8a2;
-    oval(pink,0,.43,-.08,.30,.25,.40);
-    const head=joint(0,.46,.30,'x',.026);
-    oval(adult?0xf7e8e7:pink,0,0,.04,.25,.21,.25,head);
-    for(const s of [-1,1]){
-      const face=new T.Group();face.position.set(s*.20,.068,.175);face.rotation.y=s*.79;head.add(face);
-      oval(0xa44c55,0,0,0,.111,.105,.022,face);
-      oval(0xffdfdd,0,.005,.015,.097,.086,.024,face);
-      finishSpiritPart(oval(0xc52f39,0,-.005,.038,.055,.070,.020,face),'iris',materials);
-      oval(0x37191f,0,.005,.055,.037,.052,.012,face);oval(0xfffaf0,-.011,.025,.067,.014,.021,.006,face);
-      oval(pink,s*.228,-.005,-.035,.079,.145,.123,head);
-      for(const zz of [-.29,.22]){
-        const leg=joint(s*.20,.31,zz,'x',.055,s+zz*4);
-        oval(adult?0xf9e9e5:pink,0,-.12,0,.077,.19,.085,leg);
-        oval(adult?0xfff1e8:0xe696a0,0,-.255,.025,.09,.045,.105,leg);
-        for(const dx of [-.037,.037])strand(0xb57078,[[dx,-.244,.116],[dx,-.272,.118]],.005,leg);
-      }
-    }
-    const nose=adult?[[0,-.04,.17],[0,-.17,.29],[0,-.34,.33],[0,-.38,.27],[0,-.30,.22]]:
-      [[0,-.025,.17],[0,-.105,.32],[0,-.13,.45],[0,-.10,.51]];
-    taper(adult?0xffeae8:pink,nose,adult?[.102,.070,.045,.018]:[.105,.077,.061,.064],head);
-    if(!adult){
-      const opening=ring(0xcd747e,0,-.10,.51,.064,.012,head);opening.rotation.x=-.25;
-      oval(0x9c4554,0,-.10,.517,.048,.048,.007,head);
-    }else for(const s of [-1,1])taper(0xfffaf1,[[s*.16,-.08,.16],[s*.20,-.15,.25],[s*.24,-.235,.30]],[.060,.040,.001],head);
-    // The orange carapace is a connected dome with a pale rolled border.
-    const positions=[],indices=[],rows=18,sectors=48;
-    for(let j=0;j<=rows;j++)for(let k=0;k<sectors;k++){
-      const a=k*tau/sectors,t=j/rows*Math.PI*.5,front=Math.cos(a),r=Math.sin(t);
-      positions.push(.355*r*Math.sin(a),.58+.215*Math.cos(t)+.025*front,-.075+.52*r*front);
-      if(j<rows){const n=j*sectors+k,next=j*sectors+(k+1)%sectors;indices.push(n,n+sectors,next,next,n+sectors,next+sectors);}
-    }
-    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setIndex(indices);g.computeVertexNormals();
-    finishSpiritPart(mesh(g,orange),'scute',materials);
-    const border=[];for(let k=0;k<=64;k++){const a=k*tau/64;border.push([.355*Math.sin(a),.58+.025*Math.cos(a),-.075+.52*Math.cos(a)]);}
-    strand(cream,border,.031);
-    for(const s of [-1,1])for(let k=0;k<3;k++){
-      const x=s*(.14+.052*k),z=.29-.09*k,yy=.58+.215*Math.sqrt(Math.max(.05,1-(x/.355)**2-((z+.075)/.52)**2))+.025;
-      const mark=oval(0x9e4e1a,x,yy,z,.025,.008,.037);mark.rotation.z=-s*.5;mark.rotation.x=.45;
-    }
-    if(adult){
-      for(const s of [-1,1]){
-        taper(gold,[[s*.11,.74,.35],[s*.19,.92,.42],[s*.19,1.13,.42],[s*.11,1.28,.38]],[.132,.123,.072,.002]);
-        taper(orange,[[s*.27,.67,-.25],[s*.31,.87,-.33],[s*.27,1.05,-.30]],[.082,.071,.001]);
-        taper(gold,[[s*.22,.66,-.44],[s*.23,.80,-.51],[s*.20,.95,-.48]],[.058,.045,.001]);
-        const fold=[];for(let j=0;j<=30;j++){const t=j/30;fold.push([s*(.31+.025*Math.sin(Math.PI*t)),.55-.17*Math.sin(Math.PI*t),.28-.63*t]);}
-        strand(pink,fold,.059);
-      }
-      taper(orange,[[0,.77,-.12],[0,1.04,-.19],[0,1.22,-.10]],[.112,.075,.001]);
-    }else{
-      const seam=[];for(let k=0;k<=28;k++){const t=k/28*Math.PI;seam.push([.022,.585+.215*Math.sin(t),-.075+.52*Math.cos(t)]);}
-      strand(0xd26b13,seam,.010);
-    }
   }else if(id===97||id===98){
     const adult=id===98,blue=0x3167a2,deep=0x123e69,cyan=0x32c7ca,teal=0x19ac91,white=0xe7eff0;
     if(adult){
       oval(teal,0,.38,-.22,.19,.20,.35);
       for(const s of [-1,1]){
-        const front=joint(s*.18,.34,.25,'x',.08,s);
+        const front=walkJoint(s*.18,.34,.25,.28,s<0?0:Math.PI);
         oval(blue,0,-.12,.045,.118,.18,.16,front);oval(0x4e99dd,0,-.245,.075,.12,.055,.14,front);
-        const back=joint(s*.20,.31,-.39,'x',.09,s+Math.PI);
+        const back=walkJoint(s*.20,.31,-.39,.30,s<0?Math.PI*1.5:Math.PI*.5);
         rod(white,[0,.025,.02],[s*.035,-.10,-.09],.067,back);
         oval(teal,s*.035,-.12,-.08,.080,.13,.10,back);oval(0x4a95d5,s*.035,-.23,-.08,.111,.056,.128,back);
         const collar=ring(white,s*.016,.37,-.25,.20,.025);collar.rotation.y=Math.PI/2;
@@ -303,7 +554,7 @@ function createTwinSpiritFigure(T,id){
     }else{
       cylinder(deep,0,.26,0,.285,.25,.10);cylinder(blue,0,.21,0,.26,.23,.073);
       for(const s of [-1,1]){
-        const foot=joint(s*.12,.15,0,'x',.075,s);
+        const foot=walkJoint(s*.12,.15,0,.32,s<0?0:Math.PI);
         oval(white,0,-.04,.035,.085,.12,.092,foot);oval(0xfafffa,0,-.098,.07,.068,.060,.063,foot);
       }
     }
@@ -315,10 +566,10 @@ function createTwinSpiritFigure(T,id){
     plate(teal,0,.012,.134,width+.025,height+.018,.013,.11,head);
     plate(white,0,.024,.152,width,height,.012,.105,head);
     for(const s of [-1,1]){
-      oval(0x174c94,s*width*.25,.024,.185,width*.107,.068,.014,head);
-      finishSpiritPart(oval(0x5f9ee7,s*width*.25,.024,.198,width*.084,.057,.013,head),'iris',materials);
-      oval(0x123c72,s*width*.25,.03,.209,width*.048,.042,.009,head);
-      oval(0xffffff,s*width*.25-.011,.047,.219,.012,.019,.005,head);
+      oval(0x174c94,s*width*.25,.024,.178,width*.107,.068,.003,head);
+      finishSpiritPart(oval(0x5f9ee7,s*width*.25,.024,.182,width*.084,.057,.0025,head),'iris',materials);
+      oval(0x123c72,s*width*.25,.03,.185,width*.048,.042,.002,head);
+      oval(0xffffff,s*width*.25-.011,.047,.188,.012,.019,.0015,head);
       const electrode=new T.Group();electrode.position.set(s*(width*.60),0,-.025);electrode.rotation.z=s*Math.PI/2;head.add(electrode);
       cylinder(deep,0,0,0,.245,.245,.055,electrode,true);
       cylinder(blue,0,-.034,0,.230,.230,.025,electrode,true);
@@ -370,7 +621,7 @@ function createTwinSpiritFigure(T,id){
     // Low spotted legs beneath a heavy cream-and-mint spiral shell, not a snail body.
     const pink=0xdcae9d,cream=0xf4e0b4,groove=0xa89973;
     for(const s of [-1,1]){
-      const foot=joint(s*.12,.13,.035,'x',.08,s);
+      const foot=walkJoint(s*.12,.13,.035,.29,s<0?0:Math.PI);
       oval(pink,0,0,0,.082,adult?.095:.137,.092,foot);
       for(let i=0;i<3;i++)oval(0xb88478,(i-1)*.032,.02+.048*(i%2),.077,.013,.023,.008,foot);
     }
@@ -380,10 +631,11 @@ function createTwinSpiritFigure(T,id){
       oval(0xba8a7d,x,y,.293-Math.abs(x)*.18,.012,.019,.007);
     }
     for(const s of [-1,1]){
-      oval(0x514343,s*.095,.335,.292,.047,.071,.023);
-      oval(0xa46a68,s*.095,.337,.309,.034,.059,.018);
-      oval(0x161719,s*.095,.340,.323,.020,.046,.012);
-      oval(0xffffff,s*.095-.009,.364,.334,.010,.017,.006);
+      const centre=[0,.31,.17],radii=[.205,.159,.146];
+      eyePatch(0x514343,s*.095,.335,.047,.071,centre,radii,.002);
+      eyePatch(0xa46a68,s*.095,.337,.034,.059,centre,radii,.003);
+      eyePatch(0x161719,s*.095,.340,.020,.046,centre,radii,.004);
+      eyePatch(0xffffff,s*.095-.009,.364,.010,.017,centre,radii,.005);
     }
     strand(0x805d58,adult?[[-.039,.265,.309],[-.034,.235,.316],[.034,.235,.316],[.039,.265,.309]]:
       [[-.079,.235,.300],[0,.225,.316],[.079,.235,.300]],.007);
@@ -445,7 +697,7 @@ function createTwinSpiritFigure(T,id){
       oval(stone,0,-.50,0,.16,.15,.15,arm);
       for(const x of [-.085,.085])block(ivory,x,-.56,.116,.063,.16,.055,arm);
       strand(moss,[[0,.25,.12],[-s*.04,.12,.14],[s*.022,-.09,.144],[s*.005,-.23,.122]],.018,arm);
-      const leg=joint(s*.18,.62,0,'x',.028,s*2);
+      const leg=walkJoint(s*.18,.62,0,.21,s<0?0:Math.PI);
       cylinder(stone,0,-.18,0,.14,.095,.38,leg);
       oval(stone,0,-.39,.015,.098,.09,.103,leg);
       const vine=[];for(let k=0;k<=64;k++){const t=k/64,a=t*tau*2.15;vine.push([.128*Math.cos(a)*(1-t*.28),-.04-.35*t,.128*Math.sin(a)*(1-t*.28)]);}
@@ -462,7 +714,7 @@ function createTwinSpiritFigure(T,id){
     oval(gold,0,.12,0,.35,.25,.43,trunk,true);
     for(const s of [-1,1]){
       for(const z of [-.22,.20]){
-        const leg=joint(s*.32,-.05,z,'x',.06,s+z,trunk);
+        const leg=walkJoint(s*.32,-.05,z,.24,(s<0?0:Math.PI)+(z<0?Math.PI:0),trunk);
         oval(dark,0,-.02,0,.16,.17,.18,leg,true);
         oval(light,s*.032,.04,.015,.16,.165,.18,leg,true);
         for(let k=-3;k<=3;k++)rod(steel,[k*.035,-.12,.115],[k*.035,-.17,.083],.007,leg,true);
@@ -497,10 +749,23 @@ function createTwinSpiritFigure(T,id){
       const spike=mesh(new T.ConeGeometry(.039,.16,16),0xd93b46,tail,true);spike.rotation.x=Math.PI/2;spike.position.set(x,.75,.30);
     }
   }
-  let time=0;
-  return {root,update(dt,effort=0){
-    time+=Math.min(dt,.12);const motion=1+Math.min(1,effort);
-    for(const j of joints)j.g.rotation[j.axis]=Math.sin(time*(id===113?1.4:1.8)*motion+j.phase)*j.amount;
+  let time=0,walkPhase=0,walkWeight=0;
+  return {root,articulatedGait:joints.some(j=>j.walk),update(dt,effort=0,locomotion={}){
+    dt=Math.min(.12,Math.max(0,dt));time+=dt;
+    const scale=Math.max(.01,Math.abs(root.scale.y));
+    const speed=Number.isFinite(locomotion.speed)?locomotion.speed/scale:Math.max(0,effort)*.40;
+    const turnRate=Number.isFinite(locomotion.turnRate)?locomotion.turnRate:0;
+    const moving=Math.min(1,Math.abs(speed)*5+Math.abs(turnRate)*.6);
+    walkWeight+=(moving-walkWeight)*Math.min(1,dt*12);
+    walkPhase+=dt*(Math.abs(speed)*7+Math.abs(turnRate)*1.9);
+    for(const j of joints){
+      if(j.walk){
+        const phase=walkPhase+j.phase,pivotOnly=Math.abs(speed)<.025&&Math.abs(turnRate)>.03;
+        const direction=pivotOnly?-Math.sign(turnRate)*j.side:1;
+        j.g.rotation.x=Math.sin(phase)*j.amount*walkWeight*direction;
+        j.g.position.y=j.baseY+Math.max(0,Math.cos(phase))*.035*walkWeight;
+      }else j.g.rotation[j.axis]=Math.sin(time*(id===113?1.4:1.8)+j.phase)*j.amount;
+    }
     for(const [i,m] of discharges.entries())m.opacity=.28+.22*(.5+.5*Math.sin(time*2.4+i*.45));
     body.position.y=id===91?.025*Math.sin(time*2.4):[105,106,188,189].includes(id)?.014*Math.sin(time*2):0;
     if(id===105)body.rotation.y=.065*Math.sin(time*.9);

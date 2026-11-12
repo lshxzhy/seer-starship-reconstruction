@@ -134,16 +134,40 @@ function createStarterWaterFigure(T,id){
     }
     return mesh(geometry(positions,indices),colour,parent,'fin');
   }
-  function eye(parent,position,side,size,angry=false){
-    const group=new T.Group();group.position.copy(position);group.rotation.set(0,side*(adult?.87:.49),side*(angry?-.17:-.07));
-    parent.add(group);eyes.push(group);
-    oval(line,0,0,0,size*1.10,size*.98,size*.24,group,null);
-    oval(0x63203f,0,0,size*.20,size,size*.89,size*.18,group,null);
-    oval(0xc94087,side*size*.06,-size*.12,size*.40,size*.76,size*.66,size*.12,group,'iris');
-    oval(0x50203e,-side*size*.12,size*.16,size*.52,size*.58,size*.59,size*.08,group,null);
-    oval(0xffeff7,-size*.19,size*.29,size*.63,size*.32,size*.27,size*.04,group,null);
-    if(angry)stroke(shade,[[-size*1.12,size*.57,.022],[0,size*.73,.042],[size*.99,size*.64,.015]],size*.13,group);
-    return group;
+  function eye(parent,surface,a,y,side,size,angry=false){
+    const delta=.0005,da=surface(a+delta,y).sub(surface(a-delta,y)),dy=surface(a,y+delta).sub(surface(a,y-delta));
+    const metricA=da.length()/(2*delta),metricY=dy.length()/(2*delta);
+    const layers=[],tilt=-side*(angry?.17:.16),ca=Math.cos(tilt),sa=Math.sin(tilt),rows=12,sectors=48;
+    for(const [colour,cx,cy,rx,ry,lift] of [
+      [line,0,0,1.10,.98,.0060],[0x63203f,0,0,1,.89,.0068],
+      [0xc94087,side*.06,-.12,.76,.66,.0076],
+      [0x50203e,-side*.12,.16,.58,.59,.0084],[0xffeff7,-.19,.29,.32,.27,.0092]
+    ]){
+      const positions=[],indices=[],samples=[];
+      for(let j=0;j<=rows;j++)for(let k=0;k<sectors;k++){
+        const angle=tau*k/sectors,r=j/rows,u=(cx+rx*r*Math.cos(angle))*size,w=(cy+ry*r*Math.sin(angle))*size;
+        samples.push([u*ca-w*sa,u*sa+w*ca]);positions.push(0,0,0);
+        if(j<rows){const n=j*sectors+k,next=j*sectors+(k+1)%sectors;
+          indices.push(n,n+sectors,next,next,n+sectors,next+sectors);}
+      }
+      const g=geometry(positions,indices);mesh(g,colour,parent,colour===0xc94087?'iris':null);layers.push({g,samples,lift});
+    }
+    let previous=-1;
+    const blink=value=>{
+      if(Math.abs(value-previous)<.0001)return;previous=value;
+      for(const {g,samples,lift} of layers){
+        const positions=g.attributes.position;
+        samples.forEach(([x,z],i)=>{
+          const angle=a+x/metricA,height=y+z*value/metricY;
+          const normal=surface(angle+delta,height).sub(surface(angle-delta,height))
+            .cross(surface(angle,height+delta).sub(surface(angle,height-delta))).normalize();
+          const point=surface(angle,height).addScaledVector(normal,lift);
+          positions.setXYZ(i,point.x,point.y,point.z);
+        });
+        positions.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();
+      }
+    };
+    blink(1);eyes.push(blink);
   }
   function ankleFoot(parent,side,x,z,size=1,claws=true){
     const foot=new T.Group();foot.position.set(side*x,0,z);foot.rotation.y=side*.15;parent.add(foot);legs.push(foot);
@@ -229,18 +253,9 @@ function createStarterWaterFigure(T,id){
     const mouth=[];for(let k=0;k<=30;k++)mouth.push(headPoint(-1.03+2.06*k/30,.881+.013*Math.cos(k/30*Math.PI*2),.006));
     stroke(0x658a9d,mouth,.0045,head);
     for(const side of [-1,1]){
-      const a=side*.755,y=1.105,eyeSize=.126,eyeGroup=eye(head,headPoint(a,y,.010),side,eyeSize);
-      const angular=headPoint(a+.003,y).sub(headPoint(a-.003,y));
-      const upright=headPoint(a,y+.003).sub(headPoint(a,y-.003));
-      const normal=angular.cross(upright).normalize(),facing=normal.clone();
-      // The eye looks forward beneath the swept forehead. Limit the upward
-      // tilt and lift its rim along the true surface normal to avoid embedding.
-      facing.y=Math.min(facing.y,Math.hypot(facing.x,facing.z)*Math.tan(.32));facing.normalize();
-      const alignment=T.MathUtils.clamp(normal.dot(facing),-1,1);
-      const clearance=.010+eyeSize*1.10*Math.sqrt(Math.max(0,1-alignment*alignment));
-      eyeGroup.position.copy(headPoint(a,y)).addScaledVector(normal,clearance);
-      eyeGroup.quaternion.setFromUnitVectors(v(0,0,1),facing);
-      eyeGroup.rotateZ(-side*.16);
+      // Conforming colour surfaces retain the existing head shape and full eye
+      // outline without lifting an entire eyeball away from a steep forehead.
+      eye(head,headPoint,side*.755,1.105,side,.126);
       // Forehead leaves follow the slope of the widened face, above the eyes.
       const spot=[];
       for(const [a,y] of [[.70,1.330],[.53,1.445],[.59,1.541],[.76,1.571],[.98,1.525],[.94,1.409]])spot.push(headPoint(side*a,y,.008));
@@ -290,7 +305,7 @@ function createStarterWaterFigure(T,id){
     const mouth=[];for(let k=0;k<=32;k++)mouth.push(surfacePoint(headRows,-1.18+2.36*k/32,1.590+.020*(Math.abs(k-16)/16),.006));
     stroke(0x6a91a4,mouth,.0055,head);
     for(const side of [-1,1]){
-      eye(head,surfacePoint(headRows,side*.91,1.766,.005),side,.071,true);
+      eye(head,(a,y)=>surfacePoint(headRows,a,y),side*.91,1.766,side,.071,true);
       const brow=surfacePoint(headRows,side*.83,1.821,.009);
       sweep(shade,[[brow.x-side*.038,brow.y+.014,brow.z+.010],[brow.x+side*.012,brow.y+.016,brow.z+.016],
         [brow.x+side*.055,brow.y-.015,brow.z-.018]],[.024,.027,.003],[.020,.022,.002],head);
@@ -353,6 +368,6 @@ function createStarterWaterFigure(T,id){
     for(const [i,fin] of fins.entries())fin.rotation.y=(adult?.012:.035)*Math.sin(time*1.8+i);
     tail.rotation.y=(adult?.055:.13)*Math.sin(time*(1.6+stride*1.8));
     const cycle=time%(adult?6.1:5.4),blink=1-.87*Math.max(0,1-Math.abs(cycle-(adult?5.8:5.1))/.11);
-    for(const eye of eyes)eye.scale.y=blink;
+    for(const eye of eyes)eye(blink);
   },dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
 }

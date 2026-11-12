@@ -68,12 +68,18 @@ function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const naturalHeight=centimetres>0?centimetres/100:extent.y;
   const displayHeight=Math.max(FIELD_SPIRIT_MIN_HEIGHT,FIELD_SPIRIT_SCALE*naturalHeight);
   const size=displayHeight*(boss?FIELD_BOSS_SCALE:1)/sceneScale;
-  const factor=size/Math.max(.01,extent.y),root=new T.Group();
+  // The measured skin landmark moves with the same floor normalization as the
+  // visible body. Ornament tips must not determine an elephant's body scale.
+  const shoulderHeight=model.shoulderHeight>0?Math.max(0,model.shoulderHeight-bounds.min.y):0;
+  const shoulderFactor=shoulderHeight>0&&model.fieldMinShoulderHeight>0?
+    model.fieldMinShoulderHeight/shoulderHeight/sceneScale:0;
+  const factor=Math.max(size/Math.max(.01,extent.y),shoulderFactor),root=new T.Group();
   root.name=model.root.name;root.rotation.order='YXZ';
   model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
   root.add(model.root);
   const radius=factor*Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z));
-  return {...model,root,animal:root,size,radius};
+  return {...model,root,animal:root,size:factor*extent.y,radius,
+    articulatedGait:model.articulatedGait===true,shoulderSize:factor*shoulderHeight};
 }
 function createPartnerFigure(T,id){
   const root=new T.Group(),body=new T.Group();
@@ -111,8 +117,8 @@ function createPartnerFigure(T,id){
   }
   function face(y,z,spread,sz,iris=eye){
     for(const sign of [-1,1]){
-      finishSpiritPart(oval(sign*spread,y,z,sz*.63,sz,sz*.35,iris,-sign*.10),'iris',mats);
-      oval(sign*spread-.15*sz,y+.34*sz,z+.31*sz,sz*.20,sz*.24,sz*.11,0xfffaf3);
+      finishSpiritPart(oval(sign*spread,y,z,sz*.63,sz,sz*.12,iris,-sign*.10),'iris',mats);
+      oval(sign*spread-.15*sz,y+.34*sz,z+.115*sz,sz*.20,sz*.24,sz*.018,0xfffaf3);
     }
   }
   function petals(x,y,z,size,color,core){

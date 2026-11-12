@@ -30,21 +30,6 @@
       return {index,level:zone.level,zone:zone.id,row,col,x,y:zone.floorY,z,
         yaw:zone.side>0?0:Math.PI,aisleZ:z-zone.side*1.24,galleryX:zone.cx};
     }
-    function nearby(p,radius=32){
-      const list=byLevel.get(p?.level)||[],ids=[];
-      for(const zone of list){
-        if(p.x+radius<zone.x0||p.x-radius>zone.x1||p.z+radius<zone.z0||p.z-radius>zone.z1)continue;
-        const localZ=p.z*zone.side-front;
-        const startRow=Math.max(0,Math.ceil((localZ-radius-firstRow)/pitchZ));
-        const endRow=Math.min(rows-1,Math.floor((localZ+radius-firstRow)/pitchZ));
-        for(let r=startRow;r<=endRow;r++){
-          const dz=(firstRow+r*pitchZ)-localZ,dxMax=Math.sqrt(Math.max(0,radius*radius-dz*dz));
-          for(let c=0;c<columns;c++)if(Math.abs(zone.cx+zone.side*localX(c)-p.x)<=dxMax)
-            ids.push(zone.start+r*columns+c);
-        }
-      }
-      return ids;
-    }
     function zoneAt(p){
       return (byLevel.get(p.level)||[]).find(q=>p.x>=q.x0&&p.x<=q.x1&&p.z>=q.z0&&p.z<=q.z1)||null;
     }
@@ -61,7 +46,7 @@
     }
     const roomRadius=(p,q)=>Math.hypot(Math.max(q.x0-p.x,p.x-q.x1,0),Math.max(q.z0-p.z,p.z-q.z1,0));
     return {deckSpecs,zones,byLevel,rows,columns,capacity,perZone,width,depth,height:ceiling,front,
-      slot,seat:slot,nearby,zoneAt,clearsPedestal,localX,roomRadius,pitchZ,firstRow};
+      slot,zoneAt,clearsPedestal,localX,roomRadius,pitchZ,firstRow};
   })();
 
   // Install each ward in the host deck group. All bays use a common local

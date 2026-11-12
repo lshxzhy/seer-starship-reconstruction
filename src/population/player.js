@@ -8,6 +8,7 @@
     avatar.visible=false;
     scene.add(avatar);
     const drill=createMiningDrill();
+    const fieldEquipment=createFieldEquipment(T,rig);
     let flameTool=null;
     const contacts=createSoleContacts(1),ground=contacts.mesh;
     ground.scale.setScalar(worldMetre);ground.visible=false;scene.add(ground);
@@ -22,7 +23,7 @@
     function roomFor(pose){
       return habitat.byId.get(habitat.location(pose).roomId);
     }
-    function positionCamera(pose,yaw,pitch,dt,eyeHeight,ride=null,cabin=null){
+    function positionCamera(pose,yaw,pitch,dt,eyeHeight,ride=null,cabin=null,jump=null){
       let dx=previous?pose.x-previous.x:0,dz=previous?pose.z-previous.z:0;
       if(cabin?.carried){
         dx=previous?.carX==null?0:dx-(cabin.center.x-previous.carX);
@@ -42,11 +43,13 @@
       phase+=seerRobots.phaseStep(speed,dt);
       strideSpeed+=(speed-strideSpeed)*(1-Math.exp(-Math.max(0,dt)*(speed?24:17)));
       avatar.rotation.y=facing;
-      seerRobots.animate(rig,phase,ride?0:strideSpeed,dt,Boolean(ride));
-      const floorY=cabin?cabin.center.y:pose.y+(ride?ride.footOffset:contactFloor(pose));
+      seerRobots.animate(rig,phase,ride?0:strideSpeed,dt,Boolean(ride),jump?.pose||0);
+      const supportedY=cabin?cabin.center.y:pose.y+(ride?ride.footOffset:contactFloor(pose));
+      const floorY=supportedY+(ride?0:(jump?.offset||0));
       avatar.position.copy(habitat.worldPosition(pose.x,floorY,pose.z));
       drill.update(rig.bones.core,dt,active);
-      ground.position.copy(avatar.position);
+      fieldEquipment.update(dt,{visible:active,moving:speed/4.4});
+      ground.position.copy(habitat.worldPosition(pose.x,supportedY,pose.z));
       ground.rotation.y=facing;
       contacts.write(0,0,0,0,0,rig.bones);contacts.finish(1);
       const sin=Math.sin(yaw),cos=Math.cos(yaw);
@@ -86,7 +89,7 @@
         ceiling=current&&current===behind?current.spec.height:3.10;
         sampled={x:pose.x,z:pose.z,level:pose.level,yaw,pitch,distance:boom,ceiling};
       }else ceiling=sampled.ceiling;
-      avatar.visible=active&&available>.76;ground.visible=avatar.visible&&!ride;
+      avatar.visible=active&&available>.76;ground.visible=avatar.visible&&!ride&&!jump?.airborne;
       if(!avatar.visible){
         camera.position.copy(head);
         camera.lookAt(head.clone().add(new T.Vector3(-sin*Math.cos(pitch),Math.sin(pitch),-cos*Math.cos(pitch))));
@@ -107,6 +110,7 @@
       setExpression(id){seerRobots.setExpression(rig,id);},
       frameFace(){distance=2.05;sampled=null;},
       setDrill(equipped){drill.set(equipped);},
+      setFieldEquipment(value){fieldEquipment.set(value);},
       setFlameTool(equipped){
         if(equipped&&!flameTool)flameTool=createFieldFlameTool(T,rig);
         flameTool?.setVisible(equipped);
@@ -117,6 +121,6 @@
       zoom(delta){distance=T.MathUtils.clamp(distance*Math.exp(delta*.0011),1.65,6.6);sampled=null;},
       get style(){return style;},get facing(){return facing;},
       snapshot(){return {perspective:style,facing,boom:distance};},
-      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);rig.display.dispose();contacts.dispose();drill.dispose();flameTool?.dispose();}
+      dispose(){avatar.visible=ground.visible=false;scene.remove(avatar,ground);rig.display.dispose();contacts.dispose();drill.dispose();fieldEquipment.dispose();flameTool?.dispose();}
     };
   }

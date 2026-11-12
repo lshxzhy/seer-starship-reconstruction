@@ -751,32 +751,36 @@ function createKloseWildlife(T,surface,meadowBirds){
       candidates.push({x:p.x,z:p.z,site:p.site,root:p.shield||p.root,p});
     }
     if(coreStep<4)for(const sw of switches)if(sw.near.visible)candidates.push(sw);
-    let best=null,range=Infinity;
+    let best=null,range=Infinity,hitPoint=null;
     for(const c of candidates){
       const distance=Math.hypot(visitor.x-c.site.x-c.x,visitor.z-c.site.z-c.z);
       if(distance>(caster?22:4))continue;
-      const d=caster?caster.intersectObject(c.root,true)[0]?.distance:distance;
-      if(d!==undefined&&d<range){range=d;best=c;}
+      c.root.updateWorldMatrix(true,true);
+      const hit=caster?caster.intersectObject(c.root,true)[0]:null,d=caster?hit?.distance:distance;
+      if(d!==undefined&&d<range){range=d;best=c;hitPoint=hit?.point.clone()||null;}
     }
-    if(!best)return '';
+    if(!best)return null;
     const p=best.p;
     if(p){
+      if(!flameTool)return {message:'先去赛尔号实验室领取并装备火焰喷射器',effect:null};
+      const target=hitPoint||(p.shield?.visible?p.shield.localToWorld(new T.Vector3(0,0,1)):
+        p.root.localToWorld(new T.Vector3(0,p.size*.48,0)));
+      const flameResult=message=>({message,effect:'flame',target});
       if(p.shield){
-        if(!flameTool)return '先去赛尔号实验室领取并装备火焰喷射器';
         const now=performance.now();shieldVisual(p,now);p.hits++;
-        if(p.hits>=3){p.shield.visible=false;p.radius=p.bodyRadius;return '护膜消散 · 可以挑战蘑菇怪了';}
+        if(p.hits>=3){p.shield.visible=false;p.radius=p.bodyRadius;return flameResult('护膜消散 · 可以挑战蘑菇怪了');}
         p.shieldDeadline=now+shieldWindowMs;shieldVisual(p,now);
-        return '护膜'+(p.hits===1?'开始变暗':'已变黑')+' · 连续照射 '+p.hits+' / 3';
+        return flameResult('护膜'+(p.hits===1?'开始变暗':'已变黑')+' · 连续照射 '+p.hits+' / 3');
       }
       p.hits++;
       const needed=p.speciesId===83?3:1;
-      return p.hits<needed?'火焰照射 '+p.hits+' / '+needed:'精灵停在洞口 · 可以接触了';
+      return flameResult(p.hits<needed?'火焰照射 '+p.hits+' / '+needed:'精灵停在洞口 · 可以接触了');
     }
-    if(best.index!==coreStep)return '晶脉尚未响应 · 请先'+prompts[coreStep];
+    if(best.index!==coreStep)return {message:'晶脉尚未响应 · 请先'+prompts[coreStep],effect:null};
     coreStep++;
     const seam=switches.find(s=>s.index===3);
     if(seam){seam.mat.emissive.setHex(coreStep>=3?0x36dacf:0x132a22);seam.mat.emissiveIntensity=coreStep>=3?.78:.42;}
-    return coreStep===4?'共鸣矿石亮起 · 石晶晶出现了':'晶脉传来回响 · 接下来'+prompts[coreStep];
+    return {message:coreStep===4?'共鸣矿石亮起 · 石晶晶出现了':'晶脉传来回响 · 接下来'+prompts[coreStep],effect:null};
   }
   function obstacleTop(x,z,footprint){
     let top=-Infinity;

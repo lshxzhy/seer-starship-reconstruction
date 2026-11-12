@@ -71,7 +71,11 @@
   const cockpit=createFlightDeck(boarding,travelToShip,requestDraw,travelToPlanet,
     ()=>expedition.active?expedition.parkedRamp():parkedLanding?.ramp,
     (svg,selected,onSelect)=>expedition.drawSystemChart(svg,selected,onSelect,parkedLanding?.vehicle||dockedVehicle),
-    ()=>expedition.surfaceNavigation(),id=>expedition.guideTo(id),()=>expedition.lookNorth());
+    ()=>expedition.surfaceNavigation(),id=>expedition.guideTo(id),()=>expedition.lookNorth(),
+    {available:()=>expedition.canOpenSpirits,clear:()=>expedition.clearInputs(),travel:tool=>{
+      const target=tool==='drill'?['grassland','klose','klose-yellow']:tool==='flame'?['forest','klose',null]:['ocean-shallows','ocean',tool==='gas'?'ocean-methane':null];
+      travelToPlanet(target[0],tool==='flame',target[1]);if(target[2])expedition.approachWorksite(target[2]);
+    }});
   const expedition=createPlanetExpedition(requestDraw,save,origin=>{
     dockedVehicle=expedition.snapshot().vehicle;
     const roomId=habitat.byId.has(origin?.roomId)?origin.roomId:'teleport';
@@ -97,7 +101,7 @@
     records:spiritRecords,requestFrame:requestDraw,locationName:()=>tag.textContent,
     siteId:()=>expedition.active?expedition.fieldSite:liveBoard?boarding.roomId:null,
     setFollower:id=>{boarding.setEscortSpecies(id);expedition.setEscortSpecies(id);},
-    setFlameTool:value=>{boarding.setFlameTool(value);expedition.setFlameTool(value);},
+    setFlameTool:value=>boarding.setFlameTool(value),
     visitChallengeSite:id=>{
       if(id==='laboratory'){travelToShip('laboratory');return;}
       if(id==='ocean-floor'){travelToPlanet(id,false,'ocean');return;}
@@ -114,6 +118,7 @@
   function openSpirits(trigger,contact=false){
     if(boarding.inTransit||boarding.commsOpen||stage.dataset.consoleOpen||
       (state.mode!=='board'&&!expedition.canOpenSpirits))return;
+    if(contact&&expedition.active&&!expedition.grounded)return;
     const wild=contact?expedition.nearbySpirit():null;
     if(contact&&(!wild||wild.kind==='apparition'||wild.distance>22))return;
     boarding.clearInputs();expedition.clearInputs();
@@ -122,9 +127,10 @@
   }
   for(const trigger of root.querySelectorAll('[data-spirit-book]'))trigger.addEventListener('click',()=>openSpirits(trigger));
   const wildTrigger=root.querySelector('[data-encounter]');
+  stage.addEventListener('seer-open-field-bag',()=>cockpit.openBag());
   wildTrigger.addEventListener('click',()=>openSpirits(wildTrigger,true));
   stage.addEventListener('seer-wetland-action',e=>{
-    if(!expedition.canOpenSpirits||stage.dataset.consoleOpen||boarding.commsOpen)return;
+    if(!expedition.canOpenSpirits||!expedition.grounded||stage.dataset.consoleOpen||boarding.commsOpen)return;
     expedition.clearInputs();spiritTerminal.open(null,canvas,e.detail);
   });
   root.querySelector('[data-embark]').addEventListener('click',()=>{

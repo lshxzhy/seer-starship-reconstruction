@@ -171,7 +171,7 @@
     const skinMaterials = {
       fixed: new T.MeshStandardMaterial({vertexColors:true, roughness:.51, metalness:.28}),
       paint: seerShellEnamel,
-      alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.34, metalness:.78}),
+      alloy: new T.MeshStandardMaterial({vertexColors:true, roughness:.38, metalness:.65}),
       machined: new T.MeshStandardMaterial({vertexColors:true, roughness:.30, metalness:.76}),
       gasket: new T.MeshStandardMaterial({vertexColors:true, roughness:.77, metalness:.03}),
       screen: faceMaterial('neutral'),
@@ -180,7 +180,6 @@
         clearcoat:1, clearcoatRoughness:.065, reflectivity:.59, envMapIntensity:.8,
         transparent:true, opacity:.22, blending:T.AdditiveBlending, depthWrite:false})
     };
-    applyManufacturedFinish(skinMaterials.alloy,'metal');
     applyManufacturedFinish(skinMaterials.machined,'metal');
     applyManufacturedFinish(skinMaterials.gasket,'rubber');
     const suitColors = new Map(), suitMaterials = new Map();
@@ -233,7 +232,7 @@
           else if (color===rubber || color===dark) family='gasket';
         }
         const key = bone + '/' + family;
-        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:family==='paint'?null:[],col:[],ix:[]});
+        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:family==='paint'||family==='alloy'?null:[],col:[],ix:[]});
         const dest = parts.get(key), offset = dest.pos.length/3;
         const tint = color === paint ? new T.Color(1,1,1) : hex(color);
         pose.position.set(x,y,z);
@@ -489,7 +488,8 @@
     const down = new T.Vector3(0,-1,0), axis = new T.Vector3();
     function stepLength(speed) {return .68+.22*clamp(Math.abs(speed)/3.2,0,1);}
     function phaseStep(speed,dt) {return TAU*Math.abs(speed)*dt/stepLength(speed);}
-    function applyPose(rig,phase,speed,idleTime,riding=false) {
+    function applyPose(rig,phase,speed,idleTime,riding=false,airborne=0) {
+      const jump=riding?0:clamp(airborne,0,1);
       const v=Math.abs(speed), weight=clamp(v/.38,0,1), run=clamp((v-1.5)/2.5,0,1);
       const stance=.55-.085*run, reach=stepLength(speed)*stance*.5;
       const bones=rig.bones, core=bones.core;
@@ -500,6 +500,7 @@
         core.position.y-=.11;
         core.position.z=.055;
       }
+      core.position.y-=.035*jump;core.rotation.x-=.085*jump;
       for(const sign of [-1,1]) {
         const side=sign<0?'L':'R', leg=bones['leg'+side], foot=bones['foot'+side];
         const t=((phase/TAU+(sign>0?.5:0))%1+1)%1;
@@ -509,6 +510,11 @@
         const lift=Math.sin(PI*swing)*(.070+.035*run)*weight;
         foot.position.set(sign*hipX,ankleY+lift,riding?-.11:z);
         foot.rotation.set(-.10*Math.sin(TAU*swing)*weight,-sign*.13,0);
+        if(jump){
+          foot.position.y=ankleY+lift*(1-jump)+.17*jump;
+          foot.position.z=z*(1-jump)-.12*jump;
+          foot.rotation.x=foot.rotation.x*(1-jump)-.20*jump;
+        }
         // The sleeve spans both endpoints while the grounded shoe is stationary.
         leg.position.set(sign*hipX,hipY-restCoreY,0).applyQuaternion(core.quaternion).add(core.position);
         axis.subVectors(foot.position,leg.position);
@@ -554,14 +560,14 @@
       showFaceFrame(rig,expression);
       return true;
     }
-    function animate(rig,phase,speed,dt=1/60,riding=false){
+    function animate(rig,phase,speed,dt=1/60,riding=false,airborne=0){
       const step=clamp(Number.isFinite(dt)?dt:0,0,.12);
       const yaw=rig.root.rotation.y;
       const angle=Math.atan2(Math.sin(yaw-rig.lastYaw),Math.cos(yaw-rig.lastYaw));
       const target=step>0?clamp(angle/step*.07,-.23,.23):0;
       rig.turn+=(target-rig.turn)*(1-Math.exp(-step*12));
       rig.lastYaw=yaw;rig.clock+=step;
-      applyPose(rig,phase,speed,rig.clock,riding);
+      applyPose(rig,phase,speed,rig.clock,riding,airborne);
       const blink=rig.clock%4.3;
       if(rig.display){
         const closing=clamp((blink-3.74)/.22,0,1);

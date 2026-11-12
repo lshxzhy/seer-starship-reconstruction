@@ -51,13 +51,36 @@ function createBirdEvolutionFigure(T,id){
     const part=new T.Mesh(g,m);geometries.add(g);part.castShadow=part.receiveShadow=true;parent.add(part);
     return finishSpiritPart(part,'feather',materials);
   }
-  function eyesAt(y,z,spread,size,parent=body){
+  function eyesAt(y,spread,size,headShape,parent=body){
+    const [cy,cz,rx,ry,rz]=headShape;
+    const face=(x,y)=>cz+rz*Math.sqrt(Math.max(0,1-(x/rx)**2-((y-cy)/ry)**2));
     for(const s of [-1,1]){
-      const eye=new T.Group();eye.position.set(s*spread,y,z);eye.rotation.y=s*.39;parent.add(eye);eyes.push(eye);
-      oval(0x181723,0,0,0,size*.70,size,.018,eye,'iris');
-      oval(shiny?0x626ca3:0x86519f,s*.006,-size*.25,.013,size*.43,size*.57,.012,eye,'iris');
-      oval(0x14131f,-s*.007,size*.13,.024,size*.44,size*.65,.009,eye,'iris');
-      oval(0xffffff,-size*.18,size*.35,.032,size*.22,size*.34,.006,eye,null);
+      const x=s*spread,eye=new T.Group(),layers=[];
+      eye.position.set(x,y,0);parent.add(eye);
+      // The same oval and purple lower iris wrap around the rounded cheek.
+      // Refit during blinking so a compressed eye never floats off the head.
+      function layer(colour,dx,dy,w,h,offset,depth,tissue='iris'){
+        const g=sphere.clone(),unit=g.attributes.position.array.slice();
+        const part=mesh(g,colour,eye,tissue);part.castShadow=false;
+        layers.push({g,unit,dx,dy,w,h,offset,depth});
+      }
+      layer(0x181723,0,0,size*.70,size,.003,.003);
+      layer(shiny?0x626ca3:0x86519f,s*.006,-size*.25,size*.43,size*.57,.007,.002);
+      layer(0x14131f,-s*.007,size*.13,size*.44,size*.65,.010,.0015);
+      layer(0xffffff,-size*.18,size*.35,size*.22,size*.34,.014,.001,null);
+      let previous=-1;
+      const fitted={blink(value){
+        if(value===previous)return;previous=value;
+        for(const {g,unit,dx,dy,w,h,offset,depth} of layers){
+          const p=g.attributes.position;
+          for(let i=0;i<p.count;i++){
+            const px=(dx+unit[i*3]*w)*Math.cos(.39),py=(dy+unit[i*3+1]*h)*value;
+            p.setXYZ(i,px,py,face(x+px,y+py)+offset+unit[i*3+2]*depth);
+          }
+          p.needsUpdate=true;g.computeVertexNormals();g.boundingSphere=null;
+        }
+      }};
+      fitted.blink(1);eyes.push(fitted);
     }
   }
   function beak(rows,colour,parent=body,innerFace=0){
@@ -102,7 +125,7 @@ function createBirdEvolutionFigure(T,id){
   let lowerBill=null;
   if(!grown){
     oval(pink,0,.51,-.015,.235,.303,.205);oval(light,0,.48,.15,.16,.225,.079);
-    oval(pink,0,.965,.014,.270,.269,.239);eyesAt(1.00,.203,.188,.092);
+    oval(pink,0,.965,.014,.270,.269,.239);eyesAt(1.00,.188,.092,[.965,.014,.270,.269,.239]);
     // The young evolution's bill is nearly as long as its body, with a real
     // opening and tongue; its outline must not collapse to a small oval nose.
     beak([[.18,.103,1.035,.875],[.36,.174,1.133,.952],[.67,.131,1.242,1.120],
@@ -128,7 +151,7 @@ function createBirdEvolutionFigure(T,id){
   }else{
     oval(pink,0,.60,-.014,.345,.381,.329);oval(light,0,.53,.185,.254,.275,.135);
     oval(pink,0,1.02,.02,.268,.402,.223);oval(pink,0,1.39,.055,.226,.247,.218);
-    eyesAt(1.39,.237,.105,.045);
+    eyesAt(1.39,.105,.045,[1.39,.055,.226,.247,.218]);
     for(const s of [-1,1])oval(shiny?0xf09ca7:0xf27799,s*.169,1.298,.219,.080,.052,.025);
     pointedBill();
     // Hanging crests loop high above the head and return towards the shoulders.
@@ -178,6 +201,6 @@ function createBirdEvolutionFigure(T,id){
     for(const tail of tails)tail.rotation.y=.08*Math.sin(t*1.6);
     if(lowerBill)lowerBill.rotation.x=.028*(1+Math.sin(t*1.5));
     const blink=1-.88*Math.max(0,1-Math.abs(t%5.1-4.8)/.10);
-    for(const eye of eyes)eye.scale.y=blink;
+    for(const eye of eyes)eye.blink(blink);
   },dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
 }

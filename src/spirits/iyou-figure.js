@@ -153,16 +153,45 @@ function createIyooFigure(T,id){
   }
   stroke(0x6590a0,mouth,.0055,head);
   const eyes=[];
+  function insetEye(side,angle,latitude){
+    const delta=.0005;
+    const metricA=headSurface(angle+delta,latitude).sub(headSurface(angle-delta,latitude)).length()/(2*delta);
+    const metricB=headSurface(angle,latitude+delta).sub(headSurface(angle,latitude-delta)).length()/(2*delta);
+    const layers=[],tilt=-side*.14,ca=Math.cos(tilt),sa=Math.sin(tilt),rows=12,sectors=48;
+    for(const [colour,cx,cy,rx,ry,lift] of [
+      [deepBlue,0,0,.100,.144,.0040],[0x102633,0,0,.090,.132,.0048],
+      [0xbe4c92,side*.005,-.021,.069,.097,.0056],
+      [0x101c2a,-side*.010,.015,.053,.090,.0064],
+      [0xffffff,-.019,.050,.029,.041,.0072]
+    ]){
+      const samples=[],positions=[],indices=[];
+      for(let j=0;j<=rows;j++)for(let k=0;k<sectors;k++){
+        const a=tau*k/sectors,r=j/rows,x=cx+rx*r*Math.cos(a),y=cy+ry*r*Math.sin(a);
+        samples.push([x*ca-y*sa,x*sa+y*ca]);positions.push(0,0,0);
+        if(j<rows){const n=j*sectors+k,next=j*sectors+(k+1)%sectors;
+          indices.push(n,n+sectors,next,next,n+sectors,next+sectors);}
+      }
+      const g=geometry(positions,indices);mesh(g,colour,head,colour===0xbe4c92?'iris':null);
+      layers.push({g,samples,lift});
+    }
+    let previous=-1;
+    const blink=value=>{
+      if(Math.abs(previous-value)<.0001)return;previous=value;
+      for(const {g,samples,lift} of layers){
+        const positions=g.attributes.position;
+        samples.forEach(([x,y],i)=>{
+          const point=headPoint(angle+x/metricA,latitude+y*value/metricB,lift);
+          positions.setXYZ(i,point.x,point.y,point.z);
+        });
+        positions.needsUpdate=true;g.computeVertexNormals();g.computeBoundingSphere();
+      }
+    };
+    blink(1);eyes.push(blink);
+  }
   for(const side of [-1,1]){
-    const eye=new T.Group(),angle=side*.555,latitude=-.135;
-    eye.position.copy(headPoint(angle,latitude,.031));
-    eye.quaternion.setFromUnitVectors(v(0,0,1),headNormal(angle,latitude));
-    eye.rotateZ(-side*.14);head.add(eye);eyes.push(eye);
-    oval(deepBlue,0,0,0,.100,.144,.025,eye);
-    oval(0x102633,0,0,.017,.090,.132,.023,eye);
-    finishSpiritPart(oval(0xbe4c92,side*.005,-.021,.039,.069,.097,.014,eye),'iris',materials);
-    oval(0x101c2a,-side*.010,.015,.050,.053,.090,.013,eye);
-    oval(0xffffff,-.019,.050,.064,.029,.041,.007,eye);
+    // The markings bend with the head, including during a blink. The old
+    // tangent-plane stack protruded by about a tenth of the head's depth.
+    insetEye(side,side*.555,-.135);
     // Two small turquoise marks belong on the forehead, separate from the eyes.
     const mark=new T.Group(),a=side*.43,markLatitude=.71;
     mark.position.copy(headPoint(a,markLatitude,.010));
@@ -247,6 +276,6 @@ function createIyooFigure(T,id){
     tail.rotation.y=.10*Math.sin(time*(2.0+stride*1.8));
     for(const [i,foot] of feet.entries())foot.rotation.x=.09*stride*Math.sin(time*7+i*Math.PI);
     const cycle=time%5.7,blink=1-.88*Math.max(0,1-Math.abs(cycle-5.35)/.10);
-    for(const eye of eyes)eye.scale.y=blink;
+    for(const eye of eyes)eye(blink);
   },dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
 }

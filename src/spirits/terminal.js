@@ -259,7 +259,7 @@ function createSpiritTerminal({records,chat,locationName,siteId,setFollower,setS
       if(lab)button(detail,'领取并装备火焰喷射器',()=>act({type:'equipFlameTool',site:siteId()}),{primary:true,action:'equip-flame'});
       else button(detail,'前往赛尔号实验室',()=>travelSpt('laboratory'),{primary:true,action:'spt-lab'});
     }else{
-      el(detail,'p','','火焰喷射器已装备。面向淡蓝色护膜连续照射三次，等它消散后点蘑菇怪发起挑战。');
+      el(detail,'p','','火焰喷射器已领取，可在背包穿戴。面向淡蓝色护膜连续照射三次，等它消散后点蘑菇怪发起挑战。');
       button(detail,'前往林间 · 蘑菇怪',()=>travelSpt(challenge.site),{primary:true,action:'spt-forest'});
     }
   }

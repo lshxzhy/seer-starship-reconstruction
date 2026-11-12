@@ -203,7 +203,7 @@
       panel.querySelector('[data-sm-site-label]').hidden=!planet;
       panel.querySelector('.sm-keys').hidden=choices.hidden=planet;
       guide.hidden=true;fieldTools.hidden=!visitor||area!==visitor.planetId;
-      cancel.hidden=!(visitor?.targetId||state.active&&state.tracking);
+      cancel.hidden=visitor?!visitor.targetId:!(state.active&&state.tracking);
       horizon.hidden=!visitor?.canLookNorth;
       if(planet){
         if(area==='system'){
@@ -227,8 +227,7 @@
         text.textContent=site?(site.description||'')+(local?'　／　距你 '+formatNavDistance(distance):''):'';
         if(local&&route.length>1)text.textContent+='　／　经 '+route.slice(0,-1).map(id=>region.byId.get(id)?.name).filter(Boolean).join(' → ');
         if(local&&site&&region.definition.kind==='ship'&&!route.length)text.textContent+='　／　两舰之间隔着太空，可从地图转移。';
-        guide.hidden=!local||!route.length||(distance<surfaceArrivalRadius(site.id)&&visitor.targetId!==site?.id);
-        guide.textContent=site&&visitor?.targetId===site.id?'取消引导':'步行引导';
+        guide.hidden=!local||!site||!route.length||visitor.targetId===site.id||distance<surfaceArrivalRadius(site.id);
         chart.setAttribute('aria-label',region.definition.name+'地点图，可使用目的地列表选择');
         drawSurfaceMap(chart,{region,selected:sitePicker.value,ramp,observer:local?visitor.position:null,route,
           onSelect:id=>{sitePicker.value=id;refresh();}});
@@ -279,7 +278,7 @@
     picker.addEventListener('change',()=>{level=picker.value;chart.parentElement.scrollTop=0;refresh();});
     guide.addEventListener('click',()=>{
       const visitor=surfaceNavigation();if(visitor?.planetId!==areaPicker.value||guide.hidden)return;
-      onGuide(visitor.targetId===sitePicker.value?null:sitePicker.value);
+      onGuide(sitePicker.value);
     });
     cancel.addEventListener('click',()=>{if(!cancel.hidden)onCancelGuide();});
     panel.addEventListener('click',select);

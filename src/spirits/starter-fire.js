@@ -109,15 +109,26 @@ function createStarterFireFigure(T,id){
       bevelThickness:bevel,bevelSegments:3,curveSegments:20});g.translate(0,0,-depth/2);
     return mesh(g,colour,parent);
   }
-  function eye(parent,x,y,z,w,h,ang=0,fiery=false){
-    const g=group(x,y,z,parent);g.rotation.z=ang;
-    oval(brown,0,0,0,w*1.12,h*1.10,.026,g);
-    oval(fiery?yellow:0xa8522c,0,0,.022,w,h,.025,g);
-    const pupil=oval(fiery?apricot:dark,.006,-.004,.045,w*.77,h*.84,.016,g);
-    if(fiery){pupil.material=paint(hot,.23);}
-    oval(0xffffff,-w*.22,h*.34,.060,w*.32,h*.36,.009,g);
-    if(!fiery)oval(light,w*.31,-h*.39,.059,w*.16,h*.15,.008,g);
-    return g;
+  function eye(parent,rows,x,y,w,h,ang=0){
+    const eye=group(x,y,0,parent),c=Math.cos(ang),s=Math.sin(ang);
+    // #007/#008 have broad painted eyes on a curved cream face. Project each
+    // layer onto that same skin profile instead of stacking round lenses.
+    function layer(colour,dx,dy,rx,ry,offset,depth){
+      const g=sphere.clone(),p=g.attributes.position;
+      for(let i=0;i<p.count;i++){
+        const u=(p.getX(i)*rx+dx),w=(p.getY(i)*ry+dy),d=p.getZ(i)*depth;
+        const px=u*c-w*s,py=u*s+w*c,[hx,hz,cz]=rowAt(rows,y+py);
+        const face=cz+(hz+.004)*Math.sqrt(Math.max(0,1-((x+px)/(hx+.003))**2));
+        p.setXYZ(i,px,py,face+offset+d);
+      }
+      g.computeVertexNormals();const part=mesh(g,colour,eye);part.castShadow=false;
+    }
+    layer(brown,0,0,w*1.12,h*1.10,.004,.003);
+    layer(0xa8522c,0,0,w,h,.008,.002);
+    layer(dark,.006,-.004,w*.77,h*.84,.012,.002);
+    layer(0xffffff,-w*.22,h*.34,w*.32,h*.36,.016,.001);
+    layer(light,w*.31,-h*.39,w*.16,h*.15,.016,.001);
+    return eye;
   }
   function tongue(parent,points,widths,depths,colour=orange,glow=0){
     return sweep(colour,points,widths,depths,parent,null,glow);
@@ -147,7 +158,7 @@ function createStarterFireFigure(T,id){
     skin(headRows,orange,head,'cuticle');
     patch(headRows,-.12,.255,t=>.32+(.97-.32)*Math.sin(Math.PI*t)**.26,cream,head);
     for(const s of [-1,1]){
-      eye(head,s*.176,.075,.225,.093,.119,s*-.075);
+      eye(head,headRows,s*.176,.075,.093,.119,s*-.075);
       // The ears are tucked into the head. The conspicuous side shapes in
       // the source are hands, not a second pair of large projecting ears.
       oval(orange,s*.319,.045,-.045,.040,.062,.054,head,'cuticle');
@@ -188,7 +199,7 @@ function createStarterFireFigure(T,id){
     skin(rows,orange,head,'cuticle');
     patch(rows,-.08,.205,t=>.06+.94*Math.sin(Math.PI*t)**.34,cream,head);
     for(const s of [-1,1]){
-      eye(head,s*.143,.102,.206,.082,.096,s*.22);
+      eye(head,rows,s*.143,.102,.082,.096,s*.22);
       stroke(shade,surfaceLine(rows,[[s*.045,.198],[s*.13,.213],[s*.225,.251]],.014),.026,head);
       oval(shade,s*.307,.10,-.055,.042,.070,.061,head,'cuticle');
       const arm=tracked(group(s*.225,.77,-.025),'z',.035,1.6,s*.7);

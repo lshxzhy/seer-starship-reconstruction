@@ -81,7 +81,6 @@
 .ship-window>[data-page="map"],.ship-window>[data-page="bag"] {padding:clamp(9px,2.3cqw,18px)}
 .sm-radar select,.sm-radar [data-sm-travel] {border:1px solid #6d9a9e;border-radius:5px;background:#1d414e;color:#f1faf7;padding:5px 9px}
 .sm-radar [data-sm-travel] {background:#2c6263;border-color:#82c6bb}
-.seer-inventory .inv-find {margin:12px 0 0;padding:6px 0;color:#9edbd3;background:none;border:0;border-bottom:1px solid #527e80;font-size:13px}
 .ship-route{position:absolute;left:16px;top:80px;max-width:min(350px,62%);z-index:2;pointer-events:none;display:grid;justify-items:start;gap:4px}
 .ship-route-hint{border-left:3px solid #73e4d3;border-radius:0 5px 5px 0;padding:6px 10px;color:#e6faf5;background:#122d34ec;font-size:13px;line-height:1.4}
 .route-cancel{pointer-events:auto;font-size:12px}

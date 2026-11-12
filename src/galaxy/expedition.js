@@ -6,6 +6,10 @@
     const encounterButton=stage.querySelector('[data-encounter]');
     const huntButton=stage.querySelector('[data-wetland-action]');
     const spiritBook=nav.querySelector('[data-spirit-book]');
+    const bagButton=document.createElement('button'),workButton=document.createElement('button');
+    bagButton.type=workButton.type='button';bagButton.textContent='背包 B';bagButton.setAttribute('aria-label','地表背包 B');
+    bagButton.className=spiritBook.className;workButton.className=spiritBook.className;
+    nav.append(bagButton,workButton);workButton.hidden=true;
     const select=atlas.querySelector('[data-site-select]'),chart=atlas.querySelector('[data-site-map]');
     const atlasModes=[...atlas.querySelectorAll('[data-atlas-view]')];
     let atlasView='system',landingViewKey='';
@@ -16,6 +20,7 @@
     const targetOnly=atlas.querySelector('[data-target-only]'),unseat=atlas.querySelector('[data-unseat]');
     const centerView=hand.querySelector('[data-flight-center]'),leaveSeat=hand.querySelector('[data-flight-unseat]');
     const {regions,flights}=PANO_NAVIGATION,bodies={};
+    const worksiteGroups={};let worksites=null,fieldEquipment=null,toolPulse=0;
     let region=regions.klose,definition=region.definition,home=definition.sites[0],radius=definition.radius;
     let kloseTerrain;
     const clamp=T.MathUtils.clamp;
@@ -53,9 +58,11 @@
     let phase='hidden',origin=null,position={lat:home.lat,lon:home.lon},yaw=0,pitch=.03,boom=5.1;
     let lastTime=null,walkPhase=0,targetId=null,path=[],facing=0,eye=false,drag=null,arrival='',shownMode='',uiClock=0,chartClock=0;
     let craft,dock,flight,feet=new T.Vector3(),door=1,gear=1,external=false,transferSign=1;
-    let escort=null,escortId=null,safariState=null,flameTool=false,flameRig=null;
+    let escort=null,escortId=null,safariState=null,flameRig=null;
+    let cameraBlend=null,cameraReady=false,frameFov=49,surfacePitch=0;
     let navTarget='grassland',pending=null,arrivedOnDeck=false,approachRamp=false,feedback='',feedbackUntil=0,lastStore=0;
     const picker=new T.Raycaster(),chaseBoom={length:21},originRotation=new T.Quaternion();
+    const jump=createSeerJump(seerRobots.height);
     const vec=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
     const spherical=p=>({lat:Math.atan2(p.y,Math.hypot(p.x,p.z)),lon:Math.atan2(-p.z,p.x)});
     const distanceText=formatNavDistance;
@@ -77,14 +84,17 @@
     observer.observe(stage);
     const keyNames=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','Space','KeyC','KeyX','KeyQ','KeyR']);
     const flightPulses=new Map();
-    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();drag=null;lastTime=null;}
+    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();drag=null;lastTime=null;worksites?.cancel();}
     const displacement=(a,b)=>navigationDisplacement(a,b,definition);
     const coordinates=(p,surface=body)=>surface.coordinates?surface.coordinates(p):spherical(p);
     function usePlanet(id){
-      throughScope=false;sisterAbove=false;
+      worksites?.hide();
+      cameraBlend=null;cameraReady=false;
+      throughScope=false;sisterAbove=false;jump.reset();
       for(const mesh of Object.values(skyPlanets))mesh.visible=false;
       body?.setMode('hidden');body=getSurface(regions[id]?id:'klose');
       region=regions[id]||regions.klose;definition=region.definition;radius=definition.radius;home=definition.sites[0];
+      worksites=worksiteGroups[definition.id]??=createFieldWorksites(T,world,definition,body,()=>boarding.pack(),id=>boarding.collectField(id));
       airWeights=new Float32Array(definition.sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
       stage.dataset.planet=definition.id;
       if(sky){
@@ -160,6 +170,7 @@
       rig=seerRobots.create(0xd84a38,{name:'SE-00001 · 地表行走',castShadow:true,display:true});
       local.add(rig.root);contact=createSoleContacts(1);local.add(contact.mesh);
       flameRig=createFieldFlameTool(T,rig);
+      fieldEquipment=createFieldEquipment(T,rig);
       nono=createSuperNono(1,local);drill=createMiningDrill(world);
       escort=createSpiritEscort(T,world);escort.setSpecies(escortId);
       bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
@@ -329,10 +340,14 @@
         world.fog.density=.009+.00024*Math.min(70,depth);
       }
       lamp.castShadow=agl<65;
-      if(agl>1400){
-        lamp.position.copy(pano.offset(definition.id,'star',flight.orbitTime)).normalize().multiplyScalar(radius*3);
-        lamp.target.position.set(0,0,0);
-      }
+      // Keep the near-scene art direction, then turn continuously towards the
+      // orbital sun instead of changing the whole landscape's light at 1400 m.
+      const solar=pano.offset(definition.id,'star',flight.orbitTime).normalize();
+      const lightBlend=T.MathUtils.smoothstep(agl,600,2600);
+      const lightTurn=new T.Quaternion().setFromUnitVectors(daylight,solar);
+      const lightDirection=daylight.clone().applyQuaternion(new T.Quaternion().slerp(lightTurn,lightBlend));
+      lamp.target.position.copy(ground);lamp.position.copy(ground).addScaledVector(lightDirection,69);
+      u.sun.value.set(lightDirection.dot(f.east),lightDirection.dot(f.up),lightDirection.dot(f.south));
       return f;
     }
     function validPosition(p){
@@ -356,6 +371,7 @@
       const current=[2,3,4].includes(saved.format);
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
+      if(phase==='surface')surfacePitch=pitch;
       facing=Number.isFinite(saved.facing)?saved.facing:yaw;eye=!!saved.eye;external=current&&!!saved.external;
       door=clamp(current&&Number.isFinite(saved.door)?saved.door:1,0,1);gear=flight.status().phase==='flying'?0:1;
       feet.set(0,0,11.8);
@@ -385,8 +401,11 @@
       drill.set(boarding.pack().drillEquipped);updateUI();requestFrame();
     }
     function hide(){
+      worksites?.hide();
+      fieldEquipment?.hide();
+      cameraBlend=null;cameraReady=false;
       if(phase==='hidden')return;
-      phase='hidden';resetInput();body.setMode('hidden');shownMode='';
+      phase='hidden';resetInput();jump.reset();body.setMode('hidden');shownMode='';
       nav.hidden=pad.hidden=atlas.hidden=hand.hidden=hint.hidden=cancelRouteButton.hidden=watch.hidden=encounterButton.hidden=huntButton.hidden=true;
       local.visible=false;drill.hide();craft.root.visible=false;
       escort?.hide();
@@ -407,10 +426,36 @@
       if(!target)return home.name;
       return navTarget==='dock'?target.name:regions[target.planetId].definition.name+' · '+target.name;
     }
+    function beginCameraBlend(anchor=phase==='surface'?local:phase==='transfer'?dock.car:craft.root){
+      if(!cameraReady)return;
+      const position=view.position.clone(),rotation=view.quaternion.clone();
+      if(anchor){
+        anchor.worldToLocal(position);
+        rotation.premultiply(anchor.getWorldQuaternion(new T.Quaternion()).invert());
+      }
+      // Follow the vehicle during a view change, even at interplanetary speed.
+      cameraBlend={anchor,position,rotation,fov:view.fov,elapsed:0};
+    }
     function setPhase(next,keepWalking=false){
-      phase=next;
+      const direction=cameraReady?view.getWorldDirection(vec()):null;
+      if(phase==='surface')surfacePitch=pitch;
+      beginCameraBlend(next==='surface'?null:next==='transfer'?dock.car:craft.root);
+      phase=next;jump.reset();
       if(keepWalking){pendingSteps.clear();lastTime=null;}else resetInput();
-      observedBird=null;feedback='';drag=null;pitch=0;yaw=0;external=false;
+      observedBird=null;throughScope=false;feedback='';drag=null;external=false;
+      if(direction){
+        if(next==='surface'){
+          const f=body.frame(position.lat,position.lon);
+          yaw=Math.atan2(-direction.dot(f.east),direction.dot(f.north));
+          pitch=eye?Math.asin(clamp(direction.dot(f.up),-1,1)):surfacePitch;
+        }else{
+          const base=next==='transfer'?dock.car:craft.root;
+          direction.applyQuaternion(base.getWorldQuaternion(new T.Quaternion()).invert());
+          yaw=Math.atan2(-direction.x,-direction.z);
+          pitch=Math.asin(clamp(direction.y,-1,1))+(next==='helm'?.065:0);
+        }
+        pitch=clamp(pitch,-1.1,1.12);
+      }
       updateUI();requestFrame();persist();
     }
     function rampFoot(){return vec(...craft.layout.rampEnd).applyQuaternion(flight.quaternion).add(flight.position);}
@@ -426,6 +471,8 @@
       throughScope=false;
       const site=groundDestination(id);
       if(!site)return;
+      cameraBlend=null;cameraReady=false;
+      jump.reset();
       const parked=localVehicle()&&flight.status().phase==='landed';
       const nearHull=parked&&body.point(site.lat,site.lon).distanceTo(flight.position)<9;
       const at=nearHull?rampApproach(1.1):site;
@@ -449,22 +496,35 @@
       pitch=nearHull?0:site.lookPitch||0;walkPhase=0;observedBird=null;approachRamp=false;feedback='';arrival=site.name;
       plotRoute(null);resetInput();
     }
-    function playerPoint(){return body.point(position.lat,position.lon);}
-    function closeToRamp(){return localVehicle()&&flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
+    function playerPoint(){return body.point(position.lat,position.lon,jump.offset);}
+    function closeToRamp(){return !jump.airborne&&localVehicle()&&flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
+    function surfaceCeiling(at=position,ground=body.height(at.lat,at.lon)){
+      if(!body.clipCamera)return Infinity;
+      // Reuse the authored solid/roof constraints for the upward head sweep.
+      const up=body.frame(at.lat,at.lon).up;
+      const head=body.point(at.lat,at.lon,seerRobots.height),end=head.clone().addScaledVector(up,1.25);
+      body.clipCamera(head,end);
+      return ground+seerRobots.height+Math.max(0,end.sub(head).dot(up));
+    }
     function updateUI(){
       if(phase==='hidden')return;
       const s=flight.status(),walking=phase==='surface',seated=phase==='helm',aboard=phase==='cabin';
+      bagButton.hidden=!(walking||aboard);
+      const resourceLabel=walking?worksites?.label(position):'';
+      workButton.hidden=!resourceLabel;workButton.textContent=resourceLabel||'';
+      workButton.disabled=jump.airborne||!!worksites?.working||resourceLabel?.includes('已采集');
       const near=walking?nearestSite(position):null;
       const site=near&&displacement(position,near).distance<58*(definition.layout?.scale||1)?near:null,zone=craft.zone(feet),docked=s.phase==='docked';
       const dockDoor=aboard&&docked&&feet.z>=10.25;
       const gate=walking&&body.portalAt?.(position.lat,position.lon);
       const atRamp=walking&&closeToRamp();
       openChart.hidden=phase==='transfer';openChart.querySelector('span').textContent=walking?(definition.kind==='ship'?'舱区图':'地表图'):'航线';
-      land.hidden=observingWreck()||!(seated||aboard&&(zone==='seat'||dockDoor)||atRamp||gate);
+      const secondaryHelm=seated&&(s.auto||pending||arrivedOnDeck&&s.phase!=='flying');
+      land.hidden=observingWreck()||secondaryHelm||!(seated||aboard&&(zone==='seat'||dockDoor)||atRamp||gate);
       land.textContent=walking?(atRamp?'沿尾坡登艇':gate?'穿过星门 · '+regions[gate.planet].definition.name:'') :aboard?(dockDoor?'乘廊车回舰':'进入驾驶席'):
-        pending?'正在锁舱':s.auto?'手动接管':arrivedOnDeck&&s.phase!=='flying'?'离席下船':docked?'手动离泊':s.phase==='landed'?'手动起飞':s.canCapture?'锁定对接口':s.canLand?'就地着陆':'制动';
-      recall.hidden=!(walking&&localVehicle()&&s.phase==='landed'||seated&&!pending);
-      recall.textContent=walking?'定位登陆艇':s.auto?'手动接管 · P':'自动航行 · P';
+        docked?'手动离泊':s.phase==='landed'?'手动起飞':s.canCapture?'锁定对接口':s.canLand?'就地着陆':'制动';
+      recall.hidden=!(walking&&localVehicle()&&s.phase==='landed'||seated);
+      recall.textContent=walking?'定位登陆艇':pending?'取消出发 · P':s.auto?'手动接管 · P':'自动航行 · P';
       recall.title=walking?'标记登陆艇尾坡':'当前航点：'+targetName();
       optics.hidden=!seated;optics.textContent=external?'驾驶舱视角':'艇外视角';
       pad.hidden=phase==='transfer';hand.hidden=!seated;
@@ -495,15 +555,17 @@
             '　／　'+targetName()+' '+distanceText(range)+' '+mark;
         }
       }else{
-        tag.textContent=site?.name||definition.name;status.textContent='SE-00001 · '+(definition.kind==='ship'?'拜伦号':body.waterDepth?.(position.lat,position.lon)>1.7?'水下':'地表');
+        tag.textContent=site?.name||definition.name;status.textContent='SE-00001 · '+(definition.kind==='ship'?'拜伦号':body.waterDepth?.(position.lat,position.lon)>1.7?'水下':'地表')+' · 空格跳跃';
       }
       const nearby=walking?nearbySpirit():null;
       const attraction=walking?safariAction(null):null;
-      huntButton.hidden=!attraction;
-      if(attraction)huntButton.textContent=attraction.label;
       const hasSpirit=canObserve(nearby);
+      const duplicateContact=hasSpirit&&attraction?.op==='field'&&nearby.method==='field'&&attraction.speciesId===nearby.speciesId;
+      huntButton.hidden=!attraction||duplicateContact;
+      if(attraction)huntButton.textContent=attraction.label;
       watch.hidden=!hasSpirit&&!(walking&&sisterAbove);if(!hasSpirit)observedBird=null;
       encounterButton.hidden=!hasSpirit||nearby.kind==='apparition';
+      encounterButton.disabled=walking&&jump.airborne;
       encounterButton.textContent=nearby?'接触'+nearby.name:'接触精灵';
       watch.textContent=walking&&sisterAbove&&!hasSpirit?(throughScope?'收起望远镜':'望远镜 · '+sister.name):observedBird!==null?'结束观察':'观察'+(nearby?.name||'精灵');
       if(nearby?.kind==='apparition')watch.textContent=observingWreck()?'放下观测镜':'举起观测镜';
@@ -542,23 +604,41 @@
       }else flight.launch();
       updateUI();requestFrame();persist();
     }
+    function toggleAutopilot(){
+      if(phase==='helm')flyCommand(pending||flight.status().auto?'manual':'auto');
+    }
     function boardGround(){
-      if(!closeToRamp()||door<.98)return;
+      if(jump.airborne||!closeToRamp()||door<.98)return;
       approachRamp=true;observedBird=null;requestFrame();
     }
     function crossSill(q){
       feet.copy(craft.walk(vec(q.x,0,Math.min(q.z,craft.layout.rampEnd[2])),0,0,true));
       approachRamp=false;plotRoute(null);setPhase('cabin',true);
     }
+    function canUseSurfaceAction(){
+      return phase==='surface'&&!jump.airborne&&!stage.dataset.consoleOpen&&!boarding.commsOpen;
+    }
     function useSiteTool(caster){
-      const action=body.interactSpiritSite(caster,position.lat,position.lon,flameTool);
+      if(!canUseSurfaceAction())return false;
+      const action=body.interactSpiritSite(caster,position.lat,position.lon,boarding.equipmentState().flameEquipped);
       if(!action)return false;
-      if(flameTool&&action.includes('护膜'))flameRig.pulse();
-      say(action);requestFrame();return true;
+      if(action.effect==='flame')flameRig.pulse(action.target);
+      say(action.message||action);requestFrame();return true;
+    }
+    function fieldAction(){
+      if(phase!=='surface')return false;
+      const target=worksites?.target(position);if(!target)return false;
+      if(jump.airborne){say('落地后再使用采集工具。');return true;}
+      if(!canUseSurfaceAction())return false;
+      facing=target.bearing;
+      const result=worksites.start(position,facing);say(result.message);
+      if(result.ok){observedBird=null;throughScope=false;toolPulse=0;}
+      requestFrame();return true;
     }
     function mainAction(fromKeyboard=false){
       const s=flight.status();
       if(phase==='surface'){
+        if(jump.airborne){say('落地后再接触设施或登艇。');return;}
         if(fromKeyboard&&observedBird!==null){if(!encounterButton.hidden)encounterButton.click();return;}
         if(closeToRamp()){boardGround();return;}
         const gate=body.portalAt?.(position.lat,position.lon);
@@ -566,6 +646,7 @@
           usePlanet(gate.planet);relocate(gate.site);updateUI();requestFrame();persist();return;
         }
         if(!fromKeyboard)return;
+        if(fieldAction())return;
         if(requestSafari(safariAction(null)))return;
         if(useSiteTool(null))return;
         if(!encounterButton.hidden)encounterButton.click();
@@ -577,29 +658,48 @@
         return;
       }
       if(phase!=='helm'||pending)return;
-      if(s.auto)flyCommand('manual');
-      else if(s.phase!=='flying'&&arrivedOnDeck)setPhase('cabin');
+      if(s.auto)return;
+      if(s.phase!=='flying'&&arrivedOnDeck)leaveHelm();
       else if(s.phase!=='flying')flyCommand('launch');
       else if(s.canCapture){brakeUntil=0;flight.captureDock();}
       else if(s.canLand){brakeUntil=0;flight.land();}
       else{brakeUntil=performance.now()+1800;say('制动中');}
       requestFrame();persist();
     }
-    function setLens(near,far){
+    function desiredFov(){
       const aspect=stage.clientWidth/Math.max(1,stage.clientHeight);
       const inside=phase==='cabin'||phase==='transfer'||(phase==='helm'&&!external);
       const cabinFov=phase==='helm'?(craft.layout.cockpitFov||78):74;
       // Keep useful horizontal visibility when the preview is narrower than it is tall.
       const wideFov=Math.min(105,2*Math.atan(Math.tan(cabinFov*Math.PI/360)/Math.min(1,aspect))*180/Math.PI);
-      const fov=throughScope?2*Math.atan(Math.tan(49*Math.PI/360)/18)*180/Math.PI:
+      return throughScope?2*Math.atan(Math.tan(49*Math.PI/360)/18)*180/Math.PI:
         observingWreck()?49*observation.zoom:
         inside?wideFov:49;
+    }
+    function blendCamera(dt){
+      frameFov=desiredFov();
+      if(!cameraBlend)return;
+      cameraBlend.elapsed+=dt;
+      const t=clamp(cameraBlend.elapsed/.45,0,1),weight=t*t*(3-2*t);
+      const targetRotation=view.quaternion.clone();
+      const position=cameraBlend.position.clone(),rotation=cameraBlend.rotation.clone();
+      if(cameraBlend.anchor){
+        cameraBlend.anchor.localToWorld(position);
+        rotation.premultiply(cameraBlend.anchor.getWorldQuaternion(new T.Quaternion()));
+      }
+      view.position.lerpVectors(position,view.position,weight);
+      view.quaternion.copy(rotation).slerp(targetRotation,weight);
+      frameFov=T.MathUtils.lerp(cameraBlend.fov,frameFov,weight);
+      if(t===1)cameraBlend=null;
+    }
+    function setLens(near,far){
+      const aspect=stage.clientWidth/Math.max(1,stage.clientHeight),fov=frameFov;
       if(view.near!==near||view.far!==far||view.aspect!==aspect||view.fov!==fov){
         Object.assign(view,{near,far,aspect,fov});view.updateProjectionMatrix();
       }
     }
     function surfaceCamera(dt){
-      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015);
+      const f=body.frame(position.lat,position.lon),p=body.point(position.lat,position.lon,.015+jump.offset);
 
       local.position.copy(p);local.quaternion.copy(f.quaternion);rig.root.rotation.y=facing;
       if(localVehicle()&&flight.status().phase==='landed'&&p.distanceTo(flight.position)<15)escort.hide();
@@ -638,7 +738,7 @@
       const side=atWindow?-1.68:eye?.98:1.45,forward=atWindow?-.66:eye?2.5:-.24;
       const dx=Math.cos(yaw)*side-Math.sin(yaw)*forward,dz=-Math.sin(yaw)*side-Math.cos(yaw)*forward;
       const peer=body.move(position.lat,position.lon,dx,-dz);
-      nono.followOnPlanet(dx,body.height(peer.lat,peer.lon)-body.height(position.lat,position.lon),dz,yaw+Math.PI,dt,true);
+      nono.followOnPlanet(dx,body.height(peer.lat,peer.lon)-body.height(position.lat,position.lon)-jump.offset,dz,yaw+Math.PI,dt,true);
       if(observedBird!==null){
         const bird=nearbySpirit();
         if(canObserve(bird)&&bird.kind==='apparition'){
@@ -679,10 +779,15 @@
       if(parked)originRotation.copy(flight.quaternion).invert();
       function advance(east,north){
         const next=body.walk(position.lat,position.lon,east,north);
+        const ground=body.height(next.lat,next.lon);
+        if(!jump.canMoveTo(ground,jump.airborne?surfaceCeiling(next,ground):Infinity))return false;
         if(parked){
           const q=body.point(next.lat,next.lon).sub(flight.position).applyQuaternion(originRotation);
           if(Math.abs(q.y)<4){
-            if(door>=.98&&Math.abs(q.x)<.95&&q.z>tip-.65&&q.z<tip){position=next;crossSill(q);return true;}
+            if(door>=.98&&Math.abs(q.x)<.95&&q.z>tip-.65&&q.z<tip){
+              if(jump.airborne)return false;
+              position=next;crossSill(q);return true;
+            }
             if(Math.abs(q.x)<2.5&&q.z<5.6&&q.z>-5.5)return false;
           }
         }
@@ -697,7 +802,7 @@
       if(motion.distance>.0005){
         const delta=-motion.bearing-facing;
         facing+=Math.atan2(Math.sin(delta),Math.cos(delta))*(1-Math.exp(-15*dt));
-        requestSafari(body.safariWalk(position.lat,position.lon));
+        if(canUseSurfaceAction())requestSafari(body.safariWalk(position.lat,position.lon));
       }
       arrival='';observedBird=null;
       return dt?Math.min(metres,motion.distance)/dt:0;
@@ -713,7 +818,7 @@
       const ground=coordinates(rampFoot()),face=vec(0,0,1).applyQuaternion(flight.quaternion);
       const f=body.frame(ground.lat,ground.lon);
       position=rampApproach(.35);
-      setPhase('surface');yaw=facing=Math.atan2(-face.dot(f.east),face.dot(f.north));persist();
+      setPhase('surface');facing=Math.atan2(-face.dot(f.east),face.dot(f.north));persist();
     }
     function cabinStep(dx,dz){
       const docked=flight.status().phase==='docked',tip=craft.layout.rampEnd[2];
@@ -740,7 +845,10 @@
       }
       yaw+=(Number(pressed('ArrowLeft'))-Number(pressed('ArrowRight')))*dt*1.55;
       if((forward||side)&&dt){
-        const speed=pressed('ShiftLeft')||pressed('ShiftRight')?walkPace.run:walkPace.walk;
+        const water=phase==='surface'&&(body.waterDepth?.(position.lat,position.lon)||0)>1.7;
+        const suited=boarding.equipmentState().divingSuit;
+        const waterPace = water && !suited ? 0.72 : 1;
+        const speed=(pressed('ShiftLeft')||pressed('ShiftRight')?walkPace.run:walkPace.walk)*waterPace;
         pendingSteps.clear();
         if(phase==='surface')return step(forward,side,speed*dt,dt);
         const dir=walkDirection(forward,side,yaw),before=feet.clone();
@@ -798,7 +906,8 @@
           dock.root.visible=nearDock;setLens(.055,3200);renderer.render(world,view);
         }else{
           pano.root.visible=false;
-          setLens(.075,walking?7000:Math.max(11000,Math.sqrt(2*radius*(agl+8))*1.45));
+          const localFar=walking?7000:Math.max(11000,Math.sqrt(2*radius*(agl+8))*1.45);
+          setLens(.075,Math.max(localFar,sky.visible?sky.scale.x*1.01:0));
           renderer.render(world,view);
         }
       }finally{
@@ -853,21 +962,37 @@
       craft.update({door,gear,thrust:s.throttle,speed:s.speed,altitude:s.clearance,mode:s.stage,destination:targetName()});
       craft.root.updateMatrixWorld(true);
       const speed=phase==='cabin'||phase==='surface'?walkInput(dt):0;
-      const walking=phase==='surface',at=walking?position:{lat:s.lat,lon:s.lon},agl=walking?0:s.clearance;
-      flameRig.setVisible(walking&&flameTool&&!eye);
-      flameRig.update(dt);
+      const walking=phase==='surface';
+      if(walking){
+        const ground=body.height(position.lat,position.lon);
+        jump.update(dt,ground,jump.airborne?surfaceCeiling(position,ground):Infinity);
+      }else jump.reset();
+      const at=walking?position:{lat:s.lat,lon:s.lon},agl=walking?jump.offset:s.clearance;
+      const equipment=boarding.equipmentState();
+      drill.set(equipment.handTool==='drill');fieldEquipment.set(equipment);
+      flameRig.setVisible(walking&&equipment.flameEquipped,!eye);
+      const workResult=worksites?.update(position,dt,walking&&!jump.airborne&&!stage.dataset.consoleOpen,facing);
+      if(workResult?.message)say(workResult.message);
+      toolPulse-=dt;
+      if(worksites?.working&&toolPulse<=0){if(worksites.working==='drill')drill.work();else fieldEquipment.pulse();toolPulse=.48;}
       if(!walking)escort.hide();
       const groundFrame=environment(at,agl,walking,s);
       dockVisible=definition.id==='klose'&&localVehicle()&&flight.position.distanceTo(dock.position)<18000;dock.root.visible=dockVisible;
       if(walking){
-        local.visible=true;rig.root.visible=contact.mesh.visible=!eye;surfaceCamera(dt);
-        walkPhase+=seerRobots.phaseStep(speed,dt);seerRobots.animate(rig,walkPhase,speed,dt);
+        local.visible=true;rig.root.visible=!eye;contact.mesh.visible=!eye&&!jump.airborne;surfaceCamera(dt);
+        walkPhase+=seerRobots.phaseStep(speed,dt);seerRobots.animate(rig,walkPhase,speed,dt,false,jump.pose);
         contact.write(0,0,.012,0,facing,rig.bones);contact.finish(1);drill.update(rig.bones.core,dt,!eye&&local.visible);
+        fieldEquipment.update(dt,{visible:!eye,underwater:(body.waterDepth?.(position.lat,position.lon)||0)>1.7,moving:speed/4.4});
       }else{
         insideCamera(s,dt);
-        sky.position.copy(view.position);sky.quaternion.copy(groundFrame.quaternion);sky.scale.setScalar(agl>1800?30000:7500);
+        fieldEquipment.update(dt,{visible:rig.root.visible,moving:speed/4.4});
+        sky.quaternion.copy(groundFrame.quaternion);
+        sky.scale.setScalar(T.MathUtils.lerp(7500,30000,T.MathUtils.smoothstep(agl,900,2600)));
       }
+      flameRig.update(dt);
+      blendCamera(dt);sky.position.copy(view.position);
       drawWorld(agl,walking);
+      cameraReady=true;
       if(time-uiClock>140){updateUI();uiClock=time;}
       if(!atlas.hidden&&time-chartClock>750){showSelection();chartClock=time;}
       if((phase==='transfer'||s.phase==='flying')&&time-lastStore>2500){persist();lastStore=time;}
@@ -965,12 +1090,13 @@
     });
     listen(recall,'click',()=>{
       if(phase==='surface'){plotRoute(targetId==='shuttle-ramp'?null:'shuttle-ramp');arrival='';updateUI();persist();}
-      else flyCommand(flight.status().auto?'manual':'auto');
+      else toggleAutopilot();
       canvas.focus({preventScroll:true});requestFrame();
     });
     function toggleView(){
       if(throughScope){throughScope=false;updateUI();requestFrame();return;}
-      if(phase==='helm'){external=!external;yaw=0;pitch=0;}
+      beginCameraBlend();
+      if(phase==='helm')external=!external;
       else if(phase==='surface')eye=!eye;
       updateUI();requestFrame();persist();
     }
@@ -995,11 +1121,13 @@
       }finally{picker.far=maxDistance;}
     }
     listen(optics,'click',toggleView);
+    listen(bagButton,'click',()=>stage.dispatchEvent(new Event('seer-open-field-bag')));
+    listen(workButton,'click',fieldAction);
     function safariAction(caster){
-      return phase==='surface'?body.safariAction(caster,position.lat,position.lon):null;
+      return canUseSurfaceAction()?body.safariAction(caster,position.lat,position.lon):null;
     }
     function requestSafari(action){
-      if(!action||stage.dataset.consoleOpen||boarding.commsOpen)return false;
+      if(!action||!canUseSurfaceAction())return false;
       stage.dispatchEvent(new CustomEvent('seer-wetland-action',{detail:action}));return true;
     }
     listen(huntButton,'click',()=>requestSafari(safariAction(null)));
@@ -1010,8 +1138,20 @@
         cycleDialogFocus(e,atlas);
         if(e.key==='Escape'||(seerControlCode(e)==='KeyM'&&!e.target.closest?.('select')&&!e.repeat)){e.preventDefault();toggleAtlas();}return;
       }
-      if(e.target.closest?.('select,input,textarea'))return;
+      if(e.target.isContentEditable||e.target.closest?.('select,input,textarea,[role="textbox"]'))return;
       const code=seerControlCode(e);
+      if(code==='Escape'&&worksites?.working){e.preventDefault();worksites.cancel();say('采集已取消。');requestFrame();return;}
+      if(code==='Space'&&phase!=='helm'){
+        if(e.target.closest?.('button,a,summary,[role="button"]'))return;
+        e.preventDefault();
+        if(phase==='surface'&&!e.repeat&&!keys.has(code)){
+          const ground=body.height(position.lat,position.lon);
+          if(jump.start(ground,surfaceCeiling(position,ground))){
+            keys.add(code);throughScope=false;observedBird=null;approachRamp=false;requestFrame();
+          }
+        }
+        return;
+      }
       if(code==='Escape'&&(throughScope||observedBird!==null)){
         e.preventDefault();throughScope=false;observedBird=null;updateUI();requestFrame();return;
       }
@@ -1023,7 +1163,7 @@
       }
       if(phase==='helm'&&['KeyP','KeyH','KeyJ','KeyL'].includes(code)){
         e.preventDefault();if(e.repeat)return;
-        if(code==='KeyP')flyCommand(pending==='auto'||flight.status().auto?'manual':'auto');
+        if(code==='KeyP')toggleAutopilot();
         if(code==='KeyH')faceForward();
         if(code==='KeyJ')leaveHelm();
         if(code==='KeyL'){
@@ -1039,8 +1179,8 @@
       if(code==='KeyV'&&(phase==='surface'||phase==='helm')){e.preventDefault();if(!e.repeat)toggleView();return;}
       if(code==='KeyE'&&phase!=='transfer'){e.preventDefault();if(!e.repeat)mainAction(true);return;}
       if(phase!=='transfer'&&keyNames.has(code)){
-        if(code==='Space'&&e.target.closest?.('button'))return;
-        if(phase==='helm')takeHelmControl(code);
+        if(code==='Space'&&e.target.closest?.('button,a,summary,[role="button"]'))return;
+        if(phase==='helm')takeHelmControl();
         e.preventDefault();if(!keys.has(code))pendingSteps.set(code,code);keys.add(code);requestFrame();
       }
     });
@@ -1076,7 +1216,7 @@
         if(phase==='helm'){
           const action=picker.intersectObjects(craft.controls,false)[0]?.object.userData.shuttleAction;
           if(action==='auto')toggleAtlas();
-          if(action==='manual'){if(flight.status().phase==='flying')flyCommand('manual');else flyCommand('launch');}
+          if(action==='manual')flyCommand(pending||flight.status().auto||flight.status().phase==='flying'?'manual':'launch');
           if(action==='view')toggleView();
         }else if(companionInSight())greetCompanion();
         else if(phase==='surface'){
@@ -1098,14 +1238,12 @@
       else if(phase==='surface')boom=clamp(boom*factor,2.4,8);
       requestFrame();
     },{passive:false});
-    function takeHelmControl(code){
+    function takeHelmControl(){
       if(phase!=='helm')return;
-      if(code==='KeyX')pending=null;
-      else if(pending==='auto')pending='launch';
-      if(flight.status().auto)flight.manual();
+      if(pending||flight.status().auto)flyCommand('manual');
     }
     function shortStep(code){
-      if(phase==='helm'){takeHelmControl(code);flightPulses.set(code,.14);return;}
+      if(phase==='helm'){takeHelmControl();flightPulses.set(code,.14);return;}
       if(phase==='surface'){approachRamp=false;tapStep(code,.24);return;}
       if(phase!=='cabin')return;
       const side=Number(code==='KeyD')-Number(code==='KeyA');
@@ -1117,7 +1255,7 @@
       const code=b.dataset.step||b.dataset.flightKey;
       listen(b,'pointerdown',e=>{
         if(phase==='hidden'||phase==='transfer'||!atlas.hidden||stage.dataset.consoleOpen||boarding.commsOpen||e.button!==0)return;
-        e.preventDefault();canvas.focus({preventScroll:true});if(phase==='helm')takeHelmControl(code);
+        e.preventDefault();canvas.focus({preventScroll:true});if(phase==='helm')takeHelmControl();
         b.setPointerCapture(e.pointerId);touch.set(e.pointerId,code);pendingSteps.set(e.pointerId,code);requestFrame();
       });
       for(const type of ['pointerup','pointercancel','lostpointercapture'])listen(b,type,e=>{
@@ -1149,6 +1287,21 @@
         if(planet!==definition.id)usePlanet(planet);
         relocate(id,approachBoss);updateUI();requestFrame();persist();return true;
       },
+      approachWorksite(id){
+        if(phase!=='surface')return false;
+        const spec=FIELD_DEPOSITS[id];if(!spec||spec.planet!==definition.id)return false;
+        const at=definition.layout.fromXZ(spec.x,spec.z);
+        // Arrival remains outside the authored ore/vent prop and resolves on the
+        // existing walker. Exact chart positions are never treated as world metres.
+        for(const radius of [3.1,3.7,4.2])for(let k=0;k<12;k++){
+          const a=k*Math.PI/6,candidate=body.move(at.lat,at.lon,Math.sin(a)*radius,Math.cos(a)*radius);
+          const landed=body.walk(candidate.lat,candidate.lon,0,0);
+          if(displacement(candidate,landed).distance>.25)continue;
+          position=landed;jump.reset();const d=displacement(position,at);yaw=facing=-d.bearing;
+          observedBird=null;throughScope=false;approachRamp=false;plotRoute(null);updateUI();requestFrame();persist();return true;
+        }
+        return false;
+      },
       lookNorth(){
         if(phase!=='surface'||!sisterAbove||!openTwinSky(position))return;
         const f=body.frame(position.lat,position.lon);
@@ -1157,7 +1310,6 @@
         pitch=Math.asin(clamp(sisterDirection.dot(f.up),-1,1));
         updateUI();requestFrame();persist();
       },
-      setFlameTool(value){flameTool=!!value;requestFrame();},
       previewExpression(){
         if(phase!=='surface')return;
         seerRobots.setExpression(rig,boarding.expression);throughScope=false;observedBird=null;eye=false;
@@ -1172,9 +1324,11 @@
         return displacement(position,near).distance<58*(definition.layout?.scale||1)?(near.area||near.id):null;},
       withdrawSpirit(key){if(body){body.withdrawSpirit(key);observedBird=null;updateUI();requestFrame();}},
       get canOpenSpirits(){return phase==='surface'||phase==='cabin';},
+      get grounded(){return phase==='surface'&&!jump.airborne;},
+      get jumpHeight(){return jump.offset;},
       parkedRamp,drawSystemChart,get planetName(){return definition.name;},get active(){return phase!=='hidden';},dispose(){
       events.abort();observer.disconnect();if(!world)return;
-      hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();contact.dispose();nono.dispose();escort?.dispose();pano.dispose();
+      hide();dock?.dispose();craft.dispose();drill.dispose();flameRig.dispose();fieldEquipment?.dispose();for(const group of Object.values(worksiteGroups))group.dispose();bagButton.remove();workButton.remove();contact.dispose();nono.dispose();escort?.dispose();pano.dispose();
       for(const surface of Object.values(bodies))surface.dispose();
       rig.screen.material.dispose();
       for(const display of Object.values(skyPlanets))display.material.dispose();

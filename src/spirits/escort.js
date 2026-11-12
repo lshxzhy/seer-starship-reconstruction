@@ -14,6 +14,7 @@ function createSpiritEscort(T,world,metre=1){
   const trail=[];
   function hide(){
     anchor.visible=false;foot=lastOwner=goal=null;sample=stalled=stride=0;trail.length=0;
+    gait.position.y=0;gait.rotation.z=0;
   }
   function setSpecies(id){
     const next=Number(id)||null;if(next===selected)return;
@@ -68,7 +69,8 @@ function createSpiritEscort(T,world,metre=1){
     const distance=vector.distance;
     const look=distance>.07?vector:direction(foot,owner);
     const aim=Math.atan2(look.x,look.z),bend=Math.atan2(Math.sin(aim-heading),Math.cos(aim-heading));
-    heading+=T.MathUtils.clamp(bend,-9*dt,9*dt);turntable.rotation.y=heading;
+    const turned=T.MathUtils.clamp(bend,-3.5*dt,3.5*dt);
+    heading+=turned;turntable.rotation.y=heading;
     const alignment=Math.max(0,Math.cos(aim-heading));
     const step=Math.min(distance,12.5*dt,distance*(1-Math.exp(-9*dt)))*alignment*alignment;
     const previous=foot;
@@ -81,9 +83,14 @@ function createSpiritEscort(T,world,metre=1){
     else if(target===goal)stalled=0;
     const effort=dt?Math.min(1,delta.distance/(dt*3.6)):0;
     stride+=delta.distance*8;
-    gait.position.y=stepHeight*Math.abs(Math.sin(stride))*effort;
-    gait.rotation.z=.047*Math.sin(stride)*effort;
-    model.update(dt,effort);anchor.visible=true;
+    gait.position.y=model.articulatedGait?0:stepHeight*Math.abs(Math.sin(stride))*effort;
+    gait.rotation.z=model.articulatedGait?0:.047*Math.sin(stride)*effort;
+    // Resolve actual floor displacement into the model's final heading; a
+    // collision can slide the follower sideways instead of moving it forward.
+    const speed=dt?(delta.x*Math.sin(heading)+delta.z*Math.cos(heading))/dt:0;
+    const lateralSpeed=dt?(delta.x*Math.cos(heading)-delta.z*Math.sin(heading))/dt:0;
+    model.update(dt,Math.max(effort,Math.min(1,Math.abs(turned)/Math.max(.001,dt)*.35)),
+      {speed,lateralSpeed,turnRate:dt?turned/dt:0});anchor.visible=true;
     return true;
   }
   function deck(owner,yaw,dt,firstPerson,population,flight){

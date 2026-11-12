@@ -145,11 +145,33 @@ function createStarterGrassFigure(T,id){
   }
   function gaze(surface,y,spacing,sx,sy,brown=false){
     for(const sign of [-1,1]){
-      const x=sign*spacing,z=surface(x,y),eye=new T.Group();eye.position.set(x,y,z+.014);body.add(eye);eyes.push(eye);
-      oval(0,0,0,sx,sy,.018,brown?0x512508:0x0c1207,eye,'iris',-sign*.07);
-      if(brown)oval(0,-sy*.36,.016,sx*.75,sy*.42,.008,0x8e4824,eye,'iris');
-      oval(-sx*.19,sy*.30,.020,sx*.31,sy*.36,.009,0xfffdf0,eye);
-      if(brown)oval(sx*.34,-sy*.36,.021,sx*.15,sy*.15,.008,0xfff9d8,eye);
+      const x=sign*spacing,eye=new T.Group(),layers=[];
+      eye.position.set(x,y,0);body.add(eye);
+      // Keep the painted eye outline, but let every layer follow the actual
+      // cream face. A flat stack protrudes at the sides of this narrow torso.
+      function layer(dx,dy,rx,ry,offset,depth,tone,tilt=0,tissue='iris'){
+        const g=sphere.clone(),unit=g.attributes.position.array.slice();
+        const part=mesh(g,tone,eye,tissue);part.castShadow=false;
+        layers.push({g,unit,dx,dy,rx,ry,offset,depth,tilt});
+      }
+      layer(0,0,sx,sy,.003,.004,brown?0x512508:0x0c1207,-sign*.07);
+      if(brown)layer(0,-sy*.36,sx*.75,sy*.42,.009,.002,0x8e4824);
+      layer(-sx*.19,sy*.30,sx*.31,sy*.36,.013,.0015,0xfffdf0,0,'');
+      if(brown)layer(sx*.34,-sy*.36,sx*.15,sy*.15,.013,.0015,0xfff9d8,0,'');
+      let previous=-1;
+      const fitted={blink(value){
+        if(value===previous)return;previous=value;
+        for(const {g,unit,dx,dy,rx,ry,offset,depth,tilt} of layers){
+          const p=g.attributes.position,c=Math.cos(tilt),s=Math.sin(tilt);
+          for(let i=0;i<p.count;i++){
+            const u=unit[i*3]*rx,w=unit[i*3+1]*ry;
+            const px=dx+u*c-w*s,py=(dy+u*s+w*c)*value;
+            p.setXYZ(i,px,py,surface(x+px,y+py)+.007+offset+unit[i*3+2]*depth);
+          }
+          p.needsUpdate=true;g.computeVertexNormals();g.boundingSphere=null;
+        }
+      }};
+      fitted.blink(1);eyes.push(fitted);
     }
   }
   function stamen(a,b,r=.023,parent=crown){
@@ -286,7 +308,7 @@ function createStarterGrassFigure(T,id){
       [-.11,.68,-.115,.52,-.05,.34],[0,.39],[.075,.32],[.15,.46,.15,.68,.13,.86],
       [.16,.94,.24,1.01,.235,1.14],[.22,1.30,.12,1.39,0,1.39]],surface);
     // Keep the eyes on the face, below the curled leaf edge in the slightly
-    // elevated catalogue view; the original eye size and surface offset stay.
+    // elevated catalogue view; the original eye outline stays.
     gaze(surface,.99,.102,.045,.064,true);
     for(const sign of [-1,1]){
       const foot=new T.Group();body.add(foot);
@@ -348,6 +370,6 @@ function createStarterGrassFigure(T,id){
     for(const {group,sign} of arms)group.rotation.z=sign*(.018*Math.sin(clock*2.1)+active*.10*Math.sin(stride+sign*.5));
     for(const {group,sign} of feet)group.rotation.x=active*.15*Math.sin(stride+sign*Math.PI*.5);
     const blink=.10+.90*Math.min(1,Math.abs(clock%5.3-4.7)/.085);
-    for(const eye of eyes)eye.scale.y=blink;
+    for(const eye of eyes)eye.blink(blink);
   },dispose(){for(const g of geometry)g.dispose();for(const m of new Set(materials.values()))m.dispose();}};
 }

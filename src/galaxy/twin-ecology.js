@@ -76,24 +76,29 @@ function createTwinEcology(T,parent,definition,surface){
         if(p.retry||!initialize(p)){p.anchor.visible=false;if(!p.retry)p.retry=2;continue;}
       }
       p.anchor.visible=true;p.age+=dt;
-      let movement=0,aim=p.yaw;
+      let movement=0,aim=p.yaw,wander=null;
       const toVisitor=displacement(p.at,visitor);
       if(p.boss||toVisitor.distance<p.model.radius+2.1){
         aim=Math.atan2(toVisitor.east,-toVisitor.north);
       }else{
-        const phase=p.phase+p.age*.40,range=p.id===91?1.65:2.3;
+        const phase=p.phase+p.age*.23,range=p.id===91?1.65:Math.max(2.3,p.model.radius*1.7);
         const tx=p.homeX+Math.cos(phase)*range,tz=p.homeZ+Math.sin(phase*.79)*range;
-        const dx=tx-p.x,dz=tz-p.z,left=Math.hypot(dx,dz),stride=Math.min(left,dt*(p.id===91?.48:.37));
+        const dx=tx-p.x,dz=tz-p.z,left=Math.hypot(dx,dz),stride=Math.min(left,dt*(p.id===91?.48:p.id===90?.65:.48));
         if(left>.03){
           aim=Math.atan2(dx,dz);
-          const x=p.x+dx/left*stride,z=p.z+dz/left*stride;
-          const next=surface.move(p.site.lat,p.site.lon,x,-z);
-          if(clear(p,next)){p.x=x;p.z=z;p.at=next;movement=stride;}
+          wander={stride};
         }
       }
       const turn=Math.atan2(Math.sin(aim-p.yaw),Math.cos(aim-p.yaw));
-      p.yaw+=T.MathUtils.clamp(turn,-dt*1.5,dt*1.5);
-      p.model.update(dt,movement?1:0);pose(p);
+      const turned=T.MathUtils.clamp(turn,-dt*1.2,dt*1.2);p.yaw+=turned;
+      if(wander){
+        const stride=wander.stride*Math.max(0,Math.cos(aim-p.yaw))**2;
+        const x=p.x+Math.sin(p.yaw)*stride,z=p.z+Math.cos(p.yaw)*stride;
+        const next=surface.move(p.site.lat,p.site.lon,x,-z);
+        if(clear(p,next)){p.x=x;p.z=z;p.at=next;movement=stride;}
+      }
+      const speed=dt?movement/dt:0,turnRate=dt?turned/dt:0;
+      p.model.update(dt,Math.min(1,Math.max(speed/.65,Math.abs(turnRate)*.5)),{speed,turnRate});pose(p);
     }
   }
   function record(p,lat,lon){
