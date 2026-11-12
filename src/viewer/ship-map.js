@@ -210,7 +210,7 @@
           chart.setAttribute('aria-label','帕诺星系轨道与各行星当前位置');
           drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(regions[id]){sitePicker.value=id;refresh();}});
           const world=regions[systemDestination].definition;
-          text.textContent=world.kind==='ship'?'《穿越黑暗之门》航行记录。逃生舰可观测原始黑洞·尤纳斯，L-01 可停靠拜伦号外甲板。':
+          text.textContent=world.kind==='ship'?'拜伦号正在引力场中解体。从逃生舰观察碎片落入尤纳斯，或驾驶 L-01 靠泊外甲板。':
             '球体半径 '+(world.radius/1000)+' 公里。在登陆艇驾驶席打开航线可飞往这颗行星。';
           travel.textContent=world.kind==='ship'?'查看舱区图':'查看地表地图';travel.hidden=false;return;
         }

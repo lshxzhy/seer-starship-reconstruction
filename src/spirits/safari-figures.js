@@ -20,7 +20,7 @@ function createSafariFigure(T,id){
   }
   const oval=(col,x,y,z,w,h,d,parent)=>mesh(sphere,col,x,y,z,w,h,d,parent);
   const cube=(col,x,y,z,w,h,d,parent)=>mesh(box,col,x,y,z,w,h,d,parent);
-  const gem=(col,x,y,z,w,h,d,parent)=>mesh(crystal,col,x,y,z,w,h,d,parent);
+  const gem=(col,x,y,z,w,h,d,parent)=>finishSpiritPart(mesh(crystal,col,x,y,z,w,h,d,parent),'gem',materials);
   function horn(col,a,b,r,parent=body){
     const start=V(...a),end=V(...b),dir=end.clone().sub(start),mid=start.add(end).multiplyScalar(.5);
     const m=mesh(cone,col,mid.x,mid.y,mid.z,r,dir.length(),r,parent);
@@ -45,11 +45,24 @@ function createSafariFigure(T,id){
   // irregular fins, armoured crests and lightning tails.
   function fin(col,points,ridge=.025,parent=body){
     const c=points.reduce((sum,p)=>sum.add(V(...p)),V(0,0,0)).multiplyScalar(1/points.length);
-    const pos=[c.x,c.y+ridge,c.z+ridge,c.x,c.y-ridge,c.z-ridge],indices=[];
+    const pos=[c.x,c.y+ridge,c.z+ridge,c.x,c.y-ridge,c.z-ridge],indices=[],outer=2,n=points.length;
     for(const p of points)pos.push(...p);
-    for(let i=0;i<points.length;i++){const a=i+2,b=(i+1)%points.length+2;indices.push(0,a,b,1,b,a);}
+    // Fold the two faces into a shallow vein and taper them to the same rim.
+    for(const side of [1,-1]){
+      const ring=pos.length/3;
+      for(let i=0;i<n;i++){
+        const p=points[i],h=side*ridge*(i%2?.52:.81);
+        pos.push(c.x+.61*(p[0]-c.x),c.y+.61*(p[1]-c.y)+h,c.z+.61*(p[2]-c.z)+h);
+      }
+      for(let i=0;i<n;i++){const j=(i+1)%n;
+        if(side===1)indices.push(0,ring+i,ring+j,ring+i,outer+i,outer+j,ring+i,outer+j,ring+j);
+        else indices.push(1,ring+j,ring+i,ring+i,outer+j,outer+i,ring+i,ring+j,outer+j);
+      }
+    }
     const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setIndex(indices);g.computeVertexNormals();geometry.add(g);
-    return mesh(g,col,0,0,0,1,1,1,parent);
+    const tissue=[281,344,814].includes(id)?'feather':[293,387,738].includes(id)?'petal':
+      [108,289,399,703].includes(id)?'fin':'scute';
+    return finishSpiritPart(mesh(g,col,0,0,0,1,1,1,parent),tissue,materials);
   }
   const eyelids=[];
   function eye(s,x,y,z,w,h,iris=ink,slant=0){
@@ -68,7 +81,7 @@ function createSafariFigure(T,id){
     socket.rotateZ(s*slant);
     eyelids.push(socket);
     oval('#323044',0,0,-.003,w*1.08,h*1.06,.016,socket);
-    oval(iris,0,0,.002,w,h,.016,socket);
+    finishSpiritPart(oval(iris,0,0,.002,w,h,.016,socket),'iris',materials);
     if(iris!==ink){
       oval('#242638',0,h*.11,.014,w*.62,h*.67,.006,socket);
       oval(iris,w*.19,-h*.45,.015,w*.30,h*.14,.004,socket);

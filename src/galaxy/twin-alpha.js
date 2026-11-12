@@ -163,16 +163,22 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   }
   const ventData=[[-7,-12,3.05],[5,-21,2.75],[-18,-27,2.65],[7,-6,1.95],[-15,3,2.2],[.5,-37,2.35],[-32,-7,2.1],[18,-29,1.8]];
   const water=new T.ShaderMaterial({uniforms:{clock:{value:0}},vertexShader:`
-    varying vec2 disk;void main(){disk=position.xz;vec4 p=vec4(position,1.);
+    varying vec2 disk;varying vec3 eye;void main(){disk=position.xz;mat4 pose=modelViewMatrix;
     #ifdef USE_INSTANCING
-      p=instanceMatrix*p;
+      pose=pose*instanceMatrix;
     #endif
-    gl_Position=projectionMatrix*modelViewMatrix*p;}`,
-    fragmentShader:`varying vec2 disk;uniform float clock;void main(){
-      float r=length(disk),a=atan(disk.y,disk.x),w=sin(22.*r-clock*2.4+1.3*sin(a*2.+clock*.46));
-      float line=smoothstep(.58,.96,w)*smoothstep(.13,.47,r);
-      vec3 col=mix(vec3(.24,.77,.74),vec3(.66,.96,.82),.22+.58*r);
-      col=mix(col,vec3(.93,1.,.91),.34*line+.18*(1.-smoothstep(.0,.29,r)));
+    vec4 mv=pose*vec4(position,1.);eye=vec3(dot(-mv.xyz,normalize(pose[0].xyz)),dot(-mv.xyz,normalize(pose[1].xyz)),dot(-mv.xyz,normalize(pose[2].xyz)));
+    gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`varying vec2 disk;varying vec3 eye;uniform float clock;void main(){
+      float r=length(disk),r2=length(disk-vec2(.23,-.16));
+      float phase=24.*r-clock*2.5,phase2=31.*r2-clock*1.85;
+      vec2 slope=.115*cos(phase)*disk/max(.03,r)+.064*cos(phase2)*(disk-vec2(.23,-.16))/max(.03,r2);
+      vec3 n=normalize(vec3(-slope.x,1.,-slope.y)),v=normalize(eye);
+      float fresnel=.07+.77*pow(1.-max(0.,dot(n,v)),4.);
+      float caustic=pow(max(0.,.6*sin(phase)+.4*sin(phase2)),4.)*(.3+.7*r);
+      vec3 col=mix(vec3(.13,.60,.59),vec3(.56,.87,.73),smoothstep(.2,1.,r));
+      col=mix(col,vec3(.73,.90,.88),fresnel)+vec3(.12,.21,.16)*caustic;
+      col+=vec3(.46,.42,.32)*pow(max(0.,dot(reflect(normalize(vec3(-.49,-.84,.26)),n),v)),46.);
       gl_FragColor=vec4(col,1.);}`});
   const mistPos=[],mistData=[];
   // Deposits accumulate in chipped, overlapping plates above the waterline.
@@ -313,6 +319,12 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       if(i%2===0)for(let k=0;k<5;k++){
         const xx=x+s*(.49+.47*Math.sin(k*2.4)),zz=z+s*.35*Math.cos(k*2.4);
         stamp(sphere,pear,xx,y+.64*s+.31*k,zz,.36,.23,.26,0,i+k,.36);stamp(sphere,fruitBud,xx-.10,y+.64*s+.31*k+.09,zz,.12,.06,.09);
+        const node=V(x+s*.66,y+.77*s+.26*k,z+.17*s),fruit=V(xx,y+.64*s+.31*k+.16,zz);
+        link(rod,leaf,node,fruit,.052);
+        for(let l=0;l<3;l++){
+          const a=i+l*tau/3;
+          stamp(sphere,leaf,xx+.09*Math.cos(a),fruit.y,zz+.09*Math.sin(a),.11,.035,.060,0,-a,.30);
+        }
       }
     }
   }
@@ -358,6 +370,9 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   throat.bezierCurveTo(.94,5.22,2.17,2.48,1.36,.15);throat.closePath();bole.holes.push(throat);
   const hollow=new T.ExtrudeGeometry(bole,{depth:2.3,bevelEnabled:true,bevelSegments:3,bevelSize:.21,bevelThickness:.28,curveSegments:22});
   stamp(hollow,bark,hollowX,hollowY,hollowZ-1.1);
+  const innerFlute=curve([[1.35,.20,0],[1.52,1.60,.16],[1.28,3.16,.17],[.83,4.38,.10],[.17,5.35,0]],.095,22);
+  for(const side of [-1,1])for(let i=0;i<3;i++)
+    stamp(innerFlute,i===1?moss:dusk,hollowX,hollowY,hollowZ-.66+i*.68,1,.985,.9,0,side<0?Math.PI:0,0);
   stamp(sphere,warm,hollowX,hollowY+2.54,hollowZ-1.8,1.96,3.01,.40);
   const furrow=curve([[0,0,0],[-.38,.19,.11],[-.18,.41,.01],[.14,.71,.03],[.08,1,0]],.090);
   for(const side of [-1,1]){
@@ -466,7 +481,13 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
       const z2=deckZ+2.25;
       stamp(rod,metal,px,deckY+.21,z2,.40,1.75,.40,Math.PI/2,0,0);
       stamp(rod,lime,px,deckY+.22,z2,.405,.25,.405,Math.PI/2,0,0);
+      // Stepped axle ends sit in a continuous pair of bearing channels.
+      for(const face of [-1,1]){
+        stamp(rod,edgeMetal,px,deckY+.21,z2+face*.93,.22,.15,.22,Math.PI/2);
+        stamp(rod,metal,px,deckY+.21,z2+face*1.05,.11,.14,.11,Math.PI/2);
+      }
     }
+    for(const dz of [1.20,3.30])stamp(cube,slate,deckX,deckY+.17,deckZ+dz,7.58,.44,.13);
     // The two projecting service baskets have a mesh bottom, ochre frames,
     // roller hinges and oil lines bolted directly to the side of the tower.
     const trayX=towerX+side*8.1,trayZ=towerZ+10.6,ty=base+3.65;

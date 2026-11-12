@@ -5,7 +5,7 @@ const BYRON_WORLD=(()=>{
     id,name,x,z,lat:-z/chartScale,lon:x/chartScale,lookAt,description,...extras});
   return {id:'byron',kind:'ship',name:'拜伦号',radius:100,chartScale,
     sites:[
-      site('byron-witness','吞舰现场 · 逃生舰',180,182,[-26,-65],'从逃生舰前窗看拜伦号与原始黑洞·尤纳斯的接触面。',{lookPitch:.025}),
+      site('byron-witness','吞舰现场 · 逃生舰',180,182,[-26,-65],'从逃生舰前窗看拜伦号破口不断脱落的残骸汇入尤纳斯。',{lookPitch:-.085}),
       site('byron-deck','拜伦号甲板',-9,34,[-12,9],'绕过卧式蓝光管，沿开启的罩门下坡进入神秘空间。',{mapId:314}),
       site('byron-space','神秘空间',-12,-5,[-9.9,-11.5],'中央亮井连接分段圆甲与透明的管线地板，右舷廊桥通向精灵舱。',{mapId:315}),
       site('byron-hold','拜伦号精灵舱',17,-31,[17,-56],'透过养成舱玻璃可以看见下层管线；训练设备和三口泡泡机位于环廊两侧。',{mapId:316})
@@ -18,7 +18,7 @@ const BYRON_WORLD=(()=>{
 const BYRON_BOSS={x:-165,y:103,z:-382,height:1200};
 const BYRON_DECK=[[-40,55],[-40,29],[-34,18],[-20,12],[-17,7],[-15.2,7],[-15.2,17],[-7.1,17],[-7.1,7],[-6,7],[4,13],[20,14],[36,23],[34,45],[23,64],[5,72],[-22,67]];
 const BYRON_HOLD=[[.5,-28],[4,-26.4],[10,-24],[24,-24],[33,-29],[35,-37],[35,-56],[29,-65],[4,-65],[-1.7,-58],[-1.7,-36]];
-const BYRON_WITNESS={x:180,y:16,z:182,yaw:Math.atan2(206,247)};
+const BYRON_WITNESS={x:180,y:72,z:182,yaw:Math.atan2(206,247)};
 function byronInside(x,z,poly){
   let hit=false;
   for(let i=0,j=poly.length-1;i<poly.length;j=i++){
@@ -100,155 +100,224 @@ function byronKit(T,root){
     contains:p=>(solids.get(Math.floor(p.x/12)+','+Math.floor(p.z/12))||[]).some(hit=>hit(p))};
 }
 
+// Exposed edges of the three broken webs. The draw and debris systems share metres.
+const BYRON_TEAR_SITES=[
+  {x:36,y:-11,z:8,normal:[.91,.29,.28]},
+  {x:-10,y:36,z:-31,normal:[.73,.64,.24]},
+  {x:2,y:-43,z:10,normal:[.78,-.49,.38]}
+];
+
+function finishByronCoating(T,paint){
+  const sheet=document.createElement('canvas');sheet.width=sheet.height=1;
+  const ctx=sheet.getContext('2d');ctx.fillStyle='#353b3e';ctx.fillRect(0,0,1,1);
+  const tile=new T.CanvasTexture(sheet);
+  tile.wrapS=tile.wrapT=T.RepeatWrapping;tile.anisotropy=4;
+  const image=new Image();
+  image.onload=()=>{
+    sheet.width=image.naturalWidth;sheet.height=image.naturalHeight;
+    ctx.drawImage(image,0,0);tile.needsUpdate=true;
+  };
+  image.src=BYRON_COATING_URL;
+  paint.onBeforeCompile=s=>{
+    s.uniforms.byronMineral={value:tile};
+    s.vertexShader='attribute vec2 stoneUV; varying vec2 stoneCoord;\n'+s.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\nstoneCoord=stoneUV;');
+    s.fragmentShader='uniform sampler2D byronMineral; varying vec2 stoneCoord;\n'+s.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+       vec3 stoneSample=texture2D(byronMineral,stoneCoord).rgb;
+       vec3 stoneGrain=clamp(stoneSample/vec3(.208,.231,.243),.42,1.92);
+       diffuseColor.rgb*=mix(vec3(1.),stoneGrain,.72);`).replace('#include <roughnessmap_fragment>',
+      `#include <roughnessmap_fragment>
+       roughnessFactor=clamp(roughnessFactor+.17*(1.-dot(stoneGrain,vec3(.21,.72,.07))),.22,.87);`);
+  };
+  paint.customProgramCacheKey=()=>'byron-blackstone';
+  paint.addEventListener('dispose',()=>{image.onload=null;tile.dispose();});
+}
 function createByronHull(T,distant=false){
   const root=new T.Group(),k=byronKit(T,root),m=k.mat;
-  root.name='拜伦号 · 赫尔卡遗舰';
-  const black=0x23283d,navy=0x3b435f,slate=0x56637f,edge=0x64738a,plum=0x55445e;
-  const cyan=0x50d7d1,pink=0xca49ac,steel=m(slate),iron=m(black),jade=m(0x316468),lamp=m(cyan,true);
-  // Sections are cut across the vertical spine, the curved keel and the outside
-  // of the inhabited deck. Each row holds height, centre, half spans and coating.
-  const profile=[[-.56,-1],[.56,-1],[1,-.6],[1,.6],[.56,1],[-.56,1],[-1,.6],[-1,-.6]];
-  const colours=new Map(),metal={pos:[],rgb:[],uv:[]},light={pos:[],rgb:[]},mix=T.MathUtils.lerp;
-  function tone(hex){
-    if(!colours.has(hex))colours.set(hex,new T.Color(hex).convertSRGBToLinear());
-    return colours.get(hex);
+  root.name='拜伦号 · 黑石残舰';
+  const obsidian=0x172d36,basalt=0x30444b,flint=0x526269,cut=0x78818a,oxide=0x62505b;
+  const obs=m(obsidian),dark=m(0x111b24),frame=m(flint),copper=m(0x7f6262);
+  const red=m(0xe34a30,true),amber=m(0xfc9270,true),ice=m(0x4ca69f,true);
+  const metal={pos:[],rgb:[],uv:[],stoneUV:[]},coat=new Map();
+  const pt=(x,y,z)=>new T.Vector3(x,y,z),scratch=pt();
+  const tileUV=[[.015,.015],[.485,.015],[.485,.485],[.015,.485]];
+  function tri(a,b,c,dye,tile,indices){
+    if(!coat.has(dye))coat.set(dye,new T.Color(dye).convertSRGBToLinear());
+    const col=coat.get(dye);
+    const n=distant?null:b.clone().sub(a).cross(c.clone().sub(a));
+    for(const [i,p] of [a,b,c].entries()){
+      metal.pos.push(p.x,p.y,p.z);metal.rgb.push(col.r,col.g,col.b);
+      if(!distant){
+        // Project in hull metres, including cuts and bent surfaces without panel UVs.
+        const nx=Math.abs(n.x),ny=Math.abs(n.y),nz=Math.abs(n.z);
+        const u=nx>=ny&&nx>=nz?p.z:p.x,v=ny>=nx&&ny>=nz?p.z:p.y;
+        metal.stoneUV.push(u/7.3,v/7.3);
+        const uv=tile==null?[.003,.003]:tileUV[indices[i]];
+        metal.uv.push(uv[0]+(tile!=null?(tile%2)*.5:0),uv[1]+(tile!=null?Math.floor(tile/2)*.5:0));
+      }
+    }
   }
-  function triangle(batch,hex,shade,a,b,c,uv){
-    batch.pos.push(...a,...b,...c);
-    const col=tone(hex);
-    for(let n=0;n<3;n++)batch.rgb.push(col.r*shade,col.g*shade,col.b*shade);
-    if(batch.uv&&!distant)batch.uv.push(...(uv||[.002,.002,.002,.002,.002,.002]));
+  function face(a,b,c,d,dye,tile){
+    tri(a,b,c,dye,tile,[0,1,2]);tri(a,c,d,dye,tile,[0,2,3]);
   }
-  function quad(batch,hex,shade,a,b,c,d,tile){
-    if(tile===undefined){triangle(batch,hex,shade,a,c,b);triangle(batch,hex,shade,b,c,d);return;}
-    const u=(tile%2)*.5+.003,v=Math.floor(tile/2)*.5+.003,w=.494;
-    triangle(batch,hex,shade,a,c,b,[u,v,u,v+w,u+w,v]);
-    triangle(batch,hex,shade,b,c,d,[u+w,v,u,v+w,u+w,v+w]);
+  function solid(a,b,c,d){
+    if(distant)return;
+    const tris=[new T.Triangle(a,b,c),new T.Triangle(a,c,d)],nodes=[a,b,c,d];
+    const xs=nodes.map(p=>p.x),ys=nodes.map(p=>p.y),zs=nodes.map(p=>p.z);
+    const y0=Math.min(...ys)-.38,y1=Math.max(...ys)+.38;
+    k.volume(Math.min(...xs)-.4,Math.max(...xs)+.4,Math.min(...zs)-.4,Math.max(...zs)+.4,
+      p=>p.y>=y0&&p.y<=y1&&tris.some(t=>t.closestPointToPoint(p,scratch).distanceToSquared(p)<.145));
   }
-  function vertex(row,i){
-    const [u,v]=profile[i%8];return [row[1]+u*row[3],row[0],row[2]+v*row[4]];
+  // Longitudinal rings are uneven in plan and height. This shell has an arched
+  // back, a sloping brow and a turned-under lip as in the original map symbol.
+  const profile=[[-1,.31],[-.85,.71],[-.48,.952],[-.045,1],[.51,.91],[.86,.73],[1,.43],[.91,.235],[.52,.065],[-.22,0],[-.81,.11]];
+  const brow=[
+    [75,-39,3,-4,6],[67,-42,7,-5,15],[53,-44,8,-7,29],
+    [32,-43,8.5,-5,44],[14,-38,12.8,5,53],[-6,-31,17.1,13,59],
+    [-25,-22,19.5,15,62],[-44,-15,18,18,59],[-60,-10,13,24,54],[-78,-5,3.1,44,55]
+  ];
+  const skirt=[
+    [78,-8,5,-6,.2],[68,-7,18,-12,1],[54,-4,34,-19,2.5],
+    [34,-1,40,-23,4],[13,1,39,-28,4],[-8,0,36,-29,3],
+    [-32,-1,33,-24,3],[-51,1,31,-17,3],[-68,3,23,-11,1],[-80,2,8,-6,-.5]
+  ];
+  function point(row,section){
+    const [u,h]=profile[section%profile.length];
+    return pt(row[1]+u*row[2],row[3]+(row[4]-row[3])*h,row[0]);
   }
-  function shell(rows,plate=false){
+  function loft(rows,hood){
     for(let j=0;j<rows.length-1;j++){
-      const lo=rows[j],hi=rows[j+1],dy=hi[0]-lo[0];
-      const west=Math.min(lo[1]-lo[3],hi[1]-hi[3]),east=Math.max(lo[1]+lo[3],hi[1]+hi[3]);
-      const fore=Math.min(lo[2]-lo[4],hi[2]-hi[4]),aft=Math.max(lo[2]+lo[4],hi[2]+hi[4]);
-      if(!distant)k.volume(west,east,fore,aft,p=>{
-        if(p.y<=lo[0]||p.y>=hi[0])return false;
-        const h=(p.y-lo[0])/dy,x=Math.abs(p.x-mix(lo[1],hi[1],h))/mix(lo[3],hi[3],h);
-        const z=Math.abs(p.z-mix(lo[2],hi[2],h))/mix(lo[4],hi[4],h);
-        return x<1&&z<1&&.4*x+.44*z<.84-.4*.44;
-      });
-      for(let i=0;i<8;i++){
-        const a=vertex(lo,i),b=vertex(lo,i+1),c=vertex(hi,i),d=vertex(hi,i+1);
-        const dx=b[0]-a[0],dz=b[2]-a[2],len=Math.hypot(dx,dz);
-        const shade=.82+.055*((i+2*j)%4);
-        quad(metal,lo[5],shade,a,b,c,d);
-        if(distant||!plate||dy<3.4||len<4)continue;
-        const count=Math.max(1,Math.round(len/8)),nx=dz/len,nz=-dx/len;
-        function panelPoint(u,h,raise){
-          return [mix(mix(a[0],b[0],u),mix(c[0],d[0],u),h)+nx*raise,
-            lo[0]+h*dy,mix(mix(a[2],b[2],u),mix(c[2],d[2],u),h)+nz*raise];
-        }
-        for(let n=0;n<count;n++){
-          const left=(n+.035)/count,right=(n+.965)/count;
-          const patch=(batch,hex,sh,u,v,h,top,r,tile)=>quad(batch,hex,sh,panelPoint(u,h,r),panelPoint(v,h,r),panelPoint(u,top,r),panelPoint(v,top,r),tile);
-          patch(metal,lo[5],1.03+.095*((n+i*j)%3),left,right,.07,.95,.11,(n+3*i+j)%4);
-          if((n+i+j)%4===1||dy>=14)continue;
-          const u=left+.15/count,v=right-.13/count;
-          patch(metal,black,.82,u,v,.47,.82,.18);
-          patch(light,(n+2*i+j)%8?cyan:pink,.83,u+.06/count,v-.06/count,.56,.68,.21);
+      for(let i=0;i<profile.length;i++){
+        const a=point(rows[j],i),b=point(rows[j],i+1),c=point(rows[j+1],i+1),d=point(rows[j+1],i);
+        const cutaway=hood?j>=5&&j<=7&&i>=6&&i<=8:
+          j>=3&&j<=6&&i>=5&&i<=8;
+        if(cutaway)continue;
+        const dye=(hood?[obsidian,basalt,0x384b50,basalt,0x48595e,obsidian,0x27373e]:
+          [basalt,flint,basalt,0x35454d,basalt,0x3a4750,obsidian])[i%7];
+        face(a,b,c,d,dye);solid(a,b,c,d);
+        if(distant||b.distanceTo(a)<3||d.distanceTo(a)<6)continue;
+        const n=b.clone().sub(a).cross(d.clone().sub(a)).normalize();
+        function on(u,v,height){return a.clone().lerp(b,u).lerp(d.clone().lerp(c,u),v).addScaledVector(n,height);}
+        const columns=Math.max(1,Math.round(b.distanceTo(a)/6.5)),div=Math.max(1,Math.round(d.distanceTo(a)/8.7));
+        for(let u=0;u<columns;u++)for(let v=0;v<div;v++){
+          const left=(u+.021)/columns,right=(u+.979)/columns,front=(v+.022)/div,back=(v+.978)/div;
+          const id=i*11+j*7+u*5+v,shade=id%7===3?0x405057:dye;
+          face(on(left,front,.11),on(right,front,.11),on(right,back,.11),on(left,back,.11),shade,id%4);
         }
       }
     }
-    for(const last of [false,true]){
-      const row=last?rows[rows.length-1]:rows[0],mid=[row[1],row[0],row[2]];
-      for(let i=0;i<8;i++){
-        const a=vertex(row,i),b=vertex(row,i+1);
-        triangle(metal,row[5],1,mid,last?b:a,last?a:b);
+    for(const end of [0,rows.length-1]){
+      const r=rows[end],center=pt(r[1],(r[3]+r[4])*.5,r[0]);
+      for(let i=0;i<profile.length;i++){
+        const a=point(r,i),b=point(r,i+1);tri(center,end?b:a,end?a:b,basalt);
       }
     }
   }
-  // Broad broken waist with an undercut above the engine trench.
-  shell([[-22,-3,-6,23,51,black],[-16,-2,-3,33,62,plum],[-12,-1,-2,38,68,navy],
-    [-9,0,0,41,73,black],[-5,0,0,39,73,edge],[-2.7,0,0,44,78,navy],[-1,0,0,43,79,slate]],true);
-  k.prism(m(0x474359),BYRON_DECK,-1,6,!distant);
-  // The reference tower has an armoured prow above the bridge with a swept
-  // sensor blade on top. The broken shoulder leaves daylight underneath it.
-  shell([[-17,-30,-19,9,26,black],[3,-31,-19,10,28,slate],[17,-32,-20,8,25,navy],
-    [26,-31,-25,8,26,black],[35,-29,-30,9,26,navy],[42,-28,-31,8,24,edge],
-    [47,-27,-34,7,21,black]],true);
-  shell([[36,-28,-30,8,26,black],[41,-28,-29,13,36,plum],[44,-28,-28,14,40,slate],
-    [50,-28,-31,12,34,navy],[54,-27,-38,8,19,slate],[55,-27,-39,6,16,navy]],true);
-  shell([[53,-27,-40,5.8,11,black],[60,-26,-43,5,9,navy],[66,-25,-46,3.5,7,edge],
-    [73,-24,-53,1.7,4,slate],[80,-23,-61,.22,.48,black]]);
-  // Reinforced hook tapering beneath the inhabited ring. Its foot curls
-  // back towards the bow, giving the wreck its distinctive tall silhouette.
-  shell([[-96,-13,-24,.7,1.6,edge],[-92,-15,-17,2.9,6,navy],[-84,-17,-6,4.7,12,slate],
-    [-70,-20,2,6.8,15,navy],[-50,-22,3,7.7,17,black],[-45,-22,3,8.6,19,slate],
-    [-40,-23,2,8.5,18,black],[-31,-25,0,10,19,navy],[-17,-26,-4,12,22,slate],[-10,-25,-5,14,23,black]],true);
-  shell([[-63,-12,0,6,12,black],[-59,-10,0,12,17,navy],[-54,-10,-1,16,20,plum],
-    [-51,-11,-3,14,19,black]],true);
-  shell([[-34,-16,-3,9,18,black],[-29,-12,-6,19,23,plum],[-24,-12,-7,21,25,navy],
-    [-20,-15,-7,16,19,black]],true);
-  // Turquoise observatory and its projecting base, above the broad deck.
-  shell([[16,-29,-11,5,9,black],[19,-23,-7,11,12,navy],[22,-21,-6,12,12,slate],
-    [24,-20,-6,10,10,black]],true);
-  k.ball(jade,-17,24,-4,6.9,2.5,6.9,!distant);k.ball(lamp,-17,25,-4,5.4,4.9,5.4,!distant);
-  k.ring(steel,-17,25.4,-4,5.9);
-  for(const side of [-1,1]){
-    // A pair of blades projects beyond the waist. Struts run back to the
-    // frame; the shorter blades in the lower keel repeat the same mounting.
-    for(const [x,y,z,reach] of [[38,-4,-28,24],[37,-9,12,16],[0,-55,-8,13]]){
-      const base=side*x,tip=base+side*reach;
-      shell([[y-1.3,base+side*2,z,2.4,5.8,black],[y,base+side*reach*.46,z-4,reach*.54,7.2,slate],
-        [y+1.8,base+side*reach*.54,z-7,reach*.5,4.2,navy]]);
-      k.line(iron,[base,y-6,z+5],[tip-side*3,y,z-4],.75);
+  loft(brow,true);loft(skirt,false);
+  // The original symbol has one warm dorsal slit and an ember in its blunt
+  // bow. A second blue band of regular portholes would alter its silhouette.
+  for(let j=2;j<=5;j++){
+    const between=(row,h)=>point(row,4).lerp(point(row,5),h);
+    const a=between(brow[j],.35),b=between(brow[j+1],.35);
+    const offset=pt(.44,.6,0);
+    k.line(dark,a.toArray(),b.toArray(),2.55);
+    const end=a.clone().lerp(b,.965);a.lerp(b,.023);
+    a.addScaledVector(offset,3.3);end.addScaledVector(offset,3.3);
+    k.line(red,a.toArray(),end.toArray(),1.46);
+    if(!distant&&j%3===1){const tip=a.clone().lerp(end,.58);k.line(amber,a.clone().addScaledVector(offset,.78).toArray(),tip.addScaledVector(offset,.78).toArray(),.37);}
+  }
+  k.box(dark,-37.55,13.3,52,2.4,8.4,5.2,0,-.06,-.09);
+  k.box(red,-36.28,13.55,52.1,.7,6.13,3.65,0,-.06,-.09);
+  // The playable deck sits in the exposed saddle. Keep its port berth clear.
+  k.prism(m(0x344348),BYRON_DECK,-1,6,!distant);
+  for(let j=0;j<BYRON_DECK.length;j++){
+    const a=BYRON_DECK[j],b=BYRON_DECK[(j+1)%BYRON_DECK.length];
+    if(Math.hypot(b[0]-a[0],b[1]-a[1])>14)k.line(obs,[a[0],1.1,a[1]],[b[0],1.1,b[1]],.68);
+  }
+  // A broken claw has two dark armour faces, a rough bare-metal cross
+  // section and a recessed longitudinal ridge, with no intact deck behind it.
+  function splinter(base,shoulder,tip,width,thick,dye=basalt){
+    const a=pt(...base),b=pt(...shoulder),c=pt(...tip),axis=c.clone().sub(a).normalize();
+    const side=axis.clone().cross(pt(0,1,0)).normalize();
+    const crown=side.clone().cross(axis).normalize(),foot=a.clone().addScaledVector(crown,-thick*.38);
+    const al=a.clone().addScaledVector(side,-width),ar=a.clone().addScaledVector(side,width);
+    const bl=b.clone().addScaledVector(side,-width*.67),br=b.clone().addScaledVector(side,width*.83),ridge=b.clone().addScaledVector(crown,thick);
+    tri(al,ar,foot,cut);face(al,bl,br,ar,dye);
+    tri(al,ridge,bl,basalt);tri(ar,br,ridge,flint);tri(al,ar,ridge,dye);
+    tri(bl,c,br,obsidian);tri(bl,ridge,c,cut);tri(br,c,ridge,dye);
+    solid(al,ar,br,bl);solid(bl,br,c,ridge);
+  }
+  // The blunt prow folds into the underside. The plate lies along the outside
+  // of the port landing strip; its diagonal cut can be seen from the boat.
+  splinter([-42,8,49],[-40,1,62],[-22,-7,75],6.8,4.6);
+  splinter([-42,2.9,42],[-35,-8,53],[-15,-13,65],6.5,4.1,obsidian);
+  splinter([-43,25,21],[-40,9,21],[-33,-6,27],7,4,basalt);
+  // A damaged shoulder shields the cultivation chamber at its starboard side.
+  splinter([32,1,-58],[35,10,-46],[37,4,-28],4,2.5);
+  // This torn lower mounting joins the deepest shedding site to the main
+  // frame. Half of its close-packed laminated sheets have already gone.
+  splinter([-8,-15,29],[-6,-32,15],[2,-43,10],5.8,3.2,obsidian);
+  // The open starboard flank has three deep diagonal webs. From the witness
+  // boat the planetarium can be seen through the gaps where plating tore off.
+  for(const [z,out,top] of [[28,28,15],[12,38,21],[-8,46,28],[-30,48,31],[-49,44,29]]){
+    splinter([15,-12,z+2],[out-4,top*.54,z-8],[out,top,z-18],4.5,2.1);
+    k.line(dark,[10,-16,z+4],[out-5,top*.48,z-8],1.35);
+    k.line(frame,[12,-9,z+3],[out-2,top*.55,z-9],.63);
+  }
+  // Distinct belly, severed conduits and curled ventral hooks, not a central
+  // fin below a stack of inhabited floors. All remain off the landing axis.
+  for(const [x,z,depth] of [[-20,46,27],[-9,29,37],[-1,13,46],[4,-4,39],[5,-25,32]]){
+    splinter([x,-14,z],[x+3,-depth,z-3],[x+8,-depth+1,z-16],3.5,2,obsidian);
+    k.pipe(frame,[[x-2,-15,z],[x-1,-depth*.8,z+2],[x+2,-depth,z-4],[x+7,-depth+1,z-12]],.68);
+  }
+  // A diagonal hinge joins the big dorsal cowl to the keel behind the eye.
+  for(const [x,z] of [[-40,24],[-34,4],[-27,-19],[-19,-38]]){
+    splinter([x,2,z],[x-1,20,z-2],[x-5,39,z-8],5,2.4,obsidian);
+    k.line(obs,[x+3,3,z],[x+5,22,z-6],1.7);
+  }
+  // Jagged outer sheets terminate at the same three edges from which pieces
+  // are pulled in the live encounter. The inner web is several metres behind.
+  for(const [j,s] of BYRON_TEAR_SITES.entries()){
+    const n=pt(...s.normal).normalize(),center=pt(s.x,s.y,s.z),inside=center.clone().addScaledVector(n,-7.7);
+    const across=n.clone().cross(pt(0,1,0)).normalize(),up=across.clone().cross(n).normalize();
+    const edgePt=(x,y,d)=>center.clone().addScaledVector(across,x).addScaledVector(up,y).addScaledVector(n,d);
+    const teeth=[[-8,2.4],[-6.3,7],[-3.8,3.1],[-1.6,5.6],[0,0],[2,2.5],[4.9,-.4],[8.5,2.9]];
+    for(let i=0;i<teeth.length-1;i++){
+      const [x,y]=teeth[i],[xx,yy]=teeth[i+1],p=edgePt(x,y,0),q=edgePt(xx,yy,.2*Math.sin(i));
+      const a=edgePt(x,y+8,-4.8),b=edgePt(xx,yy+8,-4.8);
+      face(p,q,b,a,i%3?basalt:flint);face(p,p.clone().addScaledVector(n,-.65),q.clone().addScaledVector(n,-.65),q,cut);
+      solid(p,q,b,a);
     }
-    const x=side*15;
-    k.ball(iron,x,-8,58,8.6,6.4,13,!distant);
-    const nozzle=new T.LatheGeometry([[3.5,48],[7.5,55],[8.1,59],[7.3,64],[6.25,69],[4.5,69],[3.2,60]].map(([r,z])=>new T.Vector2(r,z)),32);
-    nozzle.rotateX(Math.PI/2);k.put(nozzle,steel,x,-8,0);
-    for(const z of [58.2,63.1,68.7])k.ring(z===63.1?lamp:iron,x,-8,z,z===58.2?7.9:z===63.1?7:5.9,5.8,0);
-    if(distant)continue;
-    for(let n=0;n<10;n++){
-      const a=n*Math.PI/5,ray=(r,z)=>[x+r*Math.cos(a),-8+r*Math.sin(a),z];
-      k.line(iron,ray(7.8,57),ray(6.0,67.6),.32);
+    k.line(obs,inside.clone().addScaledVector(across,-9).toArray(),inside.clone().addScaledVector(across,10).toArray(),1.9);
+    for(let i=-2;i<=2;i++){
+      const x=3.65*i,root=edgePt(x,-6,-7),knuckle=edgePt(x+1,3,-4),lip=edgePt(x+.5,4+1.7*Math.sin(i+j),-1.5);
+      k.line(frame,root.toArray(),knuckle.toArray(),.74);k.line(m(oxide),knuckle.toArray(),lip.toArray(),.52);
+      if(!distant)k.pipe(copper,[edgePt(x-1,2,-5).toArray(),edgePt(x+.4,.2,-2.3).toArray(),edgePt(x+.65,-2,-.8).toArray()],.20);
     }
+    if(!distant)k.line(ice,edgePt(-3,-4,-6.3).toArray(),edgePt(.5,-4.15,-6.15).toArray(),.21);
   }
   if(!distant){
-    // Flexible conduit and fittings on the visible face of the lower keel.
-    for(let i=0;i<3;i++){
-      const x=-14+i*1.13;
-      k.pipe(i===1?steel:iron,[[x,-18,20],[x,-33,18],[x,-49,19],[x,-68,14],[x+1,-79,5],[x+1,-88,-10]],.43);
+    for(let j=0;j<6;j++){
+      const z=33-j*12,x=-35+j*3;
+      k.pipe(dark,[[x,13,z],[x+2,8,z+1],[x+4,-1,z+2],[x+6,-5,z-3]],1.18);
+      k.pipe(copper,[[x+1.3,13,z-1],[x+3.2,8,z],[x+5.6,-1,z],[x+7,-4,z-3]],.33);
     }
-    for(const [x,y,z,r] of [[-12,-37,14,2.7],[-12,-62,15,2.1],[-22,33,-9,2.8]]){
-      k.ball(iron,x,y,z,r*1.5,r*1.2,r);k.ring(steel,x+.25,y,z+r*.82,r, r,0);
-      k.ball(lamp,x+.3,y,z+r*.92,r*.67,r*.67,r*.30);
-    }
-    for(let i=0;i<BYRON_DECK.length;i++){
-      const a=BYRON_DECK[i],b=BYRON_DECK[(i+1)%BYRON_DECK.length],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz);
-      if(len<9)continue;
-      const n=Math.ceil(len/8),yaw=Math.atan2(dx,dz),nx=dz/len,nz=-dx/len;
-      for(let j=0;j<n;j++){
-        const x=a[0]+dx*(j+.5)/n,z=a[1]+dz*(j+.5)/n;
-        k.box(steel,x+nx*.14,2.9,z+nz*.14,.5,4.7,len/n-.45,0,yaw);
-        k.box(iron,x+nx*.48,3.5,z+nz*.48,.35,1.8,len/n-.95,0,yaw);
-        if(j%3!==1)k.box(lamp,x+nx*.69,3.6,z+nz*.69,.12,.42,len/n*.58,0,yaw);
-      }
+    for(let i=0;i<8;i++){
+      const r=brow[2+Math.floor(i/2)],p=point(r,6).lerp(point(r,7),.34+i%2*.41);
+      k.ball(i%3===1?red:ice,p.x+.12,p.y,p.z+(i%2?2:-2),.28,.46,.91);
     }
   }
-  for(const [batch,paint] of [[metal,new T.MeshStandardMaterial({vertexColors:true,roughness:.53,metalness:.36})],
-    [light,new T.MeshBasicMaterial({vertexColors:true})]]){
-    if(!batch.pos.length){paint.dispose();continue;}
-    const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(batch.pos,3));
-    if(batch.uv?.length){
-      geo.setAttribute('uv',new T.Float32BufferAttribute(batch.uv,2));
-      paint.map=armourColour;paint.bumpMap=paint.roughnessMap=armourHeight;paint.bumpScale=.035;
-    }
-    geo.setAttribute('color',new T.Float32BufferAttribute(batch.rgb,3));geo.computeVertexNormals();k.put(geo,paint,0,0,0);
+  const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(metal.pos,3));
+  geo.setAttribute('color',new T.Float32BufferAttribute(metal.rgb,3));geo.computeVertexNormals();
+  const paint=new T.MeshStandardMaterial({vertexColors:true,roughness:.59,metalness:.43,side:T.DoubleSide});
+  if(!distant){
+    geo.setAttribute('uv',new T.Float32BufferAttribute(metal.uv,2));
+    geo.setAttribute('stoneUV',new T.Float32BufferAttribute(metal.stoneUV,2));
+    paint.map=armourColour;paint.bumpMap=paint.roughnessMap=armourHeight;paint.bumpScale=.046;
+    finishByronCoating(T,paint);
   }
-  k.finish();root.userData.blocksShuttle=k.contains;return root;
+  k.put(geo,paint,0,0,0);k.finish();root.userData.blocksShuttle=k.contains;return root;
 }
 
 function createByronSurface(T,world){
@@ -274,7 +343,7 @@ function createByronSurface(T,world){
   }
   const barriers=[];
   function obstruct(x,z,r){barriers.push({x,z,r});}
-  const records=createByronRecordStations(T,root);
+  buildByronInstruments(T,root);
   obstruct(-6.9,30.3,.85);obstruct(-9.15,-8.15,.85);
   function floorBox(x,z,width,depth,colour){
     k.box(colour,x,-.18,z,width,.34,depth,0,0,0,true);
@@ -586,128 +655,166 @@ function createByronSurface(T,world){
   for(let j=0;j<5;j++)for(const x of [-6.45,6.45])o.box(j%2?blue:lavender,x,.03,1.8+j*1.27,.34,.038,.91);
   o.finish();
 
-  const encounter=new T.Group();encounter.name='原始黑洞 · 拜伦号撞击现场';root.add(encounter);
-  const boss=createYunasFigure(T,4717,{height:BYRON_BOSS.height});
-  const apparition=new T.Group();
+  const encounter=new T.Group();encounter.name='拜伦号 · 潮汐撕裂';root.add(encounter);
+  const boss=createYunasFigure(T,4717,{height:BYRON_BOSS.height}),apparition=new T.Group();
   apparition.rotation.y=Math.PI+Math.atan2(w.x-BYRON_BOSS.x,w.z-BYRON_BOSS.z);
   apparition.userData.byronSpirit='byron-yunas';apparition.add(boss.root);encounter.add(apparition);
-  const lensOffset=boss.core.getWorldPosition(new T.Vector3());
-  // The contacting material in 1002-10 pushes against the bow. The growth is
-  // actual geometry between ship and eye, with the stern and its engines visible.
-  const skyDebris=new T.Group();encounter.add(skyDebris);
-  const scraps=byronKit(T,skyDebris),skin=scraps.mat(0x495572),broken=scraps.mat(0x6b5369);
-  for(let j=0;j<28;j++){
-    const a=j*2.39996,r=43+(j%8)*8.9;
-    const x=-27+r*Math.cos(a),y=17+(16+j%5*10)*Math.sin(a),z=-111-1.2*j+8*Math.cos(j*.84);
-    scraps.box(j%2?skin:broken,x,y,z,1.1+j%4*.9,.36+j%3*.22,1.35+j%5*.7,.44*j,.73*j,.29*j);
-  }
-  scraps.finish();
-  // The observer sees the approaching body in ship-fixed coordinates: the
-  // deck, struts and docked L-01 never move relative to the feet of a visitor.
-  // At contact broad folds reach around the bow and cast it into shadow.
-  const tideMat=new T.MeshStandardMaterial({color:0xffffff,vertexColors:true,roughness:.38,metalness:.53,side:T.DoubleSide});
-  const waves=[];
-  for(let j=0;j<8;j++){
-    const rings=30,slices=7,v=new Float32Array((rings+1)*(slices+1)*3),rgb=[],faces=[];
-    for(let i=0;i<=rings;i++)for(let k=0;k<=slices;k++){
-      const t=i/rings,u=k/slices,edge=Math.abs(2*u-1)**3,gleam=.5+.5*Math.sin(i*.46+j*1.3);
-      rgb.push(.024+.15*edge*gleam,.012+.043*edge,.038+.18*edge*gleam);
-      if(i<rings&&k<slices){const n=i*(slices+1)+k,b=n+slices+1;faces.push(n,b,n+1,n+1,b,b+1);}
+  const bossPoint=new T.Vector3();
+  boss.core.getWorldPosition(bossPoint);
+  apparition.position.set(BYRON_BOSS.x,BYRON_BOSS.y,BYRON_BOSS.z).sub(bossPoint);
+  boss.core.getWorldPosition(bossPoint);
+
+  // The hull and the well stay in their own reference frame. Each loosened piece
+  // has its own release time, spin, fracture time and incoming angular momentum.
+  function createTidalStream(){
+    const v=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),up=v(0,1,0),smooth=T.MathUtils.smoothstep;
+    const throats=BYRON_TEAR_SITES.map((site,i)=>{
+      const at=v(site.x,site.y,site.z),direction=bossPoint.clone().sub(at).normalize();
+      const right=v().crossVectors(direction,up).normalize(),rise=v().crossVectors(right,direction).normalize();
+      const normal=v(...(site.normal||[[1,.13,-.15],[.62,.78,-.12],[.65,-.75,-.12]][i%3])).normalize();
+      const lip=v().crossVectors(normal,up).normalize(),edge=v().crossVectors(lip,normal);
+      return {at,normal,lip,edge,right,rise,turn:[.37,1.03,-.43][i%3]};
+    });
+    let seed=4717;
+    function random(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
+    const front=v(w.x,w.y,w.z).sub(bossPoint).normalize();
+    function track(i,count){
+      const port=throats[i%throats.length];
+      return {port,start:port.at.clone().addScaledVector(port.lip,(random()-.5)*4.8).addScaledVector(port.edge,(random()-.5)*3.5),
+        seed:random(),turn:port.turn+(random()-.5)*.34,bend:84+50*random(),spin:1.9+.95*random(),
+        offset:(i+.7*random())/count,rate:1/(9+random()*7)};
     }
-    const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(v,3).setUsage(T.DynamicDrawUsage));
-    geo.setAttribute('color',new T.Float32BufferAttribute(rgb,3));geo.setIndex(faces);
-    const sheet=new T.Mesh(geo,tideMat);sheet.frustumCulled=false;encounter.add(sheet);waves.push({sheet,geo,j,rings,slices});
-  }
-  // A world-space archival trace of Ophelia's escape ship, separate from the
-  // walkable witness bridge. The grapple really meets the cylinder at the
-  // engineering bay and carries it along the visible return trajectory.
-  const trace=new T.Group();trace.name='奥菲利娅 · 返航轨迹';encounter.add(trace);
-  const vk=byronKit(T,trace),silk=vk.mat(0x8daed4),veil=vk.mat(0x465b7c),beam=vk.mat(0x56cfff,true),thrust=vk.mat(0xcdedff,true);
-  vk.prism(silk,[[0,-6.1],[2.16,-2.4],[2.64,2.6],[1.31,4.53],[-1.31,4.53],[-2.64,2.6],[-2.16,-2.4]],-.59,.53);
-  vk.ball(veil,0,.72,-.93,1.47,1.1,2.61);vk.ball(beam,0,.87,-2.02,.83,.65,.83);
-  for(const s of [-1,1]){
-    vk.prism(veil,[[s*1.3,-1.9],[s*6.23,2.73],[s*5.81,3.88],[s*1.76,3.02]],-.21,.16);
-    vk.line(beam,[s*2.0,.38,-.5],[s*5.5,.36,2.86],.17);
-    vk.ball(thrust,s*1.15,0,4.6,.52,.43,1.63);
-  }
-  vk.line(silk,[2.6,.17,1],[5.38,.28,.9],.27);vk.line(silk,[5.38,.28,.9],[6.0,-.62,.9],.24);
-  vk.finish();
-  const capsule=new T.Group();capsule.name='罐装黑洞';encounter.add(capsule);const pk=byronKit(T,capsule);
-  const bodyMetal=pk.mat(0xa9c3c7),housing=pk.mat(0x384957),well=pk.mat(0xc05658,true);
-  pk.line(housing,[0,0,-2.3],[0,0,2.3],.87);pk.ball(well,0,0,0,1.04,1.04,1.18);
-  for(const z of [-1.9,-.84,.84,1.9])pk.ring(bodyMetal,0,0,z,1.02,1.02,0);
-  pk.finish();
-  const discharge=new T.Group();encounter.add(discharge);
-  const arcs=byronKit(T,discharge),electric=arcs.mat(0x71a7ff,true),white=arcs.mat(0xe1ffff,true);
-  const split=[32,30,-31],cross=[26,40,-56];
-  for(const path of [[[35,20,-18],[41,26,-24],split,[38,35,-44],cross,[31,53,-69],[9,52,-78]],
-    [split,[49,37,-34],[44,40,-39],[53,45,-49]],[cross,[17,34,-54],[10,39,-63],[4,37,-65]]]){
-    for(let i=1;i<path.length;i++)arcs.line(electric,path[i-1],path[i],.73);
-    for(let i=1;i<path.length;i++)arcs.line(white,path[i-1].map((v,j)=>v+(j===2?.48:0)),path[i].map((v,j)=>v+(j===2?.48:0)),.32);
-  }
-  arcs.finish();
-  const nozzles=new T.Group();nozzles.name='拜伦号逆向引擎';encounter.add(nozzles);
-  const jets=[],flameShape=new T.ConeGeometry(1,1,32,5,true);flameShape.translate(0,.5,0);
-  const plasma=new T.MeshBasicMaterial({color:0x278cff,transparent:true,opacity:.34,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide});
-  const hot=new T.MeshBasicMaterial({color:0xb8faff,transparent:true,opacity:.62,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide});
-  for(const x of [-15,15])for(let layer=0;layer<2;layer++){
-    const jet=new T.Mesh(flameShape,layer?hot:plasma);jet.position.set(x,-8,67);jet.rotation.x=Math.PI/2;nozzles.add(jet);jets.push({jet,layer});
-  }
-  const track=new T.CatmullRomCurve3([
-    new T.Vector3(83,26,142),new T.Vector3(44,0,86),new T.Vector3(17,-6,58),new T.Vector3(30,-1,38),
-    new T.Vector3(46,20,10),new T.Vector3(32,34,-30),new T.Vector3(-1,43,-89)]);
-  const travelAxis=new T.Vector3(0,0,-1),grip=new T.Vector3(6.18,-.62,.90),toEye=new T.Vector3();
-  const exactHook=track.getPointAt(.535),atHook=new T.Quaternion().setFromUnitVectors(travelAxis,track.getTangentAt(.535));
-  exactHook.add(grip.clone().applyQuaternion(atHook));const bossPoint=new T.Vector3(),orbitPivot=new T.Vector3();
-  const smooth=(p,a,b)=>T.MathUtils.smoothstep(p,a,b);
-  let phase=-1,time=0,mode='hidden';
-  function setEncounterPhase(value){
-    const next=clamp(Number(value)||0,0,1);if(next===phase)return;phase=next;boss.setEncounterPhase?.(phase);records?.setPhase(phase);
-    const approach=smooth(phase,.15,.52),engulf=smooth(phase,.23,.77),collapse=smooth(phase,.84,1);
-    const shock=smooth(phase,.733,.760)*(1-smooth(phase,.810,.841));discharge.visible=shock>.04;discharge.scale.setScalar(.94+.06*shock);
-    const drive=smooth(phase,.18,.50)*(1-.94*smooth(phase,.72,.95));nozzles.visible=drive>.003;
-    for(const {jet,layer} of jets){const width=layer?2.76:4.25;jet.scale.set(width,(layer?16:28)*drive+.1,width);}
-    const scale=1+.065*engulf-.65*collapse;
-    orbitPivot.set(BYRON_BOSS.x+approach*48,BYRON_BOSS.y-approach*24,BYRON_BOSS.z+approach*125);
-    apparition.scale.setScalar(scale);apparition.position.copy(orbitPivot).addScaledVector(lensOffset,-scale);
-    boss.core.getWorldPosition(bossPoint);
-    for(const {sheet,geo,j,rings,slices} of waves){
-      const reach=.20+.80*engulf-.32*collapse,positions=geo.attributes.position;
-      const near=Math.max(0,Math.cos(j*tau/8));
-      for(let i=0;i<=rings;i++){
-        const row=i/rings,t=row*reach,tip=smooth(row,.72,1),atEye=1-smooth(t,0,.64);
-        const x=-30+24*t+(bossPoint.x+30+52*scale)*atEye;
-        const y=31*(1-t)+1.6*t+4*Math.sin(t*3.3+j*.4)+(bossPoint.y-31-63*scale)*atEye;
-        const z=-142+(163+97*near**.64)*t+(5.4*Math.sin(j*2.43)-8.5)*t*t+(bossPoint.z+142+73*scale)*atEye;
-        const radial=10+42*Math.sin(Math.min(1,t)*1.66);
-        for(let k=0;k<=slices;k++){
-          const u=k/slices,ang=j*tau/8+(u-.5)*(.70+.60*engulf+.33*near)*(1-(.94-.31*near)*tip)+.23*Math.sin(t*4+j*1.15)+(j%2?1:-1)*.17*shock;
-          const ridge=1+.095*Math.sin(u*Math.PI*3+.54*j)+.055*Math.sin(t*13+3*j);
-          let xx=x+Math.cos(ang)*(radial+8*near)*ridge,yy=y+Math.sin(ang)*radial*(.73+.21*Math.sin(j+1))*ridge;
-          let zz=z+(2.8+9.6*tip)*Math.cos(u*Math.PI*2+j+.42*i);
-          const pull=collapse*(.20+.64*(1-row));xx+=(bossPoint.x-xx)*pull;yy+=(bossPoint.y-yy)*pull;zz+=(bossPoint.z-zz)*pull;
-          positions.setXYZ(i*(slices+1)+k,xx,yy,zz);
+    // Launch velocity points outward from the torn lip. The increasing axial
+    // velocity and curved transverse motion draw separate wakes into the same eye.
+    function sample(piece,t,out){
+      const u=.045*t+.955*t**1.72,wake=Math.sin(Math.PI*u),lift=(1-smooth(t,.18,.56))*(1-Math.exp(-12*t));
+      const a=piece.turn+piece.spin*u*u,span=piece.bend*wake;
+      return out.copy(piece.start).lerp(bossPoint,u).addScaledVector(piece.port.normal,lift*(14+12*piece.seed))
+        .addScaledVector(piece.port.right,span*Math.cos(a))
+        .addScaledVector(piece.port.rise,span*Math.sin(a)).addScaledVector(front,52*wake*u);
+    }
+    function extrusion(outline,depth,bevel){
+      const shape=new T.Shape();outline.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));shape.closePath();
+      const geometry=new T.ExtrudeGeometry(shape,{depth,bevelEnabled:Boolean(bevel),bevelThickness:bevel,bevelSize:bevel,bevelSegments:1});
+      geometry.center();return geometry;
+    }
+    const armour=extrusion([[-.94,-.38],[-.57,-.56],[.41,-.51],[.95,-.25],[.78,.34],[.24,.29],[.08,.49],[-.79,.45]],.095,.024);
+    const rib=extrusion([[-.20,-.30],[.20,-.30],[.20,-.24],[.046,-.24],[.046,.22],[.16,.22],[.16,.28],
+      [-.16,.28],[-.16,.22],[-.046,.22],[-.046,-.24],[-.20,-.24]],1.86,0);
+    const cable=new T.TubeGeometry(new T.CatmullRomCurve3([v(-.81,.19,.07),v(-.34,.32,-.08),v(.18,-.12,.04),v(.79,-.23,.18)]),8,.052,5,false);
+    const chip=new T.TetrahedronGeometry(.65,0);
+    const paint=new T.MeshStandardMaterial({color:0xffffff,roughness:.53,metalness:.46,vertexColors:true});
+    const familyCount=114,children=3,partKinds=[armour,rib,cable,chip],counts=[0,0,0,children*familyCount],families=[];
+    for(let i=0;i<familyCount;i++){
+      const kind=Math.floor(i/throats.length)%3,flow=track(i,familyCount),size=(kind===2?.95:.62)+random()**2.1*3.24;
+      const group={flow,kind,index:counts[kind]++,size,roll:random()*6.28,breakAt:.46+.25*random(),
+        spin:(random()>.5?1:-1)*(.7+random()*1.8),bits:[]};
+      for(let j=0;j<children;j++)group.bits.push({cross:(random()-.5)*2,up:(random()-.5)*2,phase:random()*tau});
+      families.push(group);
+    }
+    const fragments=partKinds.map((g,i)=>{
+      // Differentiate dark coating, cut flanges, and the freshly exposed metal.
+      const normals=g.attributes.normal,colour=[];
+      for(let j=0;j<normals.count;j++){
+        const bright=i===2?.55:Math.abs(normals.getZ(j))<.58?.82:.42;
+        colour.push(bright*.88,bright*.93,bright);
+      }
+      g.setAttribute('color',new T.Float32BufferAttribute(colour,3));
+      const mesh=new T.InstancedMesh(g,paint,counts[i]);mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      mesh.name=['剥落装甲','断裂型材','撕断线束','二次破碎'][i];encounter.add(mesh);return mesh;
+    });
+    const pose=new T.Object3D(),point=v(),base=v(),tint=new T.Color(),warm=new T.Color(0xff965b).convertSRGBToLinear();
+    const clean=[0x9ba6b2,0x899cb0,0xb88d76,0x9faebb].map(c=>new T.Color(c).convertSRGBToLinear());
+    function place(mesh,index,at,rx,ry,rz,size,sx,sy,sz,kind,heat){
+      pose.position.copy(at);pose.rotation.set(rx,ry,rz);pose.scale.set(sx*size,sy*size,sz*size);pose.updateMatrix();
+      mesh.setMatrixAt(index,pose.matrix);mesh.setColorAt(index,tint.copy(clean[kind]).lerp(warm,heat));
+    }
+    // Fine spall keeps its angular spread and velocity distinct from the larger
+    // pieces. The apparent width decreases continuously as grains fall below a pixel.
+    const grainCount=1536,dust=[],coords=new Float32Array(grainCount*3),state=new Float32Array(grainCount*2);
+    const cloud=new T.BufferGeometry(),xyz=new T.BufferAttribute(coords,3).setUsage(T.DynamicDrawUsage);
+    const thermal=new T.BufferAttribute(state,2).setUsage(T.DynamicDrawUsage);
+    const shutter=new T.BufferAttribute(new Float32Array(grainCount*3),3).setUsage(T.DynamicDrawUsage);
+    cloud.setAttribute('position',xyz);cloud.setAttribute('smelt',thermal);cloud.setAttribute('previous',shutter);
+    const resolution={value:720};
+    const dustPaint=new T.ShaderMaterial({uniforms:{imageHeight:resolution},transparent:true,depthWrite:false,vertexShader:`
+      attribute vec2 smelt;attribute vec3 previous;uniform float imageHeight;
+      varying float heat,cover,width,trail,extent;varying vec2 axis;
+      void main(){vec4 mv=modelViewMatrix*vec4(position,1.);vec4 clip=projectionMatrix*mv;
+        vec4 last=projectionMatrix*modelViewMatrix*vec4(previous,1.);
+        vec2 velocity=(clip.xy/max(.1,clip.w)-last.xy/max(.1,last.w))*.5*imageHeight;
+        velocity*=vec2(projectionMatrix[1][1]/projectionMatrix[0][0],-1.);float speed=length(velocity);
+        axis=velocity/max(.001,speed);trail=min(speed,10.);
+        float diameter=.5*imageHeight*smelt.y*projectionMatrix[1][1]/max(.1,-mv.z);
+        width=clamp(diameter,.78,4.);heat=smelt.x;cover=clamp(diameter*diameter,0.,1.);
+        extent=clamp(width+trail+1.,1.,15.);gl_Position=clip;gl_PointSize=extent;}`,
+      fragmentShader:`varying float heat,cover,width,trail,extent;varying vec2 axis;
+        void main(){vec2 pixel=(gl_PointCoord-.5)*extent;
+          float d=length(pixel-axis*clamp(dot(pixel,axis),-.5*trail,.5*trail));
+          float a=1.-smoothstep(.14*width,.58*width,d);
+          gl_FragColor=vec4(mix(vec3(.68,.69,.78),vec3(1.,.65,.38),heat),a*cover*.90);}`});
+    for(let i=0;i<grainCount;i++){
+      const grain=track(i,grainCount);grain.size=.21+.62*random()**1.45;
+      grain.bend+=22*(random()-.5);grain.turn+=(random()-.5)*.47;dust.push(grain);
+    }
+    const motes=new T.Points(cloud,dustPaint);motes.frustumCulled=false;motes.name='引力尾迹 · 细碎屑';
+    motes.onBeforeRender=gpu=>{resolution.value=gpu.domElement.height;};encounter.add(motes);
+    // At this distance much of the ejecta is smaller than a screen pixel. A
+    // thin, broken dust fan follows each stream; individual metal flakes
+    // remain opaque in front of it. Its density travels toward the eye.
+    const lanes=throats.map((port,i)=>({...track(i,throats.length),port,start:port.at,turn:port.turn,bend:107,spin:2.4,seed:.5}));
+    const samples=64,widths=[v(0,1,0),front.clone().cross(up).normalize()],ribbonPos=[],ribbonUV=[],ribbonIndices=[];
+    for(let j=0;j<lanes.length*widths.length;j++)for(let k=0;k<=samples;k++){
+      const t=k/samples,n=ribbonPos.length/3;ribbonPos.push(0,0,0,0,0,0);ribbonUV.push(t,-1,t,1);
+      if(k)ribbonIndices.push(n-2,n-1,n,n-1,n+1,n);
+    }
+    const vapour=new T.BufferGeometry(),ribbonXYZ=new T.Float32BufferAttribute(ribbonPos,3).setUsage(T.DynamicDrawUsage);
+    vapour.setIndex(ribbonIndices);vapour.setAttribute('position',ribbonXYZ);vapour.setAttribute('uv',new T.Float32BufferAttribute(ribbonUV,2));
+    const dustTime={value:0},film=new T.ShaderMaterial({uniforms:{tideTime:dustTime},transparent:true,depthWrite:false,side:T.DoubleSide,
+      vertexShader:`varying vec2 strand;void main(){strand=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+      fragmentShader:`varying vec2 strand;uniform float tideTime;
+        void main(){float p=strand.x,w=strand.y;
+          float knot=.5+.5*sin(38.*p-1.3*tideTime+2.6*sin(18.*p+w*2.1-.46*tideTime));
+          float fibres=.45+.55*pow(.5+.5*cos(w*15.+2.*sin(27.*p-.65*tideTime)),3.);
+          float crossSection=exp(-w*w*4.);
+          vec3 dye=mix(vec3(.49,.52,.62),vec3(.92,.55,.35),smoothstep(.45,.96,p));
+          gl_FragColor=vec4(dye,.34*crossSection*mix(.25,1.,knot)*fibres*smoothstep(0.,.06,p)*(1.-smoothstep(.90,1.,p)));}`});
+    const mist=new T.Mesh(vapour,film);mist.frustumCulled=false;mist.name='裂口细尘';encounter.add(mist);
+    return function advance(age){
+      for(let i=0;i<families.length;i++){
+        const family=families[i],{flow,breakAt,size,kind}=family,t=(flow.offset+age*flow.rate)%1;
+        const split=smooth(t,breakAt,breakAt+.055),released=smooth(t,0,.040),swallowed=1-smooth(t,.945,1);
+        const heat=smooth(t,.49,.98)*.83,roll=family.roll+family.spin*(t+4*t*t);
+        sample(flow,t,base);
+        place(fragments[kind],family.index,base,roll+flow.seed,roll*.61,roll*.86,
+          size*(1-split)*released,1,.79+.21*flow.seed,1,kind,heat);
+        for(let j=0;j<children;j++){
+          const splinter=family.bits[j],spread=(t-breakAt)*22*swallowed;
+          point.copy(base);
+          if(split>0)point.addScaledVector(flow.port.right,splinter.cross*spread).addScaledVector(flow.port.rise,splinter.up*spread);
+          place(fragments[3],i*children+j,point,roll*1.7+splinter.phase,roll*2.3,roll*.9,
+            size*.60*split*swallowed,1,.49+.08*j,.57,3,heat);
         }
       }
-      positions.needsUpdate=true;geo.computeVertexNormals();sheet.visible=phase>.10;
-    }
-    skyDebris.scale.setScalar(.93+.13*engulf-.39*collapse);
-    skyDebris.position.set(-7*collapse,5*collapse,-40*collapse);
-    const leg=phase<=.73?.535*smooth(phase,.50,.73):.535+.465*smooth(phase,.73,.98);
-    trace.visible=phase>=.50&&phase<.993;trace.position.copy(track.getPointAt(leg));
-    const finalRun=smooth(phase,.835,.985),heading=track.getTangentAt(leg);
-    toEye.subVectors(bossPoint,trace.position).normalize();heading.lerp(toEye,finalRun).normalize();
-    trace.quaternion.setFromUnitVectors(travelAxis,heading);trace.position.lerp(bossPoint,finalRun);
-    trace.scale.setScalar(1-.82*smooth(phase,.94,1));
-    capsule.visible=phase<.995;
-    if(phase<=.73){capsule.position.copy(exactHook);capsule.quaternion.copy(atHook);}
-    else{
-      capsule.position.copy(grip).applyQuaternion(trace.quaternion).add(trace.position);
-      capsule.position.lerp(bossPoint,smooth(phase,.89,.98));capsule.quaternion.copy(trace.quaternion);
-    }
-    capsule.scale.setScalar(1-.91*smooth(phase,.94,1));
+      for(const mesh of fragments){mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;}
+      for(let i=0;i<grainCount;i++){
+        const grain=dust[i],t=(grain.offset+age*grain.rate)%1;sample(grain,t,point);xyz.setXYZ(i,point.x,point.y,point.z);
+        sample(grain,Math.max(0,t-grain.rate/28),point);shutter.setXYZ(i,point.x,point.y,point.z);
+        thermal.setXY(i,smooth(t,.37,1),grain.size*smooth(t,0,.029)*(1-smooth(t,.946,1)));
+      }
+      let vert=0;dustTime.value=age;
+      for(const lane of lanes)for(const axis of widths)for(let k=0;k<=samples;k++){
+        const t=k/samples,width=(1.2+8.7*Math.sin(Math.PI*t))*(1-smooth(t,.8,1));
+        sample(lane,t,base);
+        point.copy(base).addScaledVector(axis,-width);ribbonXYZ.setXYZ(vert++,point.x,point.y,point.z);
+        point.copy(base).addScaledVector(axis,width);ribbonXYZ.setXYZ(vert++,point.x,point.y,point.z);
+      }
+      ribbonXYZ.needsUpdate=true;
+      xyz.needsUpdate=thermal.needsUpdate=shutter.needsUpdate=true;
+    };
   }
-  setEncounterPhase(0);
+  const advanceDebris=createTidalStream();
+  let time=0,mode='hidden';advanceDebris(0);
   function frame(){
     return {up:new T.Vector3(0,1,0),east:new T.Vector3(1,0,0),north:new T.Vector3(0,0,-1),south:new T.Vector3(0,0,1),quaternion:new T.Quaternion()};
   }
@@ -779,12 +886,12 @@ function createByronSurface(T,world){
   }
   function update(lat,lon,dt=0){
     if(mode==='hidden')return;time+=dt;boss.animate(dt,0,time);boss.core.getWorldPosition(bossPoint);
-    skyDebris.rotation.z=.012*Math.sin(time*.053);root.updateMatrixWorld(true);
+    advanceDebris(time);root.updateMatrixWorld(true);
   }
   const nothing=()=>null;
   return {root,kind:'ship',encounterCore:bossPoint,radius,chartScale,sites,landingSites,coordinates,chart,frame,height,point,move,walk,resolveArrival,siteAt,
     clipCamera,blocksShuttle,landingInfo,flightHeight:height,landingSite:id=>landingSites.find(s=>s.id===id),groundCorrection:()=>0,
-    isSheltered:(lat,lon)=>!isOutside(lat,lon),setEncounterPhase,update,setMode(next){mode=next;root.visible=next!=='hidden';},
+    isSheltered:(lat,lon)=>!isOutside(lat,lon),update,setMode(next){mode=next;root.visible=next!=='hidden';},
     nearbySpirit:record,spiritObservation:record,pickSpirit,withdrawSpirit:()=>false,portalAt:nothing,
     safariAction:nothing,safariWalk:nothing,safariHint:()=>'',setSafariState(){},interactSpiritSite:()=>'',spiritSiteHint:(lat,lon)=>siteAt(lat,lon).description,
     dispose(){

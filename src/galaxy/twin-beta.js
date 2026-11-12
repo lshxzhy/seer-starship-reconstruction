@@ -198,7 +198,8 @@ function buildBetaLandmarks(kit){
     add(chamfer,edge,x,y,mz+7.38,.51,1.58,.8,0,.1*(j-3));
     add(drum,gun,x,y-.56,mz+7.70,.42,.29,.42);
   }
-  const bits=new T.InstancedMesh(drillBit(),edge,6),mounts=[],bitPose=new T.Object3D();
+  const cuttingSteel=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,metalness:.68,roughness:.34}),'metal');
+  const bits=new T.InstancedMesh(drillBit(),cuttingSteel,6),mounts=[],bitPose=new T.Object3D();
   bits.frustumCulled=false;bits.castShadow=true;bits.receiveShadow=true;root.add(bits);
   for(const s of [-1,1]){
     const curve=pipe([p(mx+s*6.3,my+11.4,mz),p(mx+s*10.4,my+14.7,mz-.4),p(mx+s*14.5,my+14.4,mz+2),p(mx+s*17,my+9.2,mz+3.2)],1.40,copper);
@@ -238,14 +239,18 @@ function buildBetaLandmarks(kit){
   }
   idleMachinery(0,0);kit.animate(idleMachinery);
   function drillBit(){
-    const n=36,rows=43,v=[],idx=[];
+    const n=44,rows=55,v=[],tints=[],idx=[];
     for(let j=0;j<rows;j++)for(let i=0;i<n;i++){
-      const t=j/(rows-1),a=tau*i/n,thread=.5+.5*Math.cos(a+tau*t*4);
-      const r=.83*(.025+.975*t)*(.76+.24*thread**3);
+      const t=j/(rows-1),a=tau*i/n,spiral=2.*a+tau*t*2.8;
+      const thread=.5+.5*Math.cos(spiral),flute=thread**3.8;
+      const r=.83*(.025+.975*t)*(.65+.35*flute);
       v.push(r*Math.cos(a),-3.8+3.8*t,r*Math.sin(a));
+      const edgeWear=.17+.62*flute*(.68+.32*Math.sin(spiral+.63)),tip=1-t;
+      tints.push(edgeWear*(.82+.21*tip),edgeWear*(.87+.10*tip),edgeWear*(.89+.06*tip));
       if(j<rows-1){const k=j*n+i,b=j*n+(i+1)%n;idx.push(k,k+n,b,b,k+n,b+n);}
     }
-    const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(v,3));geo.setIndex(idx);geo.computeVertexNormals();return geo;
+    const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(v,3));
+    geo.setAttribute('color',new T.Float32BufferAttribute(tints,3));geo.setIndex(idx);geo.computeVertexNormals();return geo;
   }
   // Right of the main clearing: the raised amber generator with a pale circular socket.
   function serviceSocket(x,z,size){
@@ -422,6 +427,9 @@ function buildBetaLandmarks(kit){
     }
     for(let i=0;i<legs;i++){
       const a=i*tau/legs;add(box,iron,x+r*Math.cos(a),y+.50,z+r*Math.sin(a),r*.4,.86,r*.23,0,-a);
+      const dx=x+r*Math.cos(a),dz=z+r*Math.sin(a);
+      add(box,edge,dx,y+.82,dz,r*.35,.083,r*.23,0,-a);
+      for(const side of [-1,1])add(hex,gun,dx-.10*r*side*Math.sin(a),y+.89,dz+.10*r*side*Math.cos(a),.058,.065,.058);
     }
     add(chamfer,green,x,y+1.04,z,r*.34,.34,r*.34);
     for(let j=0;j<5;j++){
@@ -463,6 +471,14 @@ function buildBetaLandmarks(kit){
     }
     const beamCurve=pipe([p(x-19,y+7,z-2),p(x-8,y+9,z-1),p(x+5,y+8.5,z-3),p(x+21,y+6.4,z)],.89,iron);
     sleeve(beamCurve,12,.91,edge);
+    const end=beamCurve.getPoint(1),axis=beamCurve.getTangent(1).normalize();
+    ring(end.x,end.y,end.z,.88,patina,axis);
+    for(let i=0;i<5;i++){
+      const a=i*tau/5,start=end.clone().add(p(0,.48*Math.cos(a),.48*Math.sin(a)));
+      const split=start.clone().addScaledVector(axis,.78+.32*i);split.y-=.29+.12*i;split.z+=.35*Math.sin(a);
+      rod(start,split,.053,i%2?copper:gun);
+      rod(split,split.clone().add(p(.16,-.08*i,.13)),.029,edge);
+    }
     for(let j=0;j<3;j++){
       const cx=x+15.3,cz=z+6+j*3.25,h=6.8-j*.93;
       add(box,ochre,cx,y+h,cz,5.2,1.1,4.0,0,.19,-.34);
@@ -561,6 +577,11 @@ function buildBetaLandmarks(kit){
       }
       add(drum,navy,dx,y+2.51,z+.96,.47,.17,.47,Math.PI/2);
       add(ball,green,dx,y+2.51,z+1.09,.205,.24,.09);
+      ring(dx,y+2.51,z+1.064,.32,edge,axisZ);
+      for(let k=0;k<3;k++){
+        const a=tau*k/3;
+        add(hex,gun,dx+.35*Math.cos(a),y+2.51+.35*Math.sin(a),z+1.081,.050,.078,.050,Math.PI/2);
+      }
     }
     for(let k=0;k<4;k++){
       const h=y+.98+k*.87;
@@ -688,6 +709,11 @@ function buildBetaLandmarks(kit){
       const r=1.11;
       add(drum,inset,cx+x,y+.12,cz+z,r,.18,r);ring(cx+x,y+.20,cz+z,.92,grille);
       add(drum,m,cx+x,y+.243,cz+z,.77,.093,.77);add(drum,material(0xcdd5c5,{transparent:true,opacity:.22,roughness:.21}),cx+x,y+.30,cz+z,.53,.025,.53);
+      for(let j=0;j<6;j++){
+        const a=j*tau/6,dx=cx+x+.84*Math.cos(a),dz=cz+z+.84*Math.sin(a);
+        add(box,olive,dx,y+.245,dz,.17,.08,.25,0,-a);
+        add(hex,grille,dx,y+.298,dz,.037,.028,.037);
+      }
     }
     // Route the glow as planar inlays. Each strip follows the real entry ramp;
     // the V-shaped sockets, maintenance openings and rivets stay underfoot.

@@ -67,8 +67,24 @@ function createKloseScenery(T, parent, surface) {
   shape('twig',new T.CylinderGeometry(.62,1,1,9,2),bark);
   shape('rim',new T.TorusGeometry(1,.10,8,40));
   const poolShape=new T.SphereGeometry(1,48,16);
-  shape('mud',poolShape,rough);
-  shape('pool',poolShape,new T.MeshStandardMaterial({color:0xffffff,roughness:.48,metalness:0}));
+  const poolTime={value:0};
+  function basinSurface(base,strength){
+    base.onBeforeCompile=s=>{
+      s.uniforms.poolClock=poolTime;
+      s.vertexShader='varying vec2 basinXY;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nbasinXY=position.xz;');
+      s.fragmentShader='uniform float poolClock; varying vec2 basinXY;\n'+s.fragmentShader.replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+        vec2 q=basinXY;
+        float w=sin(24.*q.x+17.*q.y+1.3*sin(5.*q.y)-poolClock*1.45);
+        float pulse=sin(40.*length(q-vec2(.32,-.19))-2.3*poolClock);
+        float h=(w+.42*pulse)*${strength.toFixed(3)}*(1.-smoothstep(.62,1.,dot(q,q)));
+        vec3 a=cross(dFdy(-vViewPosition),normal),b=cross(normal,dFdx(-vViewPosition));
+        float det=dot(dFdx(-vViewPosition),a);
+        normal=normalize(max(abs(det),1.e-7)*normal-sign(det)*(dFdx(h)*a+dFdy(h)*b));`);
+    };
+    base.customProgramCacheKey=()=>'klose-basin-'+strength;return base;
+  }
+  shape('mud',poolShape,basinSurface(new T.MeshStandardMaterial({roughness:.42}),.026));
+  shape('pool',poolShape,basinSurface(new T.MeshStandardMaterial({roughness:.24}),.065));
   // The energy pool graduates from a shaded teal bank to bright cyan.
   // Its glow is part of the water surface, confined to the basin.
   const energyPool=poolShape.clone(),waterColors=[];
@@ -79,8 +95,8 @@ function createKloseScenery(T, parent, surface) {
     waterTone.copy(deepWater).lerp(shallowWater,t);waterColors.push(waterTone.r,waterTone.g,waterTone.b);
   }
   energyPool.setAttribute('color',new T.Float32BufferAttribute(waterColors,3));
-  shape('energyPool',energyPool,new T.MeshStandardMaterial({vertexColors:true,roughness:.44,
-    emissive:color('#168a93'),emissiveIntensity:.35}));
+  shape('energyPool',energyPool,basinSurface(new T.MeshStandardMaterial({vertexColors:true,roughness:.27,
+    emissive:color('#168a93'),emissiveIntensity:.35}),.085));
   shape('lamp',new T.SphereGeometry(1,14,9),luminous);
   // A keeled leaf has its own bent midrib, so both moonlight and sunlight
   // reveal the blade, even without alpha textures.
@@ -353,6 +369,10 @@ function createKloseScenery(T, parent, surface) {
       for (const [u,h] of [[-.43,1.28],[-.68,1.42],[-.57,1.28]]) {
         const p=local(u,h),q=local(u-.04,h-.33);link(p,q,.021*s,'#765065');
         stamp('round',q.x,q.y-.09*s,q.z,.105*s,.18*s,.11*s,fruit);
+        for(let i=0;i<3;i++){
+          const a=az+tau*i/3;
+          stamp('leaf',q.x,q.y+.023*s,q.z,.19*s,.12*s,.14*s,'#778655',-.35,a);
+        }
         stamp('round',q.x-.034*s,q.y-.04*s,q.z+.071*s,.03*s,.045*s,.025*s,'#559fc1');
       }
     }
@@ -508,6 +528,11 @@ function createKloseScenery(T, parent, surface) {
       const x=-3.6,z=-13,g=yAt(x,z);
       stamp('swampPod',x,g+1.28,z,3.75,1.75,2.25,'#ffffff',-.16,-.16,-.07);
       stamp('swampCoil',x,g,z,1,1,1,'#9b9a54');
+      for(let i=0;i<9;i++){
+        const a=tau*i/9,dx=Math.cos(a),dz=Math.sin(a);
+        tendril([v(x+2.7*dx,g+.65,z+1.5*dz),v(x+3.25*dx,g+.26,z+1.92*dz),
+          v(x+3.8*dx,yAt(x+3.8*dx,z+2.38*dz),z+2.38*dz)],.065,'#756849');
+      }
       for(let i=0;i<14;i++){const a=i*tau/14;obstacle(x+3.47*Math.cos(a),z+2.59*Math.sin(a),.72);}
       obstacle(x,z,2.0);
       for(const side of [-1,1])for(let j=0;j<7;j++){
@@ -549,6 +574,11 @@ function createKloseScenery(T, parent, surface) {
         }
       }
       for(let i=0;i<18;i++){const a=seed()*tau,r=3+seed()*5;spore(7+r*Math.cos(a),-11+r*Math.sin(a),.29+.43*seed(),'#baa283','#a97d5e');}
+      for(let j=0;j<11;j++){
+        const a=j*.71,xx=7+4*Math.cos(a),zz=-11+4*Math.sin(a);
+        tendril([v(xx,yAt(xx,zz)+.035,zz),v(xx+.52,yAt(xx+.52,zz+.29)+.038,zz+.29),
+          v(xx+.89,yAt(xx+.89,zz+.17)+.03,zz+.17)],.022,'#d2b696');
+      }
       for(const [x,z] of [[-11,-7],[12,-15],[17,8],[-18,10]]) {
         for(let j=0;j<4;j++) {
           const dx=x+j*.43;const g=yAt(dx,z);
@@ -568,6 +598,10 @@ function createKloseScenery(T, parent, surface) {
       // The 550 wetland isle has a stone kerb around a recessed green basin.
       stamp('round',x,g+.601,z,1.42,.064,1.31,'#637937');
       stamp('round',x,g+.658,z,1.08,.046,1.05,'#9ea740');
+      for(let i=0;i<16;i++){
+        const a=tau*i/16;
+        stamp('round',x+1.37*Math.cos(a),g+.632,z+1.28*Math.sin(a),.079,.023,.19,'#bac488',0,-a);
+      }
       for(let j=0;j<9;j++){
         const a=j*tau/9;
         stamp('rock',x+1.97*Math.cos(a),g+.48,z+1.86*Math.sin(a),.42,.22,.27,'#b0a164',0,-a);
@@ -612,6 +646,10 @@ function createKloseScenery(T, parent, surface) {
         tendril(pts,1.65,roof,true);
         obstacle(x-w,z,1.42);obstacle(x+w,z,1.32);
         const vine=pts.map(p=>v(p.x+.48,p.y-.64,p.z+.72));tendril(vine,.21,i%3?'#485a40':'#76713a',true);
+        for(let j=1;j<vine.length-1;j+=2){
+          const p=vine[j],q=vine[j+1];
+          tendril([p,v(p.x+.27,p.y-.46,p.z+.21),v(q.x,q.y-.09,q.z)],.052,'#817455');
+        }
         for(const side of [-1,1]) {
           const xx=x+side*w;stones(xx,z,2.5,'#87715c');
           leafFan(xx,g+1,z,1.4,['#465688','#6c509d','#9a72be'],8);
@@ -640,6 +678,10 @@ function createKloseScenery(T, parent, surface) {
       }
       stamp('rock',0,floor+18,0,24,4.1,25,'#4d3c27',.03,.19);
       for(const [x,z,s] of [[9,-16,3.3],[13,-13,4],[14,-10,2.4],[11,-20,3.4],[-17,7,1.85]])crystals(x,z,s);
+      for(let j=0;j<13;j++){
+        const x=10+j*.38,z=-16+Math.sin(j*.76)*1.1;
+        stamp('coreCrystal',x,yAt(x,z)-.035,z,.19,.21+.14*Math.sin(j)**2,.22,'#42bdab',.26,j*.53);
+      }
       const light=new T.PointLight(0x47dee2,1.05,13);light.position.set(8,floor+4,-15);near.add(light);
       const fill=new T.PointLight(0xffddb3,.92,42);fill.position.set(-1,floor+7,-2);near.add(fill);
     }
@@ -647,11 +689,19 @@ function createKloseScenery(T, parent, surface) {
       for(const [x,z,s] of [[-9,-12,4.6],[10,-13,4.2],[14,-6,3.2]])tree(x,z,s);
       const g=yAt(-14,-4);
       tendril([v(-21,g-1,-5),v(-20,g+4,-5),v(-17,g+5.4,-5),v(-13,g+5.2,-5),v(-11,g+3,-5),v(-10,g,-5)],1.6,'#814432',true);
+      for(let i=0;i<7;i++){
+        const x=-17.9+i*.78,h=4.85+.32*Math.sin(i*.7);
+        tendril([v(x-.32,g+h,-3.95),v(x,g+h+.35,-3.73),v(x+.36,g+h+.54,-4.03)],.077,'#b36744');
+      }
     }
     if(site.id==='sanctuary') {
       const x=0,z=-14,g=yAt(x,z);
       for(const [r,h,shade] of [[5,.4,'#985b46'],[4.5,.7,'#c18a62'],[4,.92,'#f0c479']]) stamp('facet',x,g+h*.48,z,r,h,r,shade,0,.19);
       stamp('rim',x,g+.96,z,3.25,3.25,.47,'#ffe4a1',Math.PI/2);
+      for(let i=0;i<14;i++){
+        const a=tau*i/14+.19;
+        stamp('facet',x+3.72*Math.cos(a),g+.78,z+3.72*Math.sin(a),.24,.24,.12,'#ac805b',0,-a);
+      }
       obstacle(x,z,4.25);
       for(const [px,pz,s] of [[-7,-15,3.7],[7,-16,3.1],[-8,-21,2.5],[9,-23,4.1]]) {
         const y=yAt(px,pz);stamp('boulder',px,y+s*.57,pz,s*.34,s,s*.31,'#a77861',.16,.26,-.18);
@@ -841,6 +891,7 @@ function createKloseScenery(T, parent, surface) {
       lift:.055+.14*stride,duration:.20+.23*stride};
   }
   function update(lat,lon,dt,altitude=0,walking=false,shuttleStatus=null) {
+    poolTime.value=(poolTime.value+dt)%3600;
     const {x,z}=chart(lat,lon);
     for(let i=0;i<sites.length;i++) {
       const site=sites[i],dist=Math.hypot(x-site.x,z-site.z,altitude);

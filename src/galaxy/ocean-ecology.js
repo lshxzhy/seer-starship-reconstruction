@@ -75,14 +75,23 @@ function createOceanShark(T,id){
     if(i<rings){const k=start+2*i;indices.push(k,k+2,k+1,k+1,k+2,k+3);}
   }
   skin.setIndex(indices);skin.setAttribute('position',new T.Float32BufferAttribute(verts,3));skin.setAttribute('color',new T.Float32BufferAttribute(colors,3));skin.computeVertexNormals();
-  const hull=piece(skin,0xffffff);hull.material=hull.material.clone();hull.material.vertexColors=true;materials.set('skin',hull.material);
+  const hull=piece(skin,0xffffff);finishSpiritPart(hull,'scute',materials);hull.material.vertexColors=true;
   function fin(points,color,thickness,parent=body){
     const outline=points.map(p=>v(...p)),centre=v(0,0,0);for(const p of outline)centre.add(p);centre.multiplyScalar(1/outline.length);
     const normal=v(0,0,0).crossVectors(outline[1].clone().sub(outline[0]),outline[2].clone().sub(outline[0])).normalize();
     const front=centre.clone().addScaledVector(normal,thickness),back=centre.clone().addScaledVector(normal,-thickness);
-    const pts=[...outline,front,back],idx=[],n=outline.length;
-    for(let i=0;i<n;i++){const j=(i+1)%n;idx.push(n,i,j,n+1,j,i);}
-    const g=new T.BufferGeometry().setFromPoints(pts);g.setIndex(idx);g.computeVertexNormals();return piece(g,color,parent);
+    const n=outline.length,pts=[...outline,front,back],idx=[];
+    // Unequal ray lengths give the membrane a convex leading edge and a thin
+    // trailing lip. Two intermediate rings shade smoothly through tight turns.
+    for(const side of [1,-1]){
+      const base=pts.length,ridge=side===1?n:n+1;
+      for(let i=0;i<n;i++)pts.push(centre.clone().lerp(outline[i],.61).addScaledVector(normal,side*thickness*(.72+.13*(i%2))));
+      for(let i=0;i<n;i++){const j=(i+1)%n;
+        if(side===1)idx.push(ridge,base+i,base+j,base+i,i,j,base+i,j,base+j);
+        else idx.push(ridge,base+j,base+i,base+i,j,i,base+i,base+j,j);
+      }
+    }
+    const g=new T.BufferGeometry().setFromPoints(pts);g.setIndex(idx);g.computeVertexNormals();return finishSpiritPart(piece(g,color,parent),'fin',materials);
   }
   const flippers=[];
   if(young){
@@ -101,7 +110,7 @@ function createOceanShark(T,id){
       oval(0xe2fbfa,s*.35,-.13,-.006,.076,.024,.15);
       const eye=new T.Group();eye.position.set(s*sideAt(.11,.29),.11,.29);eye.rotation.y=s*.87;body.add(eye);
       oval(0x474952,0,0,0,.115,.147,.036,eye);oval(0xf7fbf6,0,0,.021,.103,.134,.031,eye);
-      oval(0x5b9eb5,0,0,.041,.075,.100,.025,eye);oval(0x1f3136,0,.005,.060,.039,.065,.019,eye);
+      finishSpiritPart(oval(0x5b9eb5,0,0,.041,.075,.100,.025,eye),'iris',materials);oval(0x1f3136,0,.005,.060,.039,.065,.019,eye);
       oval(0xffffff,-.019,.043,.080,.016,.021,.009,eye);
       // The light dash follows the turning forehead on the original portrait.
       stroke(0xa2a29e,[[s*sideAt(.198,.34),.198,.34],[s*sideAt(.210,.302),.210,.302],[s*sideAt(.218,.268),.218,.268]],.008);
@@ -119,7 +128,7 @@ function createOceanShark(T,id){
       flippers.push(f);
       const eye=new T.Group();eye.position.set(s*sideAt(.09,.437),.09,.437);eye.rotation.y=s*1.17;body.add(eye);
       oval(0x42484c,0,0,0,.115,.083,.025,eye);oval(0xe7f7f4,0,0,.014,.104,.074,.023,eye);
-      oval(0x5c8091,0,.016,.029,.051,.050,.015,eye);oval(0x17242b,0,.021,.040,.032,.037,.012,eye);
+      finishSpiritPart(oval(0x5c8091,0,.016,.029,.051,.050,.015,eye),'iris',materials);oval(0x17242b,0,.021,.040,.032,.037,.012,eye);
       oval(0xfcffff,-.009,.035,.051,.010,.013,.005,eye);
       const cheekLine=(color,points,r)=>stroke(color,points.map(([y,z])=>[s*(sideAt(y,z)+.004),y,z]),r);
       cheekLine(dark,[[.092,.551],[.135,.486],[.155,.42],[.151,.34]],.016);

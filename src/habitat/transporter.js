@@ -420,6 +420,11 @@ function buildShipTransporterRoom(kit,roomId,placements) {
     const a=Math.atan2((z+6.7)/7.2,x/13.32),hx=Math.cos(a)*13.32,hz=-6.7+Math.sin(a)*7.2;
     pipe([[x,7.04,z-.7],[x,7.65,z-.85],[hx,8.45,hz],[hx,8.85,hz]],.14,gold);
     box(hx,8.88,hz,.65,.72,.74,ivory);
+    for(const h of [8.49,8.57])cyl(hx,h,hz,.226,.226,.063,steel,{segments:12});
+    for(const side of [-1,1]){
+      box(hx+side*.27,8.70,hz,.16,.15,.78,steel);
+      cyl(hx+side*.27,8.80,hz+.23,.065,.065,.08,gold,{segments:6});
+    }
   });
   for(const s of [-1,1])for(const z of [-10,-3]) {
     beam([s*13,9.05,z],[s*(W/2-.4),H-.9,z],.34,.42,steel);

@@ -1,6 +1,6 @@
 // One L-01. Surface flight uses the current planet's metre frame; while in
 // transit the same pose and velocity integrate in the star-centred inertial frame.
-function createPanoFlight(T,bodies,dock,pano,saved){
+function createPanoFlight(T,getSurface,dock,pano,saved){
   const ids=Object.keys(PANO_ORBITS),clamp=T.MathUtils.clamp,cruiseLimit=260000;
   const position=new T.Vector3(),velocity=new T.Vector3(),quaternion=new T.Quaternion();
   const globalP=new T.Vector3(),globalV=new T.Vector3(),wanted=new T.Vector3(),goal=new T.Vector3();
@@ -11,12 +11,13 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   const waypoint=new T.Vector3(),prev=new T.Vector3(),previousRel=new T.Vector3();
   const destinationCentre=new T.Vector3(),relativeV=new T.Vector3(),priorCentre=new T.Vector3();
   const emptyDock={position:new T.Vector3(1e9,0,0),quaternion:new T.Quaternion()};
-  const available=id=>ids.includes(id)&&!!bodies[id];
+  const available=id=>ids.includes(id);
+  const definition=id=>PANO_NAVIGATION.regions[id].definition;
   const tuple=(a,n)=>Array.isArray(a)&&a.length===n&&a.every(Number.isFinite);
   let reference='klose',local=null,transit=false,route=null,time=0,range=0,stage='',scale=1,power=0;
   function createLocal(id,record){
-    reference=id;local=bodies[id].kind==='ship'?createShipApproach(T,bodies[id],record):
-      createShuttleFlight(T,bodies[id],id==='klose'?dock:emptyDock,record);
+    reference=id;local=definition(id).kind==='ship'?createShipApproach(T,getSurface(id),record):
+      createShuttleFlight(T,getSurface(id),id==='klose'?dock:emptyDock,record);
     transit=false;syncLocal();
   }
   function syncLocal(){
@@ -27,7 +28,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     velocity.copy(globalV).sub(pano.velocity(reference,time,orbitalV));
   }
   function siteFor(id,value){
-    const b=bodies[id];
+    const b=getSurface(id);
     const site=typeof value==='string'?b.landingSite(value):value||b.landingSites[0];
     return site&&Number.isFinite(site.lat)&&Math.abs(site.lat)<=Math.PI/2&&Number.isFinite(site.lon)?site:null;
   }
@@ -41,7 +42,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     const planet=destination==='dock'?'klose':targetPlanet;
     const requested=readRoute({destination,planet,site});
     if(!requested)return false;
-    if(requested.site&&!bodies[planet].landingInfo(requested.site.lat,requested.site.lon,7.4).ok)return false;
+    if(requested.site&&!getSurface(planet).landingInfo(requested.site.lat,requested.site.lon,7.4).ok)return false;
     if(!transit&&reference===planet){
       const accepted=local.autopilot(destination,requested.site);
       if(accepted)route=null;
@@ -59,7 +60,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   }
   function resumeLocal(id){
     reference=id;syncInertial();localHeading.copy(forward).applyQuaternion(quaternion);
-    if(bodies[id].kind==='ship')radial.copy(up);else radial.copy(position).normalize();
+    if(definition(id).kind==='ship')radial.copy(up);else radial.copy(position).normalize();
     const pitch=Math.asin(clamp(localHeading.dot(radial),-1,1));
     const side=axis.copy(right).applyQuaternion(quaternion);
     const flatRight=along.crossVectors(localHeading,radial);
@@ -76,10 +77,10 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     if(r.destination==='dock'){
       approach.copy(dock.position);
       approach.addScaledVector(axis.copy(forward).applyQuaternion(dock.quaternion),10000);
-    }else if(bodies[r.planet].kind==='ship'){
-      approach.copy(bodies[r.planet].point(r.site.lat,r.site.lon)).addScaledVector(up,2200);
+    }else if(definition(r.planet).kind==='ship'){
+      approach.copy(getSurface(r.planet).point(r.site.lat,r.site.lon)).addScaledVector(up,2200);
     }else{
-      const b=bodies[r.planet];approach.copy(b.frame(r.site.lat,r.site.lon).up).multiplyScalar(b.radius+Math.min(28000,b.radius*.36));
+      const b=getSurface(r.planet);approach.copy(b.frame(r.site.lat,r.site.lon).up).multiplyScalar(b.radius+Math.min(28000,b.radius*.36));
     }
     return goal.copy(approach).add(destinationCentre);
   }
@@ -92,7 +93,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     let nearest=Infinity,obstacle=null;
     for(const id of ['star',...ids]){
       pano.center(id,time,centre);
-      const radius=id==='star'?pano.starRadius:bodies[id].radius;
+      const radius=id==='star'?pano.starRadius:definition(id).radius;
       const radiusLimit=radius+(id==='star'?50000:Math.min(14000,radius*.12));
       radial.subVectors(centre,globalP);
       const projected=clamp(radial.dot(segment),0,length);
@@ -104,7 +105,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     if(!obstacle)return end;
     pano.center(obstacle,time,centre);
     radial.subVectors(globalP,centre);const here=radial.length();radial.normalize();
-    const radius=obstacle==='star'?pano.starRadius:bodies[obstacle].radius;
+    const radius=obstacle==='star'?pano.starRadius:definition(obstacle).radius;
     along.subVectors(end,centre).projectOnPlane(radial);
     if(along.lengthSq()<1){
       along.crossVectors(radial,up);
@@ -134,7 +135,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     const value=k=>clamp(Number(input[k])||0,-1,1);
     quaternion.multiply(turn.setFromAxisAngle(up,-value('turn')*dt*1.02));
     quaternion.multiply(turn.setFromAxisAngle(right,value('pitch')*dt*.84)).normalize();
-    const clearance=position.length()-bodies[reference].radius;
+    const clearance=position.length()-definition(reference).radius;
     let limit=Math.min(cruiseLimit,3200+Math.max(0,clearance)*.49);
     if(reference==='klose'){
       const fromBerth=position.distanceTo(dock.position);
@@ -149,7 +150,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     stage='星际手动驾驶';range=0;
   }
   function protectSurface(id,dt){
-    const radius=id==='star'?pano.starRadius:bodies[id].radius;
+    const radius=id==='star'?pano.starRadius:definition(id).radius;
     pano.center(id,time,centre);radial.subVectors(globalP,centre);
     const altitude=radial.length()-radius;
     const brakingReach=id==='byron'?Math.max(7000,prev.distanceTo(globalP)+radius):radius*.65;
@@ -196,22 +197,22 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     // Keep a little hysteresis at an influence boundary. Evaluate every registered body
     // against the same inertial position before choosing the nearest reference frame.
     let closest=reference;
-    let best=.96*globalP.distanceTo(pano.center(reference,time,centre))/bodies[reference].radius;
+    let best=.96*globalP.distanceTo(pano.center(reference,time,centre))/definition(reference).radius;
     for(const id of ids){
       if(id===reference)continue;
-      const relative=globalP.distanceTo(pano.center(id,time,centre))/bodies[id].radius;
+      const relative=globalP.distanceTo(pano.center(id,time,centre))/definition(id).radius;
       if(relative<best){best=relative;closest=id;}
     }
     reference=closest;
     syncInertial();
     if(route&&route.planet===reference){
       const d=globalP.distanceTo(approachPoint(route));
-      const vessel=bodies[reference].kind==='ship';
+      const vessel=definition(reference).kind==='ship';
       if(d<(vessel?230:9000)&&velocity.length()<(vessel?165:2100))resumeLocal(reference);
-    }else if(!route&&bodies[reference].kind==='ship'&&position.length()<3800){
+    }else if(!route&&definition(reference).kind==='ship'&&position.length()<3800){
       resumeLocal(reference);
     }else if(!route&&velocity.length()<8000){
-      const r=bodies[reference].radius;
+      const r=definition(reference).radius;
       if(position.length()-r<Math.min(26000,r*.30)||(reference==='klose'&&position.distanceTo(dock.position)<4200))resumeLocal(reference);
     }
   }
@@ -222,8 +223,8 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       time+=local.tick(dt,input);
       const s=local.status();syncLocal();
       const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>(route?1850:5100);
-      const orbitalBoundary=bodies[reference].kind==='ship'?(route?1700:4500):
-        route?Math.min(33000,bodies[reference].radius*.54):Math.min(65000,bodies[reference].radius);
+      const orbitalBoundary=definition(reference).kind==='ship'?(route?1700:4500):
+        route?Math.min(33000,definition(reference).radius*.54):Math.min(65000,definition(reference).radius);
       if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer();
       return;
     }
@@ -245,7 +246,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       }
       return {...s,planetId:reference,destinationPlanetId,interplanetary:!!route};
     }
-    const b=bodies[reference],coords=b.coordinates?b.coordinates(position):{lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
+    const b=getSurface(reference),coords=b.coordinates?b.coordinates(position):{lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
     const {lat,lon}=coords,height=position.length()-b.radius,f=b.frame(lat,lon);
     localHeading.copy(forward).applyQuaternion(quaternion);
     return {phase:'flying',auto:route?.destination||null,stage,speed:velocity.length(),verticalSpeed:velocity.dot(f.up),
@@ -279,7 +280,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   function placeOnSurface(site,angle=0,planet=reference){
     if(!available(planet))return false;
     const to=siteFor(planet,site);
-    if(!to||!bodies[planet].landingInfo(to.lat,to.lon,7.4).ok)return false;
+    if(!to||!getSurface(planet).landingInfo(to.lat,to.lon,7.4).ok)return false;
     if(transit||planet!==reference)createLocal(planet,null);
     const result=local.placeOnSurface(to,angle);if(result)route=null;syncLocal();return result;
   }

@@ -1,4 +1,38 @@
 // Original companion sculpts. Forward is +Z, feet are on y=0.
+// These relief fields follow the mesh in its own coordinates. The geometry
+// determines the species silhouette; each tissue keeps its own highlights.
+const SPIRIT_SURFACES={
+  iris:[.17,'float r=length(p.xy),a=atan(p.y,p.x+.00001);detail=(.5+.5*cos(32.*a+3.*sin(a*7.)+r*6.))*smoothstep(.16,.5,r)*(1.-smoothstep(.82,1.,r));'],
+  velvet:[.83,'float f=34.*p.x+6.*sin(4.*p.y)+7.*p.z;detail=.57*cos(f)*cos(21.*p.y-8.*p.z)+.28*sin(53.*p.z+3.*p.y);'],
+  feather:[.66,'float spine=exp(-abs(p.x+p.z*.21)*19.);detail=spine+.38*cos(31.*p.y-19.*abs(p.x)-6.*p.z);'],
+  fin:[.36,'float ray=atan(p.y+.09,p.z-.14+.00001);detail=pow(.5+.5*cos(33.*ray+6.*p.x),6.)-.25;'],
+  petal:[.54,'float v=abs(p.x)+.25*abs(p.z);detail=exp(-v*18.)+.48*pow(.5+.5*cos(27.*p.y-28.*v),7.)-.18;'],
+  scute:[.43,'vec2 q=vec2(p.x*8.+p.z*13.,p.y*12.+.24*sin(14.*p.z));detail=.55*cos(q.y*2.)+.36*cos(q.x*2.6+.8*sin(q.y*1.8));'],
+  cap:[.69,'detail=.42*sin(48.*p.x+13.*p.y)*cos(38.*p.z-9.*p.y)+.38*sin(14.*p.x+9.*p.z);'],
+  gem:[.22,'detail=.47*sin(18.*p.y+7.*p.z+.8*sin(5.*p.x));']
+};
+function spiritCoating(material,kind,palette){
+  const key=material.uuid+kind;
+  if(palette.has(key))return palette.get(key);
+  const coat=material.clone(),[roughness,relief]=SPIRIT_SURFACES[kind];
+  coat.roughness=roughness;
+  coat.customProgramCacheKey=()=>'spirit-tissue-'+kind;
+  coat.onBeforeCompile=shader=>{
+    shader.vertexShader='varying vec3 tissuePoint;\n'+shader.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\ntissuePoint=position;');
+    shader.fragmentShader='varying vec3 tissuePoint;\n'+shader.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+       vec3 p=tissuePoint;float detail=0.;${relief}
+       float tissueLod=1.-smoothstep(.012,.085,length(fwidth(p)));
+       diffuseColor.rgb*=1.+.11*tissueLod*detail;`)
+      .replace('#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\nroughnessFactor=clamp(roughnessFactor-.11*tissueLod*detail,.08,.98);');
+  };
+  palette.set(key,coat);return coat;
+}
+function finishSpiritPart(mesh,kind,palette){
+  mesh.material=spiritCoating(mesh.material,kind,palette);return mesh;
+}
 function createCompanionFigure(T,id){
   return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
@@ -20,7 +54,7 @@ function createFieldSpirit(T,id){
 function createPartnerFigure(T,id){
   const root=new T.Group(),body=new T.Group();
   root.add(body);
-  const sphere=new T.SphereGeometry(1,26,18),mats=new Map(),geometries=new Set([sphere]);
+  const sphere=new T.SphereGeometry(1,32,22),mats=new Map(),geometries=new Set([sphere]);
   const eye=0x2c2036;
   function material(color){
     if(!mats.has(color))mats.set(color,new T.MeshStandardMaterial({color:new T.Color(color).convertSRGBToLinear(),roughness:.53}));
@@ -31,17 +65,20 @@ function createPartnerFigure(T,id){
   }
   // A tapered, curved leaf/fin with a gently ridged midrib.
   function leaf(x,y,z,w,h,d,color,tilt=0,bend=.25){
-    const rows=12,sides=14,pts=[],idx=[];
+    const rows=18,sides=18,pts=[],idx=[];
     for(let j=0;j<=rows;j++){
       const t=j/rows,rad=.012+.988*Math.pow(Math.sin(t*Math.PI),.69);
       for(let i=0;i<sides;i++){
         const a=i*2*Math.PI/sides;
-        pts.push(w*rad*Math.cos(a),t*h,d*rad*Math.sin(a)+bend*h*t*t);
+        const lateral=Math.cos(a),fold=1+.16*Math.abs(lateral)**2+.14*Math.cos(4*a)*Math.sin(Math.PI*t);
+        pts.push(w*rad*lateral,t*h+.031*h*rad*lateral*lateral,d*rad*Math.sin(a)*fold+bend*h*t*t);
         if(j<rows){const v=j*sides+i,n=j*sides+(i+1)%sides;idx.push(v,v+sides,n,n+sides,n,v+sides);}
       }
     }
     const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pts,3));g.setIndex(idx);g.computeVertexNormals();geometries.add(g);
-    const m=new T.Mesh(g,material(color));m.position.set(x,y,z);m.rotation.z=tilt;body.add(m);return m;
+    const m=new T.Mesh(g,material(color));m.position.set(x,y,z);m.rotation.z=tilt;body.add(m);
+    const tissue=id>=4&&id<=6?'fin':[11,12,165,166].includes(id)?'feather':id<=3||id>=17&&id<=29||id>=301&&id<=303?'petal':null;
+    return tissue?finishSpiritPart(m,tissue,mats):m;
   }
   function limb(a,b,r,color){
     const v=new T.Vector3(...a),w=new T.Vector3(...b),mid=v.clone().lerp(w,.5),dir=w.sub(v);
@@ -50,13 +87,13 @@ function createPartnerFigure(T,id){
   }
   function face(y,z,spread,sz,iris=eye){
     for(const sign of [-1,1]){
-      oval(sign*spread,y,z,sz*.63,sz,sz*.35,iris,-sign*.10);
+      finishSpiritPart(oval(sign*spread,y,z,sz*.63,sz,sz*.35,iris,-sign*.10),'iris',mats);
       oval(sign*spread-.15*sz,y+.34*sz,z+.31*sz,sz*.20,sz*.24,sz*.11,0xfffaf3);
     }
   }
   function petals(x,y,z,size,color,core){
     for(let i=0;i<5;i++){
-      const a=i*Math.PI*.4;oval(x+Math.sin(a)*size*.48,y+Math.cos(a)*size*.48,z,size*.33,size*.52,size*.23,color,-a);
+      const a=i*Math.PI*.4;finishSpiritPart(oval(x+Math.sin(a)*size*.48,y+Math.cos(a)*size*.48,z,size*.33,size*.52,size*.23,color,-a),'petal',mats);
     }
     oval(x,y,z+size*.2,size*.28,size*.28,size*.17,core);
   }
@@ -104,7 +141,7 @@ function createPartnerFigure(T,id){
       for(let i=0;i<5;i++){
         const a=i*2*Math.PI/5;
         const m=oval(Math.sin(a)*.25,top,Math.cos(a)*.23,.22,tall?.38:.26,.21,pink,-Math.sin(a)*.56);
-        m.rotation.x=Math.cos(a)*.56;
+        finishSpiritPart(m,'petal',mats);m.rotation.x=Math.cos(a)*.56;
       }
       for(const s of [-1,1]){
         oval(s*.19,top-.17,.17,.22,.16,.18,pale,s*.34);

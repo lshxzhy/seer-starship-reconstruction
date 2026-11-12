@@ -33,7 +33,7 @@ function createWetlandEvolution(T,id){
     for(const k of [-1,1]){
       const socket=new T.Group();socket.position.set(k*x,y,z);socket.rotation.z=k*.08;body.add(socket);
       socket.add(oval(0,0,-.04*r,r*.84,r*1.05,r*.31,dark));
-      socket.add(oval(0,0,0,r*.78,r,r*.37,colour));
+      socket.add(finishSpiritPart(oval(0,0,0,r*.78,r,r*.37,colour),'iris',palette));
       if(colour!==dark)socket.add(oval(0,.09*r,r*.27,r*.49,r*.69,r*.17,dark));
       socket.add(oval(-r*.14,r*.32,r*.40,r*.22,r*.27,r*.12,white));
       eyesets.push(socket);
@@ -57,15 +57,21 @@ function createWetlandEvolution(T,id){
   }
   function wings(y,z,span,c,low=false){
     for(const k of [-1,1]){
-      const w=segment([k*.16,y,z],[k*span,low?y-.36:y+.26,z-.12],.14,c,false,.50);wingParts.push(w);
-      for(let j=0;j<3;j++)tip([k*(span-.16),y+(low?-.18:.14),z-.08-j*.065],[k*(span-.04+j*.045),y+(low?-.42:.23)-j*.075,z-.18-j*.075],.068,c,.48);
+      const hinge=new T.Group();hinge.position.set(k*.16,y,z);hinge.userData.motionSign=k;body.add(hinge);wingParts.push(hinge);
+      const w=segment([k*.16,y,z],[k*span,low?y-.36:y+.26,z-.12],.14,c,false,.50);
+      finishSpiritPart(w,'feather',palette);hinge.add(w);w.position.sub(hinge.position);
+      for(let j=0;j<3;j++){
+        const quill=tip([k*(span-.16),y+(low?-.18:.14),z-.08-j*.065],[k*(span-.04+j*.045),y+(low?-.42:.23)-j*.075,z-.18-j*.075],.068,c,.48);
+        finishSpiritPart(quill,'feather',palette);hinge.add(quill);quill.position.sub(hinge.position);
+      }
     }
   }
   function fish(bodyC,finC,tall=false){
-    oval(0,.50,0,.32,.27,.43,bodyC);oval(0,.53,.20,.30,.23,.27,bodyC);eyes(.57,.40,.199,.069);
+    finishSpiritPart(oval(0,.50,0,.32,.27,.43,bodyC),'scute',palette);
+    finishSpiritPart(oval(0,.53,.20,.30,.23,.27,bodyC),'scute',palette);eyes(.57,.40,.199,.069);
     for(const k of [-1,1]){
-      const m=segment([k*.18,.42,.03],[k*.48,.25,-.13],.12,finC,false,.48);wingParts.push(m);
-      tip([0,.50,-.34],[k*.23,.55+(tall?.17:0),-.68],.12,finC,.55);
+      const m=segment([k*.18,.42,.03],[k*.48,.25,-.13],.12,finC,false,.48);wingParts.push(m);finishSpiritPart(m,'fin',palette);
+      finishSpiritPart(tip([0,.50,-.34],[k*.23,.55+(tall?.17:0),-.68],.12,finC,.55),'fin',palette);
     }
   }
   const shape=kinds[id];
@@ -77,7 +83,7 @@ function createWetlandEvolution(T,id){
     else for(let j=0;j<13;j++){const a=j*Math.PI/12;oval(.31*Math.cos(a),1.04+.28*Math.sin(a),-.04,.10,.15,.085,j%2?0xf9ae22:0xf9c445,-a+Math.PI/2);}
   }else if(shape==='shell'){
     paws(0x739333);oval(0,.52,-.035,.39,.33,.47,0x335b35);
-    for(let i=0;i<3;i++)oval(0,.74,-.25+i*.2,.30,.135,.14,i%2?0x9a9e40:0xd0bf62);
+    for(let i=0;i<3;i++)finishSpiritPart(oval(0,.74,-.25+i*.2,.30,.135,.14,i%2?0x9a9e40:0xd0bf62),'scute',palette);
     oval(0,.53,.29,.30,.26,.27,0xb4a650);oval(0,.59,.47,.24,.195,.17,0x71532e);eyes(.60,.595,.146,.066);
     tip([0,.70,.49],[0,.86,.67],.094,cream);
   }else if(shape==='axolotl'){
@@ -157,7 +163,7 @@ function createWetlandEvolution(T,id){
     const leaf=0x56a778;biped(leaf,id===389?.72:.55);oval(0,.90,.10,.275,.32,.235,cream);eyes(.89,.29,.142,.070,0x20794d);
     tip([0,1.18,.07],[0,1.48,.05],.133,0xf7ae79);
     for(const k of [-1,1]){
-      const arm=segment([k*.22,.67,-.02],[k*.35,id===389?.29:.65,.10],.115,leaf);wingParts.push(arm);
+      const arm=segment([k*.22,.67,-.02],[k*.35,id===389?.29:.65,.10],.115,leaf);finishSpiritPart(arm,'petal',palette);wingParts.push(arm);
       for(let j=0;j<3;j++)oval(k*(.29+j*.015),.68+j*.075,.17,.048,.048,.037,0xf09273);
       if(id===389)tip([k*.16,1.04,0],[k*.30,1.53,-.02],.094,0xbcd675);
     }
@@ -209,14 +215,14 @@ function createWetlandEvolution(T,id){
     for(const k of [-1,1])oval(k*.21,.51,.08,.06,.13,.07,cream);
   }else if(shape==='petal'){
     biped(0xb4c870);oval(0,.82,.05,.257,.21,.21,cream);eyes(.82,.232,.135,.055);
-    for(let j=-1;j<=1;j++)oval(j*.145,1.09,.03,.139,.30,.19,j===0?0xe8c6e0:0xdcaac9,-j*.22);
+    for(let j=-1;j<=1;j++)finishSpiritPart(oval(j*.145,1.09,.03,.139,.30,.19,j===0?0xe8c6e0:0xdcaac9,-j*.22),'petal',palette);
     for(const k of [-1,1]){segment([k*.22,.67,0],[k*.43,.90,0],.105,0xadbf75);oval(k*.43,.95,0,.078,.131,.080,0xc6d38a);}
   }else if(shape==='stream'){
     const aqua=0x74cce3;biped(aqua);oval(0,.96,0,.30,.27,.24,0x86d0e2);eyes(.94,.211,.143,.065,0x355879);
     for(const k of [-1,1]){const fin=segment([k*.23,.95,0],[k*.40,.14,.12],.094,aqua);wingParts.push(fin);oval(k*.36,.30,.11,.06,.095,.06,white);}
     oval(0,.66,.152,.166,.20,.095,white);
   }else if(shape==='bear'){
-    biped(0xe8d8c5);oval(0,.74,0,.33,.37,.26,0xe2d5c7);oval(0,1.12,.025,.32,.29,.26,white);
+    biped(0xe8d8c5);finishSpiritPart(oval(0,.74,0,.33,.37,.26,0xe2d5c7),'velvet',palette);finishSpiritPart(oval(0,1.12,.025,.32,.29,.26,white),'velvet',palette);
     for(const k of [-1,1]){oval(k*.25,1.31,.01,.115,.125,.08,cream);oval(k*.15,1.08,.224,.132,.092,.05,0x665450,-k*.22);
       segment([k*.23,.78,0],[k*.45,.45,.12],.12,0xd7c6b4);for(let j=0;j<3;j++)tip([k*(.39+j*.033),.45,.15],[k*(.40+j*.033),.36,.22],.035,0x84684c);}
     eyes(1.076,.269,.147,.053);oval(0,.99,.25,.122,.083,.067,0xc6ac93);

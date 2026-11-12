@@ -37,7 +37,7 @@ function createKloseSafariModel(T,id){
   }
   function eye(x,y,z,r,outer,inside,parent=body){
     oval(outer,x,y,z,r*.78,r,r*.46,parent);
-    oval(inside,x*.99,y+.025*r,z+.36*r,r*.42,r*.67,r*.25,parent);
+    finishSpiritPart(oval(inside,x*.99,y+.025*r,z+.36*r,r*.42,r*.67,r*.25,parent),'iris',materials);
     oval('#fffdf0',x-r*.115,y+r*.29,z+.56*r,r*.15,r*.18,r*.075,parent);
   }
   if(id===22){
@@ -49,7 +49,7 @@ function createKloseSafariModel(T,id){
       oval(teal,s*.058,-.003,0,.12,.074,.044,g);
       for(let j=0;j<3;j++){
         const feather=oval('#6fdadd',s*(.112+.019*j),.007+j*.058,0,.07,.091+j*.008,.038,g);
-        feather.rotation.z=-s*(1.03-j*.23);
+        feather.rotation.z=-s*(1.03-j*.23);finishSpiritPart(feather,'feather',materials);
       }
       const leg=oval(teal,s*.094,.203,.012,.049,.12,.061);leg.rotation.z=s*.14;
     }
@@ -81,7 +81,7 @@ function createKloseSafariModel(T,id){
     shellGeo.setAttribute('position',new T.Float32BufferAttribute(positions,3));shellGeo.setIndex(indices);shellGeo.computeVertexNormals();
     const lowerCount=lowerRows*sectors*6;
     shellGeo.addGroup(0,lowerCount,0);shellGeo.addGroup(lowerCount,indices.length-lowerCount,1);
-    add(shellGeo,[mat(seal),mat(shell)]);
+    add(shellGeo,[spiritCoating(mat(seal),'scute',materials),spiritCoating(mat(shell),'scute',materials)]);
     for(const side of [-1,1]){
       path('#455d20',[[.72,1.10],[1.14,.95],[1.66,.87],[2.15,1.01],[2.47,1.22]].map(([a,h])=>shellPoint(side*a,h,.002)),.008);
       for(const a of [1.14,2.15,2.89])path('#455d20',[[a,.94],[a+.12,.64],[a+.18,.35],[a+.14,.04]].map(([az,h])=>shellPoint(side*az,h,.002)),.007);
@@ -132,11 +132,12 @@ function createKloseSafariModel(T,id){
         fin(null,points,[s*dx*.5,dy*.54,z*.51-.012],g,membrane);
         path('#b19e6d',[...points,points[0]],.005,g);
         path('#cfdae0',[points[0],[s*dx*.42,dy*.46,z*.46],points[2]],.004,g);
+        for(const h of [.39,.65])path('#bbc6b8',[[s*dx*h,dy*h,z*h],[s*dx*(h+.1),dy*(h-.12),z*(h+.18)],[s*dx*(h+.19),dy*(h-.09)-.015,z*(h+.28)]],.0018,g);
       }
     }
   }else{
     const fur='#f6e8d8',face='#fff5e5',cocoa='#67462d';
-    oval(fur,0,.251,-.025,.182,.187,.145);oval(face,0,.484,0,.245,.247,.197);
+    finishSpiritPart(oval(fur,0,.251,-.025,.182,.187,.145),'velvet',materials);finishSpiritPart(oval(face,0,.484,0,.245,.247,.197),'velvet',materials);
     for(const s of [-1,1]){
       oval('#dfc4b1',s*.182,.678,-.023,.101,.102,.055);
       oval(fur,s*.182,.683,.014,.094,.09,.038);

@@ -167,6 +167,11 @@
     const sx=6.5,sz=-2.0;
     cyl(sx,.15,sz,2.30,2.55,.30,C.ink);
     cyl(sx,.46,sz,1.8,2.05,.35,C.steel);
+    ring([sx,.65,sz],[0,1,0],1.67,.078,C.ink);
+    for(let i=0;i<8;i++){
+      const angle=i*Math.PI/4,x=sx+1.67*Math.cos(angle),z=sz+1.67*Math.sin(angle);
+      cyl(x,.69,z,.080,.10,.09,C.edge,{segments:6});
+    }
     cyl(sx,.94,sz,.47,.72,.75,C.navy);
     box(sx,1.43,sz,2.7,.55,2.6,C.navy);
     box(sx,2.55,sz+.95,3.35,2.65,.90,C.ivory,{rx:-.11});
@@ -307,6 +312,16 @@
     }
     cyl(ax,3.55,az,1.65,1.6,.30,C.amber);
     glass(ball(ax,4.2,az,1.56,1.12,1.56,C.amber,{glow:.28}),.63);
+    // The inspection dome closes against a two-piece retaining band.
+    // The optical head is visible through the original amber glazing.
+    ring([ax,3.69,az],[0,1,0],1.56,.065,C.ink);
+    ring([ax,3.73,az],[0,1,0],1.60,.042,C.edge);
+    for(let i=0;i<3;i++){
+      const a=i*Math.PI*2/3,x=ax+Math.sin(a)*.58,z=az+Math.cos(a)*.58;
+      tube([ax,3.86,az],[x,4.12,z],.062,C.navy);
+      cyl(x,4.17,z,.18,.23,.19,C.steel);
+      ball(x,4.28,z,.14,.048,.14,C.cyan,{roughness:.17});
+    }
     cyl(ax,4.1,az,.20,.29,1.25,C.paper,{glow:.4});
     cyl(ax,5.30,az,.12,.24,.30,C.red);
     screen(ax,1.6,az+1.84,1.6,.65,C.green,-.25);
@@ -432,6 +447,12 @@
         const h=.64+((j+r)%3)*.10,zz=z+(j-3.5)*.54,yy=.66+r*1.14+h/2;
         box(x-.93,yy,zz,.47,h,.39,[green,C.blue,C.paper,C.steel][(j+2*r)%4]);
         box(x-1.18,yy+.02,zz,.025,.055,.28,C.edge);
+        // A recessed finger pull and a folded index tab give the removable
+        // recording cartridges distinct spines at standing eye height.
+        if(r===1||r===2){
+          box(x-1.18,yy-.16,zz,.030,.10,.115,C.ink);
+          box(x-1.20,yy+.21,zz,.037,.10,.226,(j+r)%3?C.paper:C.amber);
+        }
       }
       block(x-.2,z,2.1,5.2);
     }
@@ -606,6 +627,10 @@
     // Finder, two mounting feet and raised longitudinal service strips.
     const fa=offset(at(.19),v,1.67),fb=offset(at(.95),v,1.38);
     tube(fa,fb,.17,stone);ring(fb,delta,.24,.055,C.edge);
+    const finderAxis=new T.Vector3(...fb).sub(new T.Vector3(...fa)).normalize();
+    for(const d of [.12,.22,.49])ring(offset(fa,finderAxis,d),finderAxis.toArray(),.196,.026,slate);
+    tube(offset(fa,finderAxis,-.18),fa,.202,dark,.178);
+    opticGlass(offset(fa,finderAxis,-.185),finderAxis.clone().negate(),.147);
     for(const t of [.23,.80])beam(offset(at(t),v,1.05),offset(at(t),v,1.58),.19,.20,stone);
     for(const s of [-1,1])beam(offset(at(.08),u,s*1.12),offset(at(.91),u,s*.94),.13,.13,slate);
     // Complete two-sided elevation mounting. The shaft is perpendicular to the

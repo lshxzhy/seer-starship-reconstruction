@@ -183,6 +183,11 @@ function createLandingShuttle(T) {
       louver.rotation.z=a;
       const vane=box(staticBody,alloy,side*2.58+.316*Math.cos(a),1.78+.316*Math.sin(a),5.132,.134,.030,.042);
       vane.rotation.z=a+.39;
+      // Raised petal overlaps and actuator rods articulate the nozzle collar.
+      const nacelleX=side*2.58,petal=(r,b,z)=>vector(nacelleX+r*Math.cos(b),1.78+r*Math.sin(b),z);
+      panel(k%3===0?edge:alloy,[petal(.626,a-.21,4.72),petal(.626,a+.21,4.72),
+        petal(.532,a+.17,5.105),petal(.531,a-.15,5.105)].map(p=>p.toArray()));
+      if(k%2===0)rod(staticBody,edge,petal(.663,a,4.47),petal(.608,a,4.83),.023);
     }
     const plume=put(plumeGeo,exhaustMat,root,side*2.58,1.78,5.16,.37,1,.37);
     plume.rotation.x=Math.PI/2;plumes.push(plume);plume.castShadow=false;

@@ -1,4 +1,4 @@
-  function createPlanetExpedition(requestFrame,persist,returnHome,browseMap,recordSight,byronStory){
+  function createPlanetExpedition(requestFrame,persist,returnHome,browseMap,recordSight){
     const nav=stage.querySelector('[data-planet-nav]'),atlas=stage.querySelector('[data-planet-atlas]');
     const openChart=nav.querySelector('[data-atlas]'),land=nav.querySelector('[data-land]');
     const recall=nav.querySelector('[data-return]'),pad=stage.querySelector('[data-move-pad]');
@@ -59,15 +59,12 @@
     const skyPlanets={},sisterDirection=new T.Vector3();
     let sister=null,sisterDistance=0,sisterAbove=false,throughScope=false;
     const observation={bearing:0,elevation:.22,zoom:1};
-    const playbackSeconds=24;
-    let playback=null;
-    function watchingByron(){return definition.kind==='ship'&&observedBird!==null&&playback!==null;}
+    function observingWreck(){return definition.kind==='ship'&&observedBird!==null;}
     const canObserve=bird=>bird&&bird.distance<=(bird.observationRange||22);
     function observe(bird){
       throughScope=false;
       observedBird=bird.key;observation.bearing=bird.portraitBearing??displacement(bird,position).bearing;
       observation.elevation=.22;observation.zoom=1;
-      playback=bird.kind==='apparition'?0:null;
       if(bird.kind==='apparition'){observation.bearing=observation.elevation=0;}
       else recordSight(bird);
     }
@@ -82,7 +79,7 @@
     function usePlanet(id){
       throughScope=false;sisterAbove=false;
       for(const mesh of Object.values(skyPlanets))mesh.visible=false;
-      body?.setMode('hidden');body=bodies[id]||bodies.klose;
+      body?.setMode('hidden');body=getSurface(regions[id]?id:'klose');
       region=regions[id]||regions.klose;definition=region.definition;radius=definition.radius;home=definition.sites[0];
       airWeights=new Float32Array(definition.sites.length);lastAirLat=lastAirLon=undefined;shownMode='';path=[];targetId=null;observedBird=null;
       stage.dataset.planet=definition.id;
@@ -129,19 +126,30 @@
       return [];
     }
     function plotRoute(id){path=walkingRoute(id);targetId=path.length?id:null;}
+    function getSurface(id){
+      if(bodies[id])return bodies[id];
+      switch(id){
+        case 'klose': return bodies.klose=createKloseSurface(T,world,KLOSE_WORLD,kloseTerrain);
+        case 'ocean': return bodies.ocean=createOceanSurface(T,world);
+        case 'alpha': case 'beta': return bodies[id]=createTwinSurface(T,world,regions[id].definition);
+        case 'byron':
+          bodies.byron=createByronSurface(T,world);
+          bodies.byron.root.add(coreLight);
+          return bodies.byron;
+      }
+    }
     function buildWorld(){
       if(world)return;
       world=new T.Scene();world.background=new T.Color(0x071322);view=new T.PerspectiveCamera(49,1,.1,radius*8);
       kloseTerrain??=createKloseTerrain(T);
-      bodies.klose=createKloseSurface(T,world,KLOSE_WORLD,kloseTerrain);bodies.ocean=createOceanSurface(T,world);
-      bodies.alpha=createTwinSurface(T,world,ALPHA_WORLD);bodies.beta=createTwinSurface(T,world,BETA_WORLD);
-      bodies.byron=createByronSurface(T,world);
+      pano=createPanoSystem(T,world);
+      coreLight=new T.PointLight(0xff746a,1.18,1900,1);
       for(const twin of [ALPHA_WORLD,BETA_WORLD]){
-        const source=bodies[twin.id].globe,display=new T.Mesh(source.geometry,source.material.clone());
+        const source=pano.proxies[twin.id],display=new T.Mesh(source.geometry,source.material.clone());
         display.name=twin.name+' · 天空视盘';display.material.depthTest=display.material.depthWrite=false;
         display.renderOrder=-900;display.visible=false;skyPlanets[twin.id]=display;world.add(display);
       }
-      pano=createPanoSystem(T,world);usePlanet('klose');
+      usePlanet('klose');
       body.setSafariState(safariState);
       craft=createLandingShuttle(T);world.add(craft.root);
       local=new T.Group();world.add(local);
@@ -152,8 +160,6 @@
       escort=createSpiritEscort(T,world);escort.setSpecies(escortId);
       bounce=new T.HemisphereLight(0xf4f6ff,0x9b8294,.52);
       lamp=new T.DirectionalLight(0xfff8ef,.97);world.add(bounce,lamp,lamp.target);
-      coreLight=new T.PointLight(0xff746a,1.18,1900,1);
-      bodies.byron.root.add(coreLight);
       lamp.shadow.mapSize.setScalar(Math.min(2048,renderer.capabilities.maxTextureSize));
       Object.assign(lamp.shadow.camera,{left:-27,right:27,bottom:-27,top:27,near:1,far:114});
       lamp.shadow.camera.updateProjectionMatrix();lamp.shadow.bias=-.00035;lamp.shadow.normalBias=.045;
@@ -276,11 +282,6 @@
     function environment(at,agl,walking,shuttleStatus){
       const mode=walking?'surface':'flight',density=1-T.MathUtils.smoothstep(agl,1200,20000);
       if(mode!==shownMode){body.setMode(mode);shownMode=mode;}
-      if(definition.kind==='ship'){
-        byronStory.tick(frameDt);
-        if(watchingByron())playback=Math.min(playbackSeconds,playback+frameDt);
-        body.setEncounterPhase(watchingByron()?playback/playbackSeconds:byronStory.phase);
-      }
       body.update(at.lat,at.lon,frameDt,agl,localVehicle()?shuttleStatus:null);
       if(body.setSunDirection)body.setSunDirection(pano.offset(definition.id,'star',flight.orbitTime).normalize());
       const f=body.frame(at.lat,at.lon),ground=body.point(at.lat,at.lon);
@@ -299,6 +300,8 @@
       u.crossingPhase.value=(flight.orbitTime%420)*(Math.PI*2/420);
       if(!world.fog)world.fog=new T.FogExp2(0x84655e,.00125);
       position=at;lightSurface(f,ground);
+      const inCabin=phase==='cabin'||phase==='transfer'||(phase==='helm'&&!external);
+      reflections.select(inCabin?true:agl>2800?false:definition.id,world,f.up);
       sky.visible=density>.001;stars.visible=density<.94;
       sky.material.uniforms.airDensity.value=density;
       world.background.setHex(0x071322);
@@ -341,7 +344,7 @@
     }
     function open(saved){
       buildWorld();origin=saved.origin;configureDock();
-      flight=createPanoFlight(T,bodies,dock,pano,saved.vehicle);
+      flight=createPanoFlight(T,getSurface,dock,pano,saved.vehicle);
       usePlanet(saved.phase==='surface'&&regions[saved.planetId]?saved.planetId:flight.planetId);
       const current=saved.format===2||saved.format===3;
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
@@ -389,7 +392,7 @@
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
     function flightTarget(id=navTarget){
       const s=flights.get(id)||flights.get(definition.landingSites[0].id);
-      const p=id==='dock'?dock.position.clone():bodies[s.planetId].point(s.lat,s.lon);
+      const p=id==='dock'?dock.position.clone():getSurface(s.planetId).point(s.lat,s.lon);
       return p.add(pano.offset(flight.planetId,s.planetId,flight.orbitTime));
     }
     function targetName(){
@@ -405,7 +408,7 @@
     }
     function rampFoot(){return vec(...craft.layout.rampEnd).applyQuaternion(flight.quaternion).add(flight.position);}
     function rampApproach(metres){
-      const groundBody=bodies[flight.planetId],ground=coordinates(rampFoot(),groundBody),out=vec(0,0,1).applyQuaternion(flight.quaternion);
+      const groundBody=getSurface(flight.planetId),ground=coordinates(rampFoot(),groundBody),out=vec(0,0,1).applyQuaternion(flight.quaternion);
       const frame=groundBody.frame(ground.lat,ground.lon);
       return groundBody.move(ground.lat,ground.lon,metres*out.dot(frame.east),metres*out.dot(frame.north));
     }
@@ -441,14 +444,6 @@
     }
     function playerPoint(){return body.point(position.lat,position.lon);}
     function closeToRamp(){return localVehicle()&&flight.status().phase==='landed'&&rampFoot().distanceTo(playerPoint())<3.1;}
-    function storyConsole(){
-      if(phase!=='surface'||definition.kind!=='ship')return null;
-      const site=definition.sites.find(s=>displacement(position,s).distance<=8);
-      if(!site)return null;
-      const action=byronStory.at(site.id);
-      if(!action)return null;
-      return {site:site.id,...action,route:byronStory.step!=='arrival'&&action.targetSite!==site.id};
-    }
     function updateUI(){
       if(phase==='hidden')return;
       const s=flight.status(),walking=phase==='surface',seated=phase==='helm',aboard=phase==='cabin';
@@ -457,10 +452,9 @@
       const dockDoor=aboard&&docked&&feet.z>=10.25;
       const gate=walking&&body.portalAt?.(position.lat,position.lon);
       const atRamp=walking&&closeToRamp();
-      const story=walking&&storyConsole();
       openChart.hidden=phase==='transfer';openChart.querySelector('span').textContent=walking?(definition.kind==='ship'?'舱区图':'地表图'):'航线';
-      land.hidden=watchingByron()||!(seated||aboard&&(zone==='seat'||dockDoor)||atRamp||gate||story?.label);
-      land.textContent=walking?(atRamp?'沿尾坡登艇':gate?'穿过星门 · '+regions[gate.planet].definition.name:story?.route?'在舱区图查看下一站':story?.label||'') :aboard?(dockDoor?'乘廊车回舰':'进入驾驶席'):
+      land.hidden=observingWreck()||!(seated||aboard&&(zone==='seat'||dockDoor)||atRamp||gate);
+      land.textContent=walking?(atRamp?'沿尾坡登艇':gate?'穿过星门 · '+regions[gate.planet].definition.name:'') :aboard?(dockDoor?'乘廊车回舰':'进入驾驶席'):
         pending?'正在锁舱':s.auto?'手动接管':arrivedOnDeck&&s.phase!=='flying'?'离席下船':docked?'手动离泊':s.phase==='landed'?'手动起飞':s.canCapture?'锁定对接口':s.canLand?'就地着陆':'制动';
       recall.hidden=!(walking&&localVehicle()&&s.phase==='landed'||seated&&!pending&&!s.auto);
       recall.textContent=walking?'定位登陆艇':'自动飞往'+targetName();
@@ -497,16 +491,14 @@
       encounterButton.hidden=!hasSpirit||nearby.kind==='apparition';
       encounterButton.textContent=nearby?'接触'+nearby.name:'接触精灵';
       watch.textContent=walking&&sisterAbove&&!hasSpirit?(throughScope?'收起望远镜':'望远镜 · '+sister.name):observedBird!==null?'结束观察':'观察'+(nearby?.name||'精灵');
-      if(nearby?.kind==='apparition')watch.textContent=watchingByron()?'返回现场':'观看吞舰过程';
+      if(nearby?.kind==='apparition')watch.textContent=observingWreck()?'放下观测镜':'举起观测镜';
       spiritBook.hidden=!walking&&phase!=='cabin';
       if(phase!=='surface'||feedback&&performance.now()<feedbackUntil){
         if(feedback&&performance.now()<feedbackUntil)hint.textContent=feedback;return;
       }
       if(throughScope){hint.textContent='18× 光学观测 · '+sister.name+'　／　距伴星中心 '+distanceText(sisterDistance);return;}
-      if(watchingByron()){
-        const p=playback/playbackSeconds;
-        const chapter=p<.25?'舷外巨眼':p<.55?'逆向引擎 · 拜伦号撞向黑洞':p<.76?'逃生舰返航 · 勾取罐装黑洞':p<.88?'奥菲利娅击穿屏障':p<1?'罐装黑洞进入核心 · 向内坍缩':'记录结束';
-        hint.textContent=chapter+'　／　滚轮变焦 · Esc 返回';return;
+      if(observingWreck()){
+        hint.textContent='引力撕裂区　／　拖动环视 · 滚轮变焦 · Esc 放下';return;
       }
       if(observedBird!==null&&nearby){hint.textContent=nearby.name+'　／　拖动环视 · E 接触 · Esc 返回';return;}
       while(path.length&&displacement(position,groundDestination(path[0])).distance<surfaceArrivalRadius(path[0])){
@@ -515,7 +507,7 @@
       }
       if(!path.length){
         const fieldHint=body.safariHint(position.lat,position.lon)||body.spiritSiteHint(position.lat,position.lon);
-        hint.textContent=atRamp?'已到登陆艇尾坡　／　按 E 登艇':story?.hint||fieldHint|| (arrival?'已抵达 · '+arrival:site?.description||'打开地表图选择目的地');return;
+        hint.textContent=atRamp?'已到登陆艇尾坡　／　按 E 登艇':fieldHint|| (arrival?'已抵达 · '+arrival:site?.description||'打开地表图选择目的地');return;
       }
       const next=groundDestination(path[0]),d=displacement(position,next);
       hint.textContent=directionArrow(d.bearing+yaw)+'  '+next.name+'  '+distanceText(d.distance)+
@@ -556,13 +548,6 @@
         if(gate&&regions[gate.planet]?.byId.has(gate.site)){
           usePlanet(gate.planet);relocate(gate.site);updateUI();requestFrame();persist();return;
         }
-        const story=storyConsole();
-        if(story?.label){
-          if(story.route){resetInput();browseMap(story.targetSite);return;}
-          const message=byronStory.act(story.site);
-          if(message)say(message);
-          requestFrame();persist();return;
-        }
         if(!fromKeyboard)return;
         if(requestSafari(safariAction(null)))return;
         if(useSiteTool(null))return;
@@ -586,7 +571,7 @@
     function setLens(near,far){
       const aspect=stage.clientWidth/Math.max(1,stage.clientHeight);
       const fov=throughScope?2*Math.atan(Math.tan(49*Math.PI/360)/18)*180/Math.PI:
-        watchingByron()?49*observation.zoom:
+        observingWreck()?49*observation.zoom:
         phase==='cabin'||phase==='transfer'||(phase==='helm'&&!external)?68:49;
       if(view.near!==near||view.far!==far||view.aspect!==aspect||view.fov!==fov){
         Object.assign(view,{near,far,aspect,fov});view.updateProjectionMatrix();
@@ -989,7 +974,7 @@
       if(drag?.id!==e.pointerId)return;
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.travel+=Math.abs(dx)+Math.abs(dy);
       if(observedBird!==null&&phase==='surface'){
-        observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,watchingByron()?-.95:-.04,1.12);
+        observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,observingWreck()?-.95:-.04,1.12);
       }else{yaw-=dx*.004;pitch=clamp(pitch-dy*.004,-1.1,1.12);}
       requestFrame();
     });
@@ -1018,7 +1003,7 @@
       if(phase==='hidden'||!atlas.hidden)return;e.preventDefault();
       const factor=Math.exp(clamp(e.deltaY,-170,170)*.0018);
       if(phase==='helm'&&external)chaseBoom.length=clamp(chaseBoom.length*factor,13,55);
-      else if(watchingByron())observation.zoom=clamp(observation.zoom*factor,.22,1.76);
+      else if(observingWreck())observation.zoom=clamp(observation.zoom*factor,.22,1.76);
       else if(phase==='surface'&&observedBird!==null)observation.zoom=clamp(observation.zoom*factor,.75,2.8);
       else if(phase==='surface')boom=clamp(boom*factor,2.4,8);
       requestFrame();

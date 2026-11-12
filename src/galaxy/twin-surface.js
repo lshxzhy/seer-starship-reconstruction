@@ -191,6 +191,7 @@ function createTwinSurface(T,world,definition){
   ctx.putImageData(data,0,0);const grain=new T.CanvasTexture(pixels);
   grain.wrapS=grain.wrapT=T.RepeatWrapping;grain.anisotropy=4;
   const terrainMat=new T.MeshStandardMaterial({vertexColors:true,map:grain,bumpMap:grain,bumpScale:.05,roughness:.89});
+  const writeBed=finishSurveyGround(T,terrainGeo,terrainMat,definition,10);
   const groundMesh=new T.Mesh(terrainGeo,terrainMat);groundMesh.receiveShadow=true;groundMesh.frustumCulled=false;patch.add(groundMesh);
   const colour=new T.Color(),radial=v();
   function placePatch(lat,lon){
@@ -210,6 +211,7 @@ function createTwinSurface(T,world,definition){
       }
       colour.convertSRGBToLinear();colour.toArray(tints,i*3);
       uv[i*2]=ll.x/10;uv[i*2+1]=ll.z/10;
+      writeBed(i,ll.x,ll.z);
     }
     sample(0,0,1,0);
     for(let j=0;j<rings.length;j++)for(let k=0;k<sectors;k++){

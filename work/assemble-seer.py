@@ -1,5 +1,6 @@
 """Assemble the same scene as an embeddable fragment and a portable offline viewer."""
 from html import escape
+from base64 import b64encode
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -40,10 +41,17 @@ scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'persona
                 root/'src'/'galaxy'/'navigation-map.js',root/'src'/'galaxy'/'landing-shuttle.js',root/'src'/'galaxy'/'shuttle-flight.js',
                 root/'src'/'galaxy'/'ocean-ecology.js',root/'src'/'galaxy'/'ocean-surface.js',
                 root/'src'/'galaxy'/'twin-surface.js',root/'src'/'galaxy'/'twin-alpha.js',root/'src'/'galaxy'/'twin-beta.js',root/'src'/'galaxy'/'byron-ship.js',root/'src'/'galaxy'/'pano-system.js',root/'src'/'galaxy'/'twin-panorama.js',
-                root/'src'/'galaxy'/'voyage-scale.js',root/'src'/'galaxy'/'ship-approach.js',root/'src'/'galaxy'/'pano-transfer.js',root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'byron-story.js',root/'src'/'galaxy'/'expedition.js'])
+                root/'src'/'galaxy'/'voyage-scale.js',root/'src'/'galaxy'/'ship-approach.js',root/'src'/'galaxy'/'pano-transfer.js',root/'src'/'galaxy'/'carrier-dock.js',root/'src'/'galaxy'/'byron-instruments.js',root/'src'/'galaxy'/'expedition.js'])
 scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','system.js','safari-figures.js','wetland-evolutions.js','yunas.js','partner-figures.js','escort.js','field-tool.js','portrait-stage.js','storage.js','widget-records.js','save-transfer.js','safari-terminal.js','terminal.js'))
 scripts.append(viewer/'explore.js')
+images = {'byron-blackstone.webp':'BYRON_COATING_URL','survey-albedo.webp':'SURVEY_ALBEDO_URL'}
+image_dir = root / 'src' / 'galaxy' / 'assets'
+slot = scripts.index(root/'src'/'galaxy'/'surface-finish.js')
+scripts[slot:slot] = [image_dir/name for name in images]
 def script_source(path):
+    if path.suffix == '.webp':
+        payload = b64encode(path.read_bytes()).decode('ascii')
+        return f"const {images[path.name]}='data:image/webp;base64,{payload}';"
     raw = path.read_text('utf-8')
     if path.name == 'characters.json':
         profiles = {row['id']: {key: row[key] for key in ('name', 'title', 'roomId', 'facts')}

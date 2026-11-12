@@ -116,11 +116,13 @@
     const crownShape=spindle([[0,0],[.014,.036],[.047,.056],[.094,.067],[.204,.066],[.312,.050],[.412,.028],[.470,.012],[.480,0]],true,.105);
     const finShape=spindle([[0,0],[.012,.024],[.04,.047],[.072,.055],[.115,.048],[.151,.029],[.180,.010],[.186,0]],true,.055);
     const crownCup=spindle([[0,0],[.009,.040],[.028,.062],[.053,.072],[.075,.071],[.098,.060],[.107,.048],[.109,0]],false);
-    const earGroups=[],fins=[];
+    const socketRing=new T.TorusGeometry(.053,.006,8,36),earGroups=[],fins=[];
     for(const side of [-1,1]){
       const ear=new T.Group();body.add(ear);earGroups.push(ear);
       ear.position.set(side*.150,.317,.008);ear.rotation.set(.09,0,-side*.46);
       const cup=part(ear,'耳翼悬浮白底座',crownCup,shell);cup.scale.z=.74;
+      const keeper=part(ear,'翼座压圈',socketRing,seam);
+      keeper.rotation.x=Math.PI/2;keeper.scale.y=.74;keeper.position.y=.062;
       const blade=part(ear,'上部浮空能量翼',crownShape,blades);blade.position.y=.053;
       blade.scale.z=.54;
       const wing=new T.Group();body.add(wing);fins.push(wing);

@@ -6,9 +6,9 @@
 
 拜伦号在帕诺导航表登记为 `kind:'ship'`。星图与 L-01 仍共用轨道时钟。进入舰旁后用局部米制直角坐标，甲板脚点、起落架、机翼碰撞与尾坡都落在同一船壳上。确定步行路线时，甲板、神秘空间和精灵舱三处互通；位于另一艘船的舷窗通过人员地图抵达。04 号机位可选拜伦号左舷靠泊甲板。[舰体及碰撞](../src/galaxy/byron-ship.js) · [近舰飞控](../src/galaxy/ship-approach.js)
 
-`createByronStory` 保存下一项操作的稳定键和舷外演出进度。切换地点或返舰时，记录随航程顶层的 `byronStory` 一起保存。舷窗的连续观看使用独立时钟，退出后回到已操作的阶段。巨影以 `apparition` 接入观察，体量、涡流、撞击与吸积在现场渲染。补剧情时同时查操作台、舷外模型和实际站位。[航行记录与操作台](../src/galaxy/byron-story.js) · [尤纳斯模型](../src/spirits/yunas.js) · [原作证据](拜伦号与原始黑洞.md)
+拜伦号一进入便显示引力撕裂现场。三处裂口共用 `BYRON_TEAR_SITES`；舰壳、剥离源和 L-01 的位置使用同一套米制坐标。实例碎片与细尘在每个可见帧按时间推进，抵达实际白核后从原破口补充。观察镜独立控制视线和变焦。旧版已经保存的 `byronStory` 只用于保留历史进度。[物理场景与残骸](../src/galaxy/byron-ship.js) · [舱内仪表](../src/galaxy/byron-instruments.js) · [尤纳斯模型](../src/spirits/yunas.js)
 
-近场和星图共用 `createByronHull` 的塔、腰与腹鳍截面。远景跳过细部面板和碰撞，近场按同一截面确定舰壳净空。近场装甲复用舰体检修板图集的颜色、凹凸与粗糙度。尤纳斯的米制高度由 `BYRON_BOSS.height` 指定；`encounterCore` 是动画后白热核心的世界坐标，供红色侧光、观察镜头和罐体的最后一段轨迹使用。[近舰外壳与现场](../src/galaxy/byron-ship.js) · [舷窗镜头](../src/galaxy/expedition.js)
+近场与星图共用拜伦号的暗拱、橙红背隙和断钩轮廓；近场另有可见的切面、内肋和原创黑石材质。四颗行星通过 `finishSurveyGround` 在当地米制坐标中混合地表材质，各经典地区分别指定潮湿度、裸岩和沉积条纹。环境光使用当前天体的预滤波反射贴图，近场模型在飞抵或游览时创建。[地表着色](../src/galaxy/surface-finish.js) · [辐照与反射](../src/viewer/lighting.js) · [机位与航程](../src/galaxy/expedition.js)
 
 `src/viewer/explore.js` 切换舰内、舰体观察和行星场景，连接舰载终端、精灵终端和飞行控制器。输入由当前场景接收。打开地图、背包或精灵面板时，各面板处理自己的键盘焦点；关闭后还给操作入口。主要流程如下。
 

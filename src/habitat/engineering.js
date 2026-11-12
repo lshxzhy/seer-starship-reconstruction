@@ -96,8 +96,8 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     function floorLine(x,z,w,d,color=C.cyan) {
       box(x,.025,z,w,.026,d,color,{glow:.1});
     }
-    function platedFloor(W,D) {
-      box(0,.012,0,W-.15,.02,D-.15,C.ivory);
+    function platedFloor(W,D,finish) {
+      box(0,.012,0,W-.15,.02,D-.15,C.ivory,{finish});
       for(let x=-W/2+2;x<W/2-.2;x+=2)box(x,.027,0,.021,.008,D-.18,0xb8b5a5);
       for(let z=-D/2+2;z<D/2-.2;z+=2)box(0,.027,z,W-.18,.008,.021,0xb8b5a5);
     }
@@ -417,7 +417,17 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
           cyl(x+Math.sin(a)*1.2,1.7+Math.cos(a)*1.2,zz+.22,.065,.065,.12,C.steel,{rx:Math.PI/2,segments:6});
         }
       }
-      for(const zz of [1.1,6.5])box(x,.35,zz,2.6,.6,.85,C.steel);
+      for(const zz of [1.1,6.5]){
+        box(x,.35,zz,2.6,.6,.85,C.steel);
+        // A split cradle supports the pipe below its centreline. The two
+        // drawbolts pass through the ears and into the deck pedestal.
+        torus(x,1.7,zz,1.185,.085,P.brown,{arc:Math.PI,rz:Math.PI});
+        for(const side of [-1,1]){
+          box(x+side*1.18,1.67,zz,.27,.15,.42,P.trim);
+          cyl(x+side*1.24,1.15,zz,.042,.042,1.03,C.edge,{segments:12});
+          cyl(x+side*1.24,1.79,zz,.09,.09,.10,P.base,{segments:6});
+        }
+      }
       pipe([[x,1.7,.1],[x,1.7,-1.2],[x,3.4,-2.7],[x,3.4,-5.12]],.75,P.gold);
       torus(x,3.4,-5.05,.82,.13,P.trim);
       pipe([[x,1.7,7.48],[x,1.7,9.15],[x+.9,2.5,9.8],[x+.9,4.6,9.8]],.87,P.brown);
@@ -464,7 +474,7 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     const {ring,screen,bench,cabinet,arm,overhead,floorLine,platedFloor} = equipment(kit);
     root.name='机械室 · M01 维修台与青光双台';
     // The light field, two floor rails and open middle come from M01.
-    platedFloor(W,D);
+    platedFloor(W,D,'tread');
     for(const x of [-1.1,3.3])floorLine(x,6.5,.11,12,C.edge);
     for(const x of [-6.2,-1.8]) {
       box(x,.048,2.8,.23,.045,15,C.dark);
@@ -596,6 +606,10 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     for(let i=0;i<3;i++){
       const z=rackZ+(i-1)*.91;
       box(rackX,.808,z,.79,.052,.78,C.dark);
+      for(const side of [-1,1]){
+        box(rackX+side*.33,.865,z,.12,.11,.61,C.steel,{rz:side*.24});
+        cyl(rackX+side*.38,.898,z+.20,.038,.038,.035,C.edge,{segments:6});
+      }
       const sample=new kit.T.Group();sample.name='黄晶矿训练样品 '+(i+1);
       sample.position.set(rackX,.833,z);sample.rotation.y=i*.77-.22;
       sample.scale.set(1.30,1.52,1.30);root.add(sample);
@@ -639,7 +653,7 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     const {ring,screen,bench,toolWall,overhead,floorLine,platedFloor} = equipment(kit);
     root.name='发明室 · W05/W06 经典尖锥装置';
     // The 2009 full-room views govern the arrangement and cream/cyan palette.
-    platedFloor(W,D);
+    platedFloor(W,D,'sealed');
     for(const z of [-2.9,1.25]) {
       box(0,.04,z,W-.9,.055,.44,C.steel);
       box(0,.075,z,W-1.0,.02,.12,C.cyan,{glow:.1});
@@ -722,6 +736,13 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
        [1.66,3.29],[1.59,3.39],[1.21,3.39],[1.15,3.24],[1.22,2.70],[1.31,1.95],[1.33,1.09]]
       .map(p=>new T.Vector2(...p)),56));
     cyl(lx,2.40,lz,1.24,1.24,.10,C.rubber);
+    // The open cup has a visible insulated stator and a hollow tool socket.
+    for(let i=0;i<8;i++){
+      const a=i*Math.PI/4,x=lx+Math.sin(a)*.93,z=lz+Math.cos(a)*.93;
+      box(x,2.64,z,.36,.38,.23,C.navy,{ry:a});
+      for(const h of [2.53,2.65,2.77])box(x, h,z,.41,.066,.27,C.bronze,{ry:a});
+    }
+    ring(lx,2.49,lz,.44,.09,C.edge);
     ring(lx,3.37,lz,1.33,.080,0x4acde7,{glow:.32});
     ring(lx,1.67,lz,2.04,.075,0x52687a);
     for(let i=0;i<4;i++) {

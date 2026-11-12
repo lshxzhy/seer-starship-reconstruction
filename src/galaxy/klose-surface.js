@@ -723,7 +723,8 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
         '#include <color_fragment>\nvec4 motif=texture2D(clearingPaint,clearingUV);diffuseColor.rgb=mix(diffuseColor.rgb,pow(motif.rgb,vec3(2.2)),.8*motif.a);');
     };
     const mesh=new T.Mesh(geo,material);
-    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii,sectors,paint};
+    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);
+    terrain={coords,geo,radii,sectors,paint,writeBed:finishSurveyGround(T,geo,material,KLOSE_WORLD,2.4)};
     ensureScenery();
   }
   function placeGround(lat,lon,altitude) {
@@ -745,6 +746,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       pos.setXYZ(i,east*ring.sin*distance,ring.cos*distance-anchorRadius,south*ring.sin*distance);
       const s=shade(x,z,dir.x,dir.y,dir.z,land,ring.detail);
       col.setXYZ(i,s.r,s.g,s.b);uv.setXY(i,x/2.4,z/2.4);
+      terrain.writeBed(i,x,z);
     }
     pos.needsUpdate=col.needsUpdate=uv.needsUpdate=true;geo.computeVertexNormals();
     groundInverse.copy(f.quaternion).invert();

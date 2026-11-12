@@ -85,7 +85,8 @@
     for(const s of [-1,1]){
       const x=s*.23;
       box(x,.314,0,.34,.020,.61,sole,0,s*.04);
-      for(let j=0;j<6;j++)box(x,treadTop+.001,-.22+j*.088,.27,.003,.019,gasket);
+      for(let j=0;j<6;j++)for(const side of [-1,1])
+        box(x+side*.065,treadTop+.001,-.22+j*.088,.135,.003,.018,gasket,0,side*.23);
       shell(mirrored([[.46,-.53],[.59,-.55],[.62,.54],[.45,.60]],s),.289,.128,tin,.018);
       shell(mirrored([[.485,-.40],[.57,-.42],[.595,.40],[.49,.44]],s),.429,.021,gasket,.009);
     }
@@ -129,6 +130,15 @@
         ring(s*x,.368,z-.154,.083,.008,tin);
       }
       // Art-directed belly lift cassette, protected between the wing and pads.
+      // Paired wing lugs share a recessed fore/aft hinge. Its lock and the
+      // projecting end of its pin can be seen from alongside the glider.
+      box(s*.575,.335,.03,.120,.105,.65,gasket);
+      for(const z of [-.22,.22]){
+        box(s*.608,.338,z,.18,.13,.105,edge);
+        disc(s*.637,.337,z,.064,.064,.112,tin,Math.PI/2);
+        ring(s*.637,.337,z+.065,.050,.009,edge);
+      }
+      disc(s*.637,.337,.004,.035,.035,.42,ivory,Math.PI/2);
       disc(s*.99,.238,-.02,.228,.208,.11,edge);
       disc(s*.99,.174,-.02,.176,.165,.034,gasket);
       disc(s*.99,.153,-.02,.128,.125,.023,liftLight);

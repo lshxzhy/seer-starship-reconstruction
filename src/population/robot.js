@@ -305,6 +305,21 @@
       cast('core',rearCover,0,-.02,.473,.209,.177,.086,paint);
       for(const sign of [-1,1])
         cast('core',cube,sign*.148,-.02,.537,.034,.008,.010,graphite,null,0,sign*.33);
+      if(!simple){
+        // Recessed ventilation slots follow the dome of the service door.
+        // The two short return flanges stay seated on its curved enamel.
+        for(let row=0;row<4;row++){
+          const y=-.083+row*.040,z=.473+.086*Math.sqrt(1-(y/.177)**2);
+          const width=.108-.015*Math.abs(row-1.5);
+          cast('core',cube,0,y-.02,z,width,.011,.006,graphite);
+          for(const flank of [-1,1])
+            cast('core',cube,flank*width*.62,y-.018,z-.004,width*.26,.009,.005,graphite,null,0,flank*.18);
+        }
+        for(const side of [-1,1]){
+          const lug=profile([[.018,0],[.028,.003],[.030,.009],[.025,.014],[.018,.012]],20);
+          cast('core',lug,side*.120,.075,.528,1,1,1,steel,'machined',PI/2,0,-side*.23);
+        }
+      }
 
       const faceY = faceAxisY;
       const panelZ=display?-.574:glassZ,panelDepth=display?.032:glassDepth;
@@ -363,6 +378,9 @@
         cast(foot,drum,0,.020,0,.084,.014,.086,gold);
         cast(foot,cube,-sign*.073,-.104,-.285,.074,.041,.044,bronze,null,-.42,0,0);
         if(!simple){
+          const pivot=profile([[0,-.018],[.066,-.018],[.076,-.010],[.076,.011],[.064,.018],[.035,.018],[.031,.012],[0,.012]],32);
+          cast(foot,pivot,sign*.080,-.014,-.004,1,1,1,steel,'machined',0,0,-sign*PI/2);
+          cast(foot,drum,sign*.102,-.014,-.004,.033,.009,.033,graphite,null,0,0,PI/2);
           for(let j=0;j<3;j++)
             cast(foot,cube,sign*.177,-ankleY+.029,-.145+j*.074,.030,.011,.032,graphite);
           cast(foot,cube,0,-.093,.159,.105,.026,.023,rubber,null,.18);

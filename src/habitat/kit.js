@@ -132,6 +132,56 @@
 
   // UV lengths are metres. Different wall bays therefore share the same paint
   // and texels; a long wall does not stretch a single screw over its width.
+  // A room-local light map records the contact of the installed equipment with
+  // the deck. Use the actual feet and low castings, including gaps under desks.
+  function bakeCabinDeckOcclusion(root,W,D){
+    const size=256,shade=new Uint8Array(size*size).fill(255),receivers=[];
+    root.updateWorldMatrix(true,true);
+    const toRoom=root.matrixWorld.clone().invert(),mat=new T.Matrix4(),box=new T.Box3(),span=new T.Vector3();
+    root.traverse(part=>{
+      if(!part.isMesh||part.isInstancedMesh||!part.visible||!part.material?.isMeshStandardMaterial||part.material.transparent)return;
+      const g=part.geometry;if(!g.boundingBox)g.computeBoundingBox();
+      mat.multiplyMatrices(toRoom,part.matrixWorld);box.copy(g.boundingBox).applyMatrix4(mat);box.getSize(span);
+      if(span.y<.32&&box.max.y>=0&&box.max.y<.20&&span.x*span.z>12){
+        receivers.push([part,mat.clone()]);return;
+      }
+      if(box.min.y>.67||box.max.y<.18||span.y<.14||span.x<.08||span.z<.08)return;
+      const cx=(box.min.x+box.max.x)*.5,cz=(box.min.z+box.max.z)*.5;
+      const rx=span.x*.5,rz=span.z*.5,gap=Math.max(0,box.min.y);
+      const reach=.24+Math.min(.75,span.y*.19)+gap*.40;
+      const x0=Math.max(0,Math.floor(((cx-rx-reach)/W+.5)*size));
+      const x1=Math.min(size,Math.ceil(((cx+rx+reach)/W+.5)*size));
+      const z0=Math.max(0,Math.floor(((cz-rz-reach)/D+.5)*size));
+      const z1=Math.min(size,Math.ceil(((cz+rz+reach)/D+.5)*size));
+      const radial=(g.type==='CylinderGeometry'||g.type==='SphereGeometry')&&Math.abs(mat.elements[5])>Math.hypot(mat.elements[4],mat.elements[6]);
+      for(let z=z0;z<z1;z++)for(let x=x0;x<x1;x++){
+        const dx=Math.abs(((x+.5)/size-.5)*W-cx),dz=Math.abs(((z+.5)/size-.5)*D-cz);
+        const d=radial?Math.max(0,(Math.hypot(dx/rx,dz/rz)-1)*Math.min(rx,rz)):
+          Math.hypot(Math.max(0,dx-rx),Math.max(0,dz-rz));
+        const edge=1-T.MathUtils.smoothstep(d,0,reach);
+        const value=255-155*edge*edge/(1+3.5*gap);
+        shade[z*size+x]=Math.min(shade[z*size+x],Math.round(value));
+      }
+    });
+    if(!receivers.length)return;
+    const pixels=new Uint8Array(size*size*4).fill(255);
+    shade.forEach((v,i)=>{pixels[i*4]=v;});
+    const ao=new T.DataTexture(pixels,size,size,T.RGBAFormat);
+    ao.magFilter=T.LinearFilter;ao.minFilter=T.LinearMipmapLinearFilter;ao.generateMipmaps=true;ao.needsUpdate=true;
+    const finishes=new Map(),point=new T.Vector3();
+    for(const [mesh,matrix] of receivers){
+      const g=mesh.geometry.clone(),p=g.attributes.position,uv=new Float32Array(p.count*2);
+      for(let i=0;i<p.count;i++){
+        point.fromBufferAttribute(p,i).applyMatrix4(matrix);
+        uv[i*2]=point.x/W+.5;uv[i*2+1]=point.z/D+.5;
+      }
+      g.setAttribute('uv2',new T.BufferAttribute(uv,2));mesh.geometry=g;
+      if(!finishes.has(mesh.material)){
+        const finish=mesh.material.clone();finish.aoMap=ao;finishes.set(mesh.material,finish);
+      }
+      mesh.material=finishes.get(mesh.material);
+    }
+  }
   function cabinMetricUV(g,sx,sy,sz){
     const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;
     for(let i=0;i<uv.count;i++){

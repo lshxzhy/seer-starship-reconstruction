@@ -2,7 +2,7 @@ function createKloseBird(T,speciesId) {
     const shiny=speciesId===164;
     const color=hex=>new T.Color(hex).convertSRGBToLinear();
     const v=(x,y,z)=>new T.Vector3(x,y,z),tau=2*Math.PI;
-    const round=new T.SphereGeometry(1,28,18);
+    const round=new T.SphereGeometry(1,32,22);
     const animal=new T.Group(),body=new T.Group(),ears=[],feet=[],eyes=[];
     animal.add(body);animal.rotation.order='YXZ';
     const pink=shiny?'#faf9ef':'#f5b2ca',light=shiny?'#fffdeb':'#ffd3e1',tip=shiny?'#ebbc41':'#381b2a',cheek=shiny?'#e9929e':'#ff778f';
@@ -14,7 +14,7 @@ function createKloseBird(T,speciesId) {
     function oval(x,y,z,sx,sy,sz,hex) {
       const m=new T.Mesh(round,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);body.add(m);return m;
     }
-    oval(0,.102,0,.104,.078,.073,pink);
+    finishSpiritPart(oval(0,.102,0,.104,.078,.073,pink),'velvet',materials);
     oval(0,.067,-.083,.044,.043,.047,light);
     const span=18,steps=42;
     for (const side of [-1,1]) {
@@ -22,7 +22,7 @@ function createKloseBird(T,speciesId) {
       animal.add(foot);feet.push(foot);
       const blush=oval(side*.080,.087,.044,.031,.021,.013,cheek);blush.rotation.y=side*.56;
       const eye=new T.Group();eye.position.set(side*.034,.119,.065);eye.rotation.y=side*.23;body.add(eye);eyes.push(eye);
-      eye.add(oval(0,0,0,.0115,.020,.008,'#2a202b'));
+      eye.add(finishSpiritPart(oval(0,0,0,.0115,.020,.008,'#2a202b'),'iris',materials));
       eye.add(oval(-.002,.007,.007,.0048,.008,.0028,'#fff8fc'));
       eye.add(oval(.003,-.008,.007,.0026,.0028,.0017,'#bfabb5'));
       const ear=new T.Group();ear.position.set(side*.055,.149,0);body.add(ear);ears.push(ear);
@@ -38,6 +38,7 @@ function createKloseBird(T,speciesId) {
           p.push(center.x+offset.x,center.y+offset.y,center.z+.72*rad*taper*Math.sin(a));
           const darkTip=t>.74+.026*Math.cos(a);
           const ridge=Math.max(0,Math.cos(a-side*.42))**5;
+          p[p.length-1]+=.0015*rad/.035*Math.sin(Math.PI*t)*Math.cos(3*a);
           tone.copy(darkTip?end:base).lerp(glow,ridge*(darkTip?.075:.28));
           rgb.push(tone.r,tone.g,tone.b);
           if(j) {const l=(j-1)*span+k,r=(j-1)*span+(k+1)%span;idx.push(l,r,l+span,r,r+span,l+span);}
@@ -45,7 +46,8 @@ function createKloseBird(T,speciesId) {
       }
       const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(p,3));
       geo.setAttribute('color',new T.Float32BufferAttribute(rgb,3));geo.setIndex(idx);geo.computeVertexNormals();
-      ear.add(new T.Mesh(geo,new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.66})));
+      const earFinish=spiritCoating(paint('#ffffff'),'velvet',materials);earFinish.vertexColors=true;earFinish.side=T.DoubleSide;
+      ear.add(new T.Mesh(geo,earFinish));
     }
     oval(0,.083,.078,.014,.008,.013,shiny?'#b86976':'#3177a3');
     const bill=oval(0,.091,.082,.019,.009,.015,shiny?'#f29798':'#63c8ee');bill.rotation.x=.14;
@@ -93,7 +95,7 @@ function createKloseSpiritModel(T,id){
     m.castShadow=m.receiveShadow=true;group.add(m);return m;
   }
   function oval(col,x,y,z,rx,ry,rz,group){return mesh(geometry('egg'),col,[x,y,z],[rx,ry,rz],group);}
-  function gem(col,x,y,z,rx,ry,rz,group){return mesh(geometry('gem'),col,[x,y,z],[rx,ry,rz],group);}
+  function gem(col,x,y,z,rx,ry,rz,group){return finishSpiritPart(mesh(geometry('gem'),col,[x,y,z],[rx,ry,rz],group),'gem',colors);}
   function joint(x,y,z,sway=0,axis='z',phase=0){
     const g=new T.Group();g.position.set(x,y,z);body.add(g);
     joints.push({g,sway,axis,phase});return g;
@@ -121,7 +123,7 @@ function createKloseSpiritModel(T,id){
     return mesh(geo,col,[0,0,0],[1,1,1],group);
   }
   function eye(x,y,z,scale=1,group=body,pupil=dark){
-    oval(pupil,x,y,z,.047*scale,.071*scale,.032*scale,group);
+    finishSpiritPart(oval(pupil,x,y,z,.047*scale,.071*scale,.032*scale,group),'iris',colors);
     oval('#fffbee',x-.008*scale,y+.020*scale,z+.028*scale,.013*scale,.017*scale,.008*scale,group);
   }
   function feet(col,width,z,rad=.095){
@@ -205,11 +207,26 @@ function createKloseSpiritModel(T,id){
     }
     const topCount=(sectors+(rings-1)*sectors*2)*3;
     const cap=skin(vertices,triangles,young?'#863909':'#83320c',hood);
-    cap.material.roughness=.45;
+    finishSpiritPart(cap,'cap',colors);
     const colorUnder='#533217';
     if(!colors.has(colorUnder))colors.set(colorUnder,new T.MeshStandardMaterial({color:new T.Color(colorUnder).convertSRGBToLinear(),roughness:.77}));
     cap.geometry.addGroup(0,topCount,0);cap.geometry.addGroup(topCount,triangles.length-topCount,1);
     cap.material=[cap.material,colors.get(colorUnder)];
+    // Shallow radial lamellae follow the rolled underside. All gills are one
+    // mesh and stop at the stalk, leaving the lifted brow clear.
+    const gills=[],faces=[];
+    for(let i=0;i<40;i++){
+      const angle=tau*i/40,rim=surface(angle,1),start=i%3===1?.45:.27;
+      for(let j=0;j<=6;j++){
+        const t=j/6,r=start+(.93-start)*t,a=angle+.028*Math.sin(Math.PI*t+i*.6),n=gills.length/3;
+        const height=rim.y+.071-.105*t,vane=.029*Math.sin(Math.PI*t);
+        const x=Math.sin(a)*Math.hypot(rim.x,rim.z/.88)*r,z=Math.cos(a)*Math.hypot(rim.x,rim.z/.88)*r*.88;
+        const w=.004+.003*Math.sin(Math.PI*t);
+        gills.push(x-w*Math.cos(a),height,z+w*Math.sin(a),x,height-vane,z,x+w*Math.cos(a),height,z-w*Math.sin(a));
+        if(j)faces.push(n-3,n,n-2,n-2,n,n+1,n-2,n+1,n-1,n-1,n+1,n+2);
+      }
+    }
+    skin(gills,faces,'#876344',hood).material.side=T.DoubleSide;
     // Each coloured island follows the actual hood surface, including its bent brim.
     const patches=young?
       [[-.74,.86,.34,.135],[.91,.79,.41,.205],[-.43,.36,.52,.16],[2.39,.58,.41,.20],[-2.24,.63,.46,.21],[2.19,.22,.45,.12]]:

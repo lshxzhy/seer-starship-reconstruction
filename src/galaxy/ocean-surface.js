@@ -339,7 +339,14 @@ function createOceanSurface(T,world){
   function shell(x,z,s){
     s*=1.56;
     if(s>1.6&&corridorGap(x,z)<2.4)return;
-    stamp('shell',x,groundY(x,z)-.025*s,z,1.24*s,.87*s,1.4*s,0xd6bb8a,0,Math.sin(x-z)*.85);
+    const floor=groundY(x,z),bearing=Math.sin(x-z)*.85;
+    stamp('shell',x,floor-.025*s,z,1.24*s,.87*s,1.4*s,0xd6bb8a,0,bearing);
+    // The hinge roots in the sand. Sediment catches against its lee side.
+    for(let k=-1;k<=1;k++){
+      const u=.09*s*k,along=-.31*s;
+      stamp('barnacle',x+u*Math.cos(bearing)+along*Math.sin(bearing),floor+.014*s,
+        z-u*Math.sin(bearing)+along*Math.cos(bearing),.09*s,.067*s,.10*s,0xbca891,0,bearing);
+    }
     if(s>1.6)blockers.push({x,z,r:s*.53,top:groundY(x,z)+s*.7});
   }
   function careStation(x,z,s){
@@ -362,6 +369,11 @@ function createOceanSurface(T,world){
     part('disk',0,1.58,-.14,.39,.14,.36,0x215368);
     part('lobe',0,1.72,-.14,.27,.26,.27,0x80d743);
     part('lobe',-.10,1.84,.035,.073,.059,.036,0xd9ff8a);
+    for(const side of [-1,1]){
+      part('ring',side*.68,1.17,.42,.14,.14,.075,0x9cb2a9,0,side*.32);
+      part('lobe',side*.68,1.17,.45,.077,.077,.034,0x254b5a);
+      for(let j=0;j<4;j++)part('lobe',side*(.71+.13*(j%2)),.42+.34*(j>>1),.88,.028,.028,.019,0xa2bbb4);
+    }
     blockers.push({x,z,r:1.30*s,top:base+2*s});
   }
   function etchedFishStone(x,z,s){
@@ -464,6 +476,11 @@ function createOceanSurface(T,world){
   }
   blockers.push({x:depths.x-9,z:depths.z-7,r:1.65,top:groundY(depths.x-9,depths.z-7)+4.4});
   grotto(floor.x,floor.z-16,1,0x525269);
+  for(let j=0;j<13;j++){
+    const side=j%2?1:-1,x=floor.x+side*(4.2+.29*(j%3)),z=floor.z-16+(j%5)*.45;
+    const y=groundY(x,z),r=.19+.07*(j%4);
+    stamp('barnacle',x,y+.03,z,r,.71*r,r,0x88a7a2,0,j*.83);
+  }
   etchedFishStone(floor.x-10,floor.z-5,1.62);
   for(const side of [-1,1]){
     const x=floor.x+side*6.4,z=floor.z-15.8,y=groundY(x,z);
@@ -504,6 +521,8 @@ function createOceanSurface(T,world){
     for(let i=0;i<7;i++){
       const a=i*tau/7,end=v(2.07*Math.cos(a),2.07*Math.sin(a),0).applyMatrix4(wheel.matrix);
       rod(center.x,center.y,center.z,end.x,end.y,end.z,.13,0x49717a);
+      const lug=v(1.64*Math.cos(a),1.64*Math.sin(a),.09).applyMatrix4(wheel.matrix);
+      stamp('lobe',lug.x,lug.y,lug.z,.093,.091,.058,0x90ada3,-.30,.19,.06);
     }
     stamp('lobe',wx,wy,wz,.39,.39,.24,0x5d8586);
     for(let j=0;j<4;j++)stamp('crystal',wx-.76+j*.32,base+2.25+.13*Math.sin(j),wz-1.02,.22,.48+.25*(j%2),.29,0x90ca82,0,0,.24*j-.26);
@@ -605,6 +624,7 @@ function createOceanSurface(T,world){
       diffuseColor.rgb*=vec3(1.)+vec3(.25,.39,.39)*gleam;`);
   };
   sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
+  const writeBed=finishSurveyGround(T,groundGeo,sandMat,OCEAN_WORLD,1);
   const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;
   const seaMat=new T.ShaderMaterial({uniforms:{uTime:tideTime},side:T.DoubleSide,transparent:true,depthWrite:false,
     vertexShader:'varying vec2 wuv;varying float vz;void main(){wuv=uv;vec4 p=modelViewMatrix*vec4(position,1.);vz=max(0.,-p.z);gl_Position=projectionMatrix*p;}',
@@ -630,6 +650,7 @@ function createOceanSurface(T,world){
       const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=seaFloor(x,z),r=radius+h;
       gp.setXYZ(i,dx*ss*r,cs*r-radius,dz*ss*r);wp.setXYZ(i,dx*ss*radius,cs*radius-radius,dz*ss*radius);
       chartUV.setXY(i,x,z);
+      writeBed(i,x,z);
       tone.copy(shallowsColor).lerp(deepColor,smooth(-h,10,28)).lerp(floorColor,smooth(-h,31,49)).lerp(abyssColor,smooth(-h,50,65));
       tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
     }

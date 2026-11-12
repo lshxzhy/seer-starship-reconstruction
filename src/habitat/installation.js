@@ -183,6 +183,7 @@
       if(typeof builder!=='function')throw new Error('未装配舱室模块：'+room.name);
       const kit=buildRoomKit(room.group,room.spec);
       builder(kit);
+      bakeCabinDeckOcclusion(room.group,kit.W,kit.D);
       batchCabinFittings(room,kit);
       room.roof=kit.roof;
       room.built=true;

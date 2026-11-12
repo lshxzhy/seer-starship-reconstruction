@@ -191,6 +191,15 @@
       rim(radius*1.13, 0.052, 0.27, mats.dark, engine);
       rim(radius*1.12, 0.019, 0.49, mats.steel, engine);
       rim(radius*.882, 0.014, 0.611, mats.blue, engine);
+      // Coolant returns bridge the moving petals to the fixed supply ring.
+      // Keep the luminous throat open through all three nozzle axes.
+      rim(radius*1.12,.017,.163,mats.ochre,engine);
+      for(let k=0;k<8;k++){
+        const a=(k+.5)*Math.PI/4,c=Math.cos(a),s=Math.sin(a);
+        lineTube([[radius*1.12*c,radius*1.12*s,.163],
+          [radius*1.19*c,radius*1.19*s,.204],[radius*1.17*c,radius*1.17*s,.292]],
+          .011,mats.steel,engine);
+      }
       sphere(radius*0.75, radius*0.75, 0.09, mats.cyan, 0, 0, 0.47, engine);
       sphere(radius*0.42, radius*0.42, 0.045, mats.hot, 0, 0, 0.54, engine);
       exhaustJet(radius, length, engine);

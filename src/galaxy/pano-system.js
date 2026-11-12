@@ -162,7 +162,7 @@ function createPanoSystem(T,world){
     root.traverse(o=>{if(o.geometry&&!o.isSprite)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
     for(const g of geometries)g.dispose();for(const m of materials){m.map?.dispose();m.dispose();}world.remove(root);
   }
-  return {root,far,starRadius,center:panoCenter,velocity,offset,update,dispose};
+  return {root,proxies,far,starRadius,center:panoCenter,velocity,offset,update,dispose};
 }
 
 function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,vehicle=null,vehiclePlanet=current,carrier=null}={}){

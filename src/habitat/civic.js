@@ -93,6 +93,11 @@ cabinBuilders.instructor = function(kit) {
     }
     for(let i=0;i<7;i++)box(0,.83+i*.245,.91-i*.15,2.22,.035,.045,0xb5fff2);
     box(0,3.26,-.73,3.1,.83,.46,cream);
+    for(const side of [-1,1]){
+      cyl(side*1.59,1.58,.43,.235,.235,.20,dark,{rz:PI/2});
+      cyl(side*1.714,1.58,.43,.139,.139,.064,steel,{rz:PI/2,segments:8});
+      beam([side*1.46,.53,-.36],[side*1.46,1.55,.42],.12,.15,steel);
+    }
     box(0,3.27,-.46,1.60,.54,.12,dark);
     box(0,3.27,-.383,1.42,.40,.055,0x446fba);
     for(const y of [3.18,3.27,3.36])box(0,y,-.35,1.17,.033,.025,0x99bde2);
@@ -226,6 +231,12 @@ cabinBuilders.honors = function(kit) {
     box(.76*Math.sin(a),1.25+.76*Math.cos(a),zDais+4.22,.12,.28,.08,gold,{rz:-a,glow:.23});
   }
   ball(0,1.25,zDais+4.23,.59,.59,.14,0xffb039,{glow:.48});
+  for(let i=0;i<6;i++){
+    const a=i*PI/3,rad=.65;
+    const x=rad*Math.cos(a),y=1.25+rad*Math.sin(a);
+    box(x,y,zDais+4.272,.15,.29,.064,0xbd752b,{rz:a+.36});
+    cyl(x,y,zDais+4.32,.043,.043,.035,dark,{rx:PI/2,segments:8});
+  }
   // Three strips approximate the circular obstruction without closing its
   // front flanks. The ceremonial forecourt remains on the normal walking deck.
   block(0,zDais,10.05,4.0);
@@ -331,7 +342,13 @@ cabinBuilders.terraceAccess = function(kit) {
     const x=-17.4+i*2.9;
     box(x,.71,-11.3,.18,1.42,.22,steel);
     box(x,.13,-11.3,.45,.16,.5,pale);
-    if(i<12)box(x+1.45,.78,-11.3,2.69,.91,.065,0x83dced,{opacity:.19,roughness:.2});
+    if(i<12){
+      box(x+1.45,.78,-11.3,2.69,.91,.065,0x83dced,{opacity:.19,roughness:.2});
+      for(const dx of [.15,2.75])for(const y of [.45,1.05]){
+        box(x+dx,y,-11.3,.26,.14,.15,dark);
+        box(x+dx,y,-11.204,.21,.11,.06,steel);
+      }
+    }
   }
   beam([-17.5,1.35,-11.3],[17.5,1.35,-11.3],.17,.19,pale);
   beam([-17.5,.48,-11.3],[17.5,.48,-11.3],.10,.12,steel);

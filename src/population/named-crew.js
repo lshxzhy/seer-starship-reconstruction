@@ -15,13 +15,15 @@ function createOfficerFigure(post){
   const rig=seerRobots.create(post.tint,{name:post.name,officer:post.id,castShadow:false});
   // Rigid armour follows the same torso pivot as its face. Batch it once;
   // individual rivets, vents and collar plates never need separate draws.
-  const positions=[],normals=[],colors=[],indices=[];
+  const positions=[],normals=[],colors=[],surfaces=[[],[],[],[]];
   const matrix=new T.Matrix4(),normalMatrix=new T.Matrix3();
   const origin=new T.Vector3(),size=new T.Vector3(),axis=new T.Vector3(),normal=new T.Vector3();
   const rotation=new T.Quaternion(),angles=new T.Euler(),tone=new T.Color();
   const sphere=new T.SphereGeometry(1,28,20),cube=new T.BoxGeometry(1,1,1);
   const unitRing=new T.TorusGeometry(1,.082,10,44);
   const graphite=0x354050,silver=0xa9bac5,white=0xe9f2f3,cyan=0x53e9f2,gold=0xe7ad3f;
+  const alloys=new Set([silver,gold,0xc88b43,0xffdf70,0xa4aab3,0xb9c9cd,0x8b939d,0x908c71]);
+  const emitters=new Set([cyan,0x31d5e2,0x54cfc5,0x86e7ed,0x58d5ca,0xd6ffff]);
   function cast(geometry,x,y,z,w,h,d,color,rx=0,ry=0,rz=0){
     matrix.compose(origin.set(x,y,z),rotation.setFromEuler(angles.set(rx,ry,rz)),size.set(w,h,d));
     normalMatrix.getNormalMatrix(matrix);tone.setHex(color).convertSRGBToLinear();
@@ -31,6 +33,9 @@ function createOfficerFigure(post){
       normal.fromBufferAttribute(surface,i).applyNormalMatrix(normalMatrix);
       positions.push(axis.x,axis.y,axis.z);normals.push(normal.x,normal.y,normal.z);colors.push(tone.r,tone.g,tone.b);
     }
+    // Keep the reflected light of enamel, exposed alloy and insulating
+    // covers separate even though the uniform stays one rigid mesh.
+    const indices=surfaces[emitters.has(color)?3:alloys.has(color)?1:color===graphite?2:0];
     if(geometry.index)for(let i=0;i<geometry.index.count;i++)indices.push(offset+geometry.index.getX(i));
     else for(let i=0;i<points.count;i++)indices.push(offset+i);
   }
@@ -152,14 +157,24 @@ function createOfficerFigure(post){
       for(let j=0;j<3;j++)box(s*(.57+j*.018),-.160-j*.069,-.166,.058,.043,.018,0x58d5ca,0,0,s*.17);
     }
   }
-  const geometry=new T.BufferGeometry();
-  geometry.setAttribute('position',new T.Float32BufferAttribute(positions,3));
-  geometry.setAttribute('normal',new T.Float32BufferAttribute(normals,3));
-  geometry.setAttribute('color',new T.Float32BufferAttribute(colors,3));geometry.setIndex(indices);
+  const attributes={position:new T.Float32BufferAttribute(positions,3),
+    normal:new T.Float32BufferAttribute(normals,3),color:new T.Float32BufferAttribute(colors,3)};
   sphere.dispose();cube.dispose();unitRing.dispose();
-  const material=new T.MeshStandardMaterial({vertexColors:true,metalness:.38,roughness:.36});
-  const armour=new T.Mesh(geometry,material);armour.name=post.name+' · 职务机装';armour.receiveShadow=true;
+  const materials=[
+    new T.MeshPhysicalMaterial({vertexColors:true,metalness:.18,roughness:.36,clearcoat:.62,clearcoatRoughness:.20}),
+    new T.MeshStandardMaterial({vertexColors:true,metalness:.73,roughness:.29}),
+    new T.MeshStandardMaterial({vertexColors:true,metalness:.06,roughness:.65}),
+    new T.MeshBasicMaterial({vertexColors:true,toneMapped:false})
+  ];
+  const armour=new T.Group();armour.name=post.name+' · 职务机装';
+  for(const [surface,indices] of surfaces.entries()){
+    if(!indices.length)continue;
+    const geometry=new T.BufferGeometry();
+    for(const [name,buffer] of Object.entries(attributes))geometry.setAttribute(name,buffer);
+    geometry.setIndex(indices);
+    const part=new T.Mesh(geometry,materials[surface]);part.receiveShadow=true;armour.add(part);
+  }
   rig.bones.core.add(armour);
-  rig.disposeKit=()=>{geometry.dispose();material.dispose();};
+  rig.disposeKit=()=>{armour.children.forEach(part=>part.geometry.dispose());materials.forEach(m=>m.dispose());};
   return rig;
 }

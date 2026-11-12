@@ -10,7 +10,7 @@ function createYunasFigure(T,id,options={}){
   function geometry(g){geometries.add(g);return g;}
   function material(m){materials.add(m);return m;}
   function mesh(g,m,parent=sculpt){const obj=new T.Mesh(g,m);parent.add(obj);return obj;}
-  const sphere=geometry(new T.SphereGeometry(1,72,48)),phase={value:.70},clock={value:0};
+  const sphere=geometry(new T.SphereGeometry(1,72,48)),clock={value:0};
   const surface=geometry(sphere.clone()),positions=surface.attributes.position;
   surface.setAttribute('streamDirection',surface.attributes.normal.clone());
   // The mouth actually recedes behind its front lip. The whirl follows this surface
@@ -31,7 +31,7 @@ function createYunasFigure(T,id,options={}){
       return mix(mix(hash(g),hash(g+vec2(1,0)),f.x),mix(hash(g+vec2(0,1)),hash(g+1.),f.x),f.y);}`;
   function vortex(primary){
     const uniforms=T.UniformsUtils.clone(T.UniformsLib.fog);
-    Object.assign(uniforms,{age:clock,capture:phase,mainWell:{value:primary?1:0}});
+    Object.assign(uniforms,{age:clock,mainWell:{value:primary?1:0}});
     return material(new T.ShaderMaterial({uniforms,fog:true,extensions:{derivatives:true},
       vertexShader:`attribute vec3 streamDirection; varying vec3 ray,ne,stream;
         #include <fog_pars_vertex>
@@ -41,7 +41,7 @@ function createYunasFigure(T,id,options={}){
           gl_Position=projectionMatrix*mvPosition;
           #include <fog_vertex>
         }`,
-      fragmentShader:`varying vec3 ray,ne,stream;uniform float age,capture,mainWell;
+      fragmentShader:`varying vec3 ray,ne,stream;uniform float age,mainWell;
         #include <fog_pars_fragment>
         ${dustNoise}
         void main(){
@@ -49,7 +49,7 @@ function createYunasFigure(T,id,options={}){
           float edge=pow(1.-abs(dot(normal,normalize(ray))),2.);
           vec2 p=(n.xy+vec2(.26,.18))*vec2(1.06,.97);
           float r=length(p),a=atan(p.y,p.x+.00001);
-          float twist=a+(4.35+.48*sin(2.*a+.9*r))*r+.22*sin(3.*a-4.7*r+age*.15)*r-age*(.10+.06*capture);
+          float twist=a+(4.35+.48*sin(2.*a+.9*r))*r+.22*sin(3.*a-4.7*r+age*.15)*r-age*.132;
           vec2 field=vec2(cos(twist),sin(twist))*(r+.36);
           float cloud=.55*noise2(field*5.7+.026*age)+.30*noise2(field*12.3)+.15*noise2(field*25.7);
           float wave=.5+.5*cos(3.*twist+2.3*cloud+.55*sin(twist+7.*r));
@@ -87,10 +87,10 @@ function createYunasFigure(T,id,options={}){
   const major=vortex(true),minor=vortex(false),body=new T.Group();sculpt.add(body);
   // A broken gas mantle behind the wells gathers into the throat. Three
   // turbulent lobes keep the outer silhouette visible even when it spans the sky.
-  const halo=material(new T.ShaderMaterial({uniforms:{age:clock,capture:phase},
+  const halo=material(new T.ShaderMaterial({uniforms:{age:clock},
     transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,
     vertexShader:`varying vec2 q;void main(){q=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-    fragmentShader:`varying vec2 q;uniform float age,capture;
+    fragmentShader:`varying vec2 q;uniform float age;
       ${dustNoise}
       void main(){
         vec2 p=q*vec2(1.,1.14);float r=length(p),a=atan(p.y,p.x+.00001);
@@ -101,12 +101,12 @@ function createYunasFigure(T,id,options={}){
         float lobes=.44+.56*pow(.5+.5*cos(3.*a+9.*r+4.*grain),2.);
         float lip=exp(-abs(r-.233)*35.)*(.18+.72*grain);
         vec3 glow=mix(vec3(.13,.062,.30),vec3(.71,.50,1.),lip);
-        gl_FragColor=vec4(glow,(veil*lobes+lip*.3)*(.87+.13*capture));
+        gl_FragColor=vec4(glow,(veil*lobes+lip*.3)*.95);
       }`}));
   const mantle=mesh(geometry(new T.PlaneGeometry(1.60,1.45)),halo,body);
   mantle.position.z=-.27;
   const core=mesh(surface,major,body),rCore=.234;core.scale.set(rCore,rCore,rCore*.91);
-  // Warm white at the bottom of the recess; intensity rises as the hull makes contact.
+  // Warm white at the bottom of the recess; the lens remains the spatial endpoint of each debris stream.
   const beacon=material(new T.MeshBasicMaterial({color:0xffedc8,toneMapped:false}));
   const lens=mesh(sphere,beacon,body);
   const lipZ=opening(offsetX,offsetY,Math.sqrt(1-offsetX**2-offsetY**2))*rCore*.91;
@@ -190,13 +190,6 @@ function createYunasFigure(T,id,options={}){
     const g=geometry(new T.BufferGeometry());g.setIndex(ix);g.setAttribute('position',new T.Float32BufferAttribute(p,3));
     g.setAttribute('color',new T.Float32BufferAttribute(rgb,3));const ribbon=mesh(g,streamMat,body);streams.push(ribbon);
   }
-  const rubbleMat=material(new T.MeshStandardMaterial({color:0x625164,roughness:.78,metalness:.29,emissive:0x110b17}));
-  const rubble=new T.InstancedMesh(geometry(new T.IcosahedronGeometry(1,0)),rubbleMat,60),shards=[],rock=new T.Object3D();
-  sculpt.add(rubble);rubble.frustumCulled=false;
-  for(let i=0;i<60;i++){
-    const t=i/60,a=i*2.399963;
-    shards.push({a,r:.245+.23*((i*17)%61)/61,z:.033+.136*Math.sin(i*3.59),s:.0017+.0046*((i*7)%17)/17,t});
-  }
   bind();
   // The measured spindle/satellites define the height and encounter root. Dust is transient.
   const bounds=new T.Box3().makeEmpty();
@@ -210,32 +203,24 @@ function createYunasFigure(T,id,options={}){
   }
   const size=bounds.getSize(v()),center=bounds.getCenter(v()),factor=height/size.y;
   bearing.rotation.y=Math.PI;bearing.scale.setScalar(factor);sculpt.position.set(-center.x,-bounds.min.y,-center.z);
-  function setEncounterPhase(p){if(Number.isFinite(p))phase.value=T.MathUtils.clamp(p,0,1);}
   function animate(dt,speed=0,elapsed){
-    const t=Number.isFinite(elapsed)?elapsed:clock.value+Math.min(.15,Math.max(0,dt||0)),stage=phase.value;
+    const t=Number.isFinite(elapsed)?elapsed:clock.value+Math.min(.15,Math.max(0,dt||0));
     clock.value=t;const breath=Math.sin(t*.79);
-    body.scale.set(1+.018*breath,1-.012*breath,1+.023*breath);
-    body.rotation.z=-.019*stage+.016*Math.sin(t*.43);
-    const pulse=.015*(.87+.25*stage+.09*Math.sin(2.1*t));
+    body.scale.set(1+.004*breath,1-.003*breath,1+.006*breath);
+    body.rotation.z=-.012+.005*Math.sin(t*.43);
+    const pulse=.015*(1.04+.06*Math.sin(2.1*t));
     lens.scale.set(pulse,pulse*.94,pulse*.48);
     for(const [i,ribbon] of streams.entries()){
-      ribbon.rotation.z=.023*Math.sin(t*.51+i);ribbon.scale.z=.83+.57*stage;
+      ribbon.rotation.z=.023*Math.sin(t*.51+i);ribbon.scale.z=1.16+.035*Math.sin(t*.37+i);
     }
     for(const {orb,anchor,seed,reach} of bodies){
-      const a=t*.54+seed,w=(.007+.013*reach),s=1.035-.063*stage;
+      const a=t*.54+seed,w=(.007+.013*reach),s=.998;
       orb.position.set(anchor.x*s+w*Math.sin(a),anchor.y+w*Math.cos(a*.93),anchor.z+w*1.54*Math.sin(a+.6));
       orb.rotation.z=seed+.081*Math.sin(a*.8);
     }
     bind();
-    for(const [i,shard] of shards.entries()){
-      const a=shard.a+t*(.062+.033*stage),r=shard.r*(1-.11*stage);
-      rock.position.set(Math.cos(a)*r,Math.sin(a)*r*.79,shard.z+.025*Math.sin(a+t*.27));
-      rock.scale.set(shard.s*(1.2+shard.t),shard.s*.63,shard.s);
-      rock.rotation.set(t*.29+i,t*.39+i*.7,i);rock.updateMatrix();rubble.setMatrixAt(i,rock.matrix);
-    }
-    rubble.instanceMatrix.needsUpdate=true;
   }
   animate(0);
-  return {root,core:lens,size:height,radius:.5*factor*Math.max(size.x,size.z),setEncounterPhase,animate,update:animate,
+  return {root,core:lens,size:height,radius:.5*factor*Math.max(size.x,size.z),animate,update:animate,
     dispose(){geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());}};
 }

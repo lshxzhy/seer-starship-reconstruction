@@ -87,6 +87,21 @@
   }
   for(const side of [-1,1]) {
     trim(side,-4.44,5.97,1.23,1.32,mats.pearl);
+    // Lower bow inspection covers follow the changes in chine and beam.
+    // Stepped coamings expose a black seal; the closing dogs bridge the joint.
+    for(const [aft,fore] of [[3.53,4.41],[4.60,5.29]]){
+      trim(side,aft,fore,1.98,2.28,mats.edge,.076);
+      trim(side,aft+.026,fore-.026,1.993,2.267,mats.dark,.087);
+      trim(side,aft+.052,fore-.046,2.01,2.246,mats.hull,.101);
+      for(const a of [2.035,2.203]){
+        const key=fore-.108;
+        trim(side,key-.067,key+.055,a-.031,a+.031,mats.steel,.114);
+        trim(side,key-.040,key+.029,a-.016,a+.016,mats.dark,.119);
+        trim(side,key-.018,key+.003,a-.020,a+.020,mats.ochre,.125);
+        lineTube([shellPoint(aft+.085,mirroredAngle(side,a-.024),.111),
+          shellPoint(aft+.145,mirroredAngle(side,a-.024),.119)],.010,mats.steel,ship);
+      }
+    }
     // Two continuous dark window galleries wrap around the blunt bow.
     for(const [start,end,a0,a1] of [[.62,5.96,1.44,1.59],[1.10,5.79,1.70,1.82]]) {
       trim(side,start-.025,end+.025,a0-.012,a1+.012,mats.steel,.072);

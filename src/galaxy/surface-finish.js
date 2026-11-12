@@ -52,3 +52,103 @@ function fieldSurfaceFinish(material,kind){
   };
   return material;
 }
+
+// Decode the four original albedo samples once. Neutralising each sample
+// against its own mean retains the distinct painted palette of each game map.
+let surveyTiles=null;
+function acquireSurveyTiles(T){
+  if(!surveyTiles){
+    const sheets=Array.from({length:4},()=>{
+      const c=document.createElement('canvas');c.width=c.height=1;
+      const ctx=c.getContext('2d');ctx.fillStyle='#808080';ctx.fillRect(0,0,1,1);
+      const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.MirroredRepeatWrapping;t.anisotropy=4;return t;
+    });
+    const image=new Image();
+    image.onload=()=>{
+      const size=Math.floor(image.naturalWidth/2);
+      for(const [i,t] of sheets.entries()){
+        const c=t.image;c.width=c.height=size;
+        const ctx=c.getContext('2d');
+        ctx.drawImage(image,(i%2)*size,(i>>1)*size,size,size,0,0,size,size);
+        const pixels=ctx.getImageData(0,0,size,size),data=pixels.data,sum=[0,0,0];
+        for(let q=0;q<data.length;q+=4)for(let j=0;j<3;j++)sum[j]+=data[q+j];
+        const scale=sum.map(n=>128*size*size/Math.max(1,n));
+        for(let q=0;q<data.length;q+=4)for(let j=0;j<3;j++)data[q+j]*=scale[j];
+        ctx.putImageData(pixels,0,0);t.needsUpdate=true;
+      }
+    };
+    image.src=SURVEY_ALBEDO_URL;
+    surveyTiles={sheets,image,users:0};
+  }
+  surveyTiles.users++;return surveyTiles;
+}
+// Metre-anchored relief and wetness for the walking mesh. Its radial patch
+// follows the player, so neither local mesh coordinates nor screen noise work.
+function finishSurveyGround(T,geo,material,definition,metresPerUV){
+  // Water film, exposed strata, wind/current-aligned sediment.
+  const beds={
+    grassland:[.02,.22,.52],swamp:[.91,.04,.20],forest:[.24,.12,.09],vineway:[.31,.71,.18],
+    core:[.09,.96,.04],wetland:[.83,.06,.51],flame:[.01,.58,.38],sanctuary:[.25,.43,.24],
+    'ocean-shallows':[.78,.04,.96],'ocean-depths':[.62,.60,.51],
+    'ocean-floor':[.44,.87,.32],'ocean-sanctum':[.26,.92,.08],
+    'alpha-springs':[.72,.42,.05],'alpha-rock':[.11,.95,.20],
+    'alpha-station':[.03,.78,.35],'alpha-forest':[.33,.22,.07],
+    'beta-plain':[.04,.42,.74],'beta-waste':[.03,.94,.23],'beta-ruins':[.12,.73,.42],
+    'beta-training':[.08,.56,.29],'beta-hall':[.03,.88,.09]
+  };
+  const mix=new T.BufferAttribute(new Float32Array(geo.attributes.position.count*3),3);
+  geo.setAttribute('bedMix',mix);
+  const tiles=acquireSurveyTiles(T);
+  material.addEventListener('dispose',()=>{
+    if(--tiles.users===0){tiles.image.onload=null;for(const t of tiles.sheets)t.dispose();surveyTiles=null;}
+  });
+  const original=material.onBeforeCompile;
+  material.onBeforeCompile=function(shader,renderer){
+    original.call(this,shader,renderer);
+    const [dust,clay,silt,slate]=tiles.sheets;
+    // Only three samplers are needed in each biome.
+    shader.uniforms.dryBed={value:definition.id==='ocean'?silt:dust};
+    shader.uniforms.wetBed={value:definition.id==='ocean'?silt:clay};
+    shader.uniforms.rockBed={value:slate};
+    shader.vertexShader='attribute vec3 bedMix; varying vec3 bedWeights; varying vec2 bedMetres;\n'+shader.vertexShader.replace(
+      '#include <begin_vertex>','#include <begin_vertex>\nbedWeights=bedMix;bedMetres=uv*'+metresPerUV.toFixed(1)+';');
+    shader.fragmentShader=`varying vec3 bedWeights;varying vec2 bedMetres;
+      uniform sampler2D dryBed,wetBed,rockBed;
+      float bedHash(vec2 p){return fract(sin(dot(p,vec2(39.347,17.81)))*4375.31);}
+      float bedNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+        return mix(mix(bedHash(i),bedHash(i+vec2(1,0)),f.x),mix(bedHash(i+vec2(0,1)),bedHash(i+1.),f.x),f.y);}
+      `+shader.fragmentShader.replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
+        vec2 metre=bedMetres;
+        float broad=bedNoise(metre*.72),chip=bedNoise(metre*8.2),edge=bedNoise(metre*2.3);
+        float wet=bedWeights.x*smoothstep(.25,.76,broad+.13*chip);
+        float ridge=sin(metre.x*4.2+metre.y*1.8+3.1*edge)*bedWeights.z;
+        float line=abs(fract((metre.x*.63-metre.y*.47)+edge*.38)-.5);
+        float seam=(1.-smoothstep(.012,.052,line))*bedWeights.y;
+        float nearBed=1.-smoothstep(.07,.34,length(fwidth(metre)));
+        vec2 st=mat2(.94,.34,-.34,.94)*metre*.42;
+        vec3 albedo=mix(texture2D(dryBed,st).rgb,texture2D(wetBed,st*.84).rgb,bedWeights.x);
+        albedo=mix(albedo,texture2D(rockBed,st*.67).rgb,bedWeights.y);
+        float surfaceGrain=dot(albedo,vec3(.22,.69,.09))-.5;
+        float relief=(chip-.5)*(.021-.012*wet)+.018*ridge-.033*seam+.065*surfaceGrain;
+        diffuseColor.rgb*=mix(vec3(1.),clamp(2.*albedo,vec3(.44),vec3(1.72)),.77*nearBed);
+        roughnessFactor=mix(roughnessFactor,clamp(.88-.63*wet-.16*bedWeights.y+.09*(chip-.5),.2,.98),nearBed);
+        diffuseColor.rgb*=1.+nearBed*(.10*(chip-.5)+.05*ridge-.18*seam-.16*wet);
+        `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+         vec3 dp1=dFdx(-vViewPosition),dp2=dFdy(-vViewPosition);
+         vec3 aBed=cross(dp2,normal),bBed=cross(normal,dp1);
+         float bedDet=dot(dp1,aBed);
+         normal=normalize(max(abs(bedDet),1.e-6)*normal-sign(bedDet)*nearBed*(dFdx(relief)*aBed+dFdy(relief)*bBed));`);
+  };
+  material.customProgramCacheKey=()=>'survey-bed-'+definition.id;
+  return function writeBed(i,x,z){
+    let sum=.0001,wet=0,rock=.00004,sediment=.00006;
+    for(const site of definition.sites){
+      const dx=x-site.x,dz=z-site.z,d=dx*dx+dz*dz;
+      if(d>40000)continue;
+      const w=(1-d/40000)**2/(1+d*.012),b=beds[site.id];
+      wet+=b[0]*w;rock+=b[1]*w;sediment+=b[2]*w;sum+=w;
+    }
+    mix.setXYZ(i,wet/sum,rock/sum,sediment/sum);
+    if(i===0)mix.needsUpdate=true;
+  };
+}
