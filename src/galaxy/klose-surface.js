@@ -450,6 +450,13 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
           if(j%3===0)patch(x,z,.55,.38,'#f1bdd1');
         }
         arc(0,-14,12.4,10.8,0,.22,2.77,'#d5a066',.67);
+        // Map 943 has magenta insets down the sandstone approach. Paint
+        // their layered lips into the trail so broad, flush discs stay walkable.
+        for(const [x,z,r] of [[-.8,-6.9,1.45],[.73,-3.2,1.05],[-1.65,-1.3,.68]]){
+          patch(x,z,r*1.16,r*.80,'#914653');
+          patch(x,z-.08,r,r*.63,'#cf5d82');
+          arc(x-.08,z-.08,r*.77,r*.47,-.18,3.4,5.9,'#ec97a3',.24);
+        }
       }
     }
     const texture=new T.CanvasTexture(canvas);texture.anisotropy=4;return texture;
@@ -516,13 +523,35 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     forestRow=row;forestCol=col;
     if(!treeTrunks){
       const batch=(geometry,paint,tinted)=>{
-        const material=new T.MeshStandardMaterial({color:paint,roughness:.94});
+        const material=new T.MeshStandardMaterial({color:paint,roughness:.94,vertexColors:geometry.hasAttribute('color')});
         const meshes=new T.InstancedMesh(geometry,material,34*49);
         if(tinted)meshes.instanceColor=new T.InstancedBufferAttribute(new Float32Array(meshes.count*3),3);
         meshes.frustumCulled=false;meshes.receiveShadow=true;groves.add(meshes);return meshes;
       };
-      treeTrunks=batch(new T.CylinderGeometry(.56,1,1,5),0x674b49,false);
-      treeCrowns=batch(new T.IcosahedronGeometry(1,1),0xffffff,true);
+      // One trunk instance includes the flared foot and three rising boughs.
+      // Its upper forks join the crown within the existing clearance envelope.
+      const bark=[],barkTint=[],tri=[];
+      function limb(centres){
+        const start=bark.length/3;
+        for(const [j,[x,y,z,r]] of centres.entries())for(let k=0;k<7;k++){
+          const a=k*tau/7+j*.06,v=.70+.18*(Math.cos(a-.5)+1)*.5+.08*j/(centres.length-1);
+          bark.push(x+r*Math.cos(a),y,z+r*Math.sin(a));barkTint.push(v+.025,v,v*.92);
+          if(j){
+            const i=start+(j-1)*7+k,n=start+(j-1)*7+(k+1)%7;
+            tri.push(i,i+7,n,n,i+7,n+7);
+          }
+        }
+      }
+      limb([[0,-.50,0,1],[.15,-.31,-.05,.67],[-.13,.04,.12,.55],[.04,.48,.04,.36]]);
+      for(let j=0;j<3;j++){
+        const a=j*tau/3+.6,c=Math.cos(a),s=Math.sin(a);
+        limb([[-.10,-.02,.10,.43],[1.35*c,.20,1.35*s,.28],[2.15*c,.48,2.15*s,.13]]);
+      }
+      const trunk=new T.BufferGeometry();
+      trunk.setAttribute('position',new T.Float32BufferAttribute(bark,3));trunk.setAttribute('color',new T.Float32BufferAttribute(barkTint,3));
+      trunk.setIndex(tri);trunk.computeVertexNormals();
+      treeTrunks=batch(trunk,0x735548,false);
+      treeCrowns=batch(kloseCanopyGeometry(T,false),0xffffff,true);
       rocks=batch(new T.DodecahedronGeometry(1),0xffffff,true);
     }
     const anchor=point(lat,lon);groves.position.copy(anchor);

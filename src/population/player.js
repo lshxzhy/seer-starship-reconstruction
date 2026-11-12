@@ -11,10 +11,10 @@
     let flameTool=null;
     const contacts=createSoleContacts(1),ground=contacts.mesh;
     ground.scale.setScalar(worldMetre);ground.visible=false;scene.add(ground);
-    let facing=0,phase=0,previous=null,style='follow',distance=4.15,active=false;
+    let facing=0,phase=0,strideSpeed=0,previous=null,style='follow',distance=4.15,active=false;
     let sampled=null,available=distance;
     function arrive(pose,yaw,saved){
-      active=true;previous={x:pose.x,z:pose.z};sampled=null;
+      active=true;previous={x:pose.x,z:pose.z};sampled=null;strideSpeed=0;
       facing=Number.isFinite(saved?.facing)?saved.facing:yaw;
       if(saved?.perspective==='eye'||saved?.perspective==='follow')style=saved.perspective;
       if(Number.isFinite(saved?.boom))distance=T.MathUtils.clamp(saved.boom,2.4,6.6);
@@ -29,7 +29,9 @@
         dz=previous?.carZ==null?0:dz-(cabin.center.z-previous.carZ);
       }
       const travelled=Math.hypot(dx,dz);
-      const speed=!ride && dt>0 && travelled<1.5?travelled/dt:0;
+      // A slow frame can contain a perfectly valid long fast-walk step.
+      // Ignore location jumps without dropping the gait of a moving robot.
+      const speed=!ride&&dt>0&&travelled<=Math.max(1.5,dt*16)?travelled/dt:0;
       if(ride)facing=ride.heading;
       else if(speed>0){
         const direction=Math.atan2(-dx,-dz);
@@ -38,8 +40,9 @@
       }
       previous={x:pose.x,z:pose.z,carX:cabin?.center.x,carZ:cabin?.center.z};
       phase+=seerRobots.phaseStep(speed,dt);
+      strideSpeed+=(speed-strideSpeed)*(1-Math.exp(-Math.max(0,dt)*(speed?24:17)));
       avatar.rotation.y=facing;
-      seerRobots.animate(rig,phase,speed,dt,Boolean(ride));
+      seerRobots.animate(rig,phase,ride?0:strideSpeed,dt,Boolean(ride));
       const floorY=cabin?cabin.center.y:pose.y+(ride?ride.footOffset:contactFloor(pose));
       avatar.position.copy(habitat.worldPosition(pose.x,floorY,pose.z));
       drill.update(rig.bones.core,dt,active);

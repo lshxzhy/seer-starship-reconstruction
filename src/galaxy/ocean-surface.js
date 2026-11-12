@@ -117,6 +117,20 @@ function createOceanSurface(T,world){
   const painted=new T.MeshStandardMaterial({roughness:.70,metalness:.08});
   const mineral=new T.MeshStandardMaterial({vertexColors:true,roughness:.86,flatShading:true});
   const organic=new T.MeshStandardMaterial({vertexColors:true,roughness:.65,side:T.DoubleSide});
+  const limestone=mineral.clone();
+  // Thin folded bedding follows each outcrop, including its underside.
+  // Fade the fine strata at a distance so the reef still reads in clear masses.
+  limestone.onBeforeCompile=shader=>{
+    shader.vertexShader='varying vec3 bedCoordinate;\n'+shader.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\nbedCoordinate=position;');
+    shader.fragmentShader='varying vec3 bedCoordinate;\n'+shader.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+      float bed=bedCoordinate.y+.13*bedCoordinate.z+.058*sin(4.*bedCoordinate.x+.7*bedCoordinate.z);
+      float fine=1.-smoothstep(12.,62.,length(vViewPosition));
+      float lamina=1.-smoothstep(.008,.07,abs(fract(bed*10.+.42)-.5));
+      float prominence=.5+.5*sin(7.*bedCoordinate.x+2.*bedCoordinate.z);
+      diffuseColor.rgb*=1.+fine*(.044*sin(bed*34.)-.16*lamina*prominence);`);
+  };
   function shape(name,g,m=painted){shapes.set(name,{g,m});}
   // Closed contour rings share vertices and colours between adjacent faces.
   // One indexed mesh per shape is reused by every colony, shell and outcrop.
@@ -141,8 +155,9 @@ function createOceanSurface(T,world){
     const radius=r*(.92+.07*Math.sin(3*a+.4)+.04*Math.cos(5*a-.6)+.035*Math.sin(4*a+.49*j));
     const x=radius*Math.cos(a),z=radius*Math.sin(a);
     return [x+.075*y,y+x*.07+z*.08,z,light*(.95+.05*Math.cos(a*3-.3))];
-  }),mineral);
-  const facets=[[-.75,0,.51],[-.49,.70,.65],[.53,1,.88],[.82,.52,1],[1,0,1]];
+  }),limestone);
+  const facets=[[-.75,0,.51],[-.49,.70,.65],[-.18,.85,.74],[.04,.908,.82],
+    [.062,.907,.65],[.083,.906,.87],[.32,.96,.94],[.339,.955,.81],[.36,.957,.96],[.53,1,.91],[.82,.52,1],[1,0,1]];
   shape('crystal',ringMesh(6,facets.length,(j,i,a)=>{
     const [y,r,light]=facets[j];
     return [Math.cos(a)*r+y*.15,y,Math.sin(a)*r,light*(i%2?.80:1)];
@@ -157,6 +172,13 @@ function createOceanSurface(T,world){
   shape('tube',ringMesh(24,spongeRim.length,(j,i,a)=>{
     const [y,r,light]=spongeRim[j],flute=.97+.055*Math.cos(8*a+.9*y)+.023*Math.sin(3*a);
     return [r*flute*Math.cos(a)+.18*y*y,y*(1+.024*Math.cos(a*3+.6)),r*flute*Math.sin(a),light*flute];
+  }),organic);
+  // Individual calyces on the fan tips have a six-lobed lip and recessed
+  // centre. All of them share one instance batch across the district.
+  const calyx=[[0,.13,.64],[.28,.34,.78],[.55,.67,.88],[.90,.86,1],[.59,.53,.71],[.44,0,.40]];
+  shape('calyx',ringMesh(24,calyx.length,(j,i,a)=>{
+    const [y,r,light]=calyx[j],petal=.5+.5*Math.cos(6*a),edge=j===3?.15:0;
+    return [r*(.72+.28*petal)*Math.cos(a),y+edge*petal,r*(.72+.28*petal)*Math.sin(a),light];
   }),organic);
   // A continuous widening whorl curls into a flared aperture with a dark interior.
   const shellSteps=54;
@@ -215,6 +237,10 @@ function createOceanSurface(T,world){
       if(n){branch(uu,hh,angle-.37-random()*.16,length*.68,thick*.71,n-1);branch(uu,hh,angle+.34+random()*.20,length*.72,thick*.68,n-1);}
     }
     branch(0,0,-.17,s*.42,s*.075,4);
+    for(let i=1;i<lattice[0].length;i+=3){
+      const [u,h]=lattice[0][i],r=s*.041;
+      stamp('calyx',x+c*u,base+h-r*1.6,z+d*u,r,r*1.60,r,tint,0,i*1.72,i%2?.25:-.28);
+    }
     for(const [level,tips] of lattice.entries()){
       for(let j=1;j<tips.length;j++){
         const [u,h]=tips[j-1],[uu,hh]=tips[j];
@@ -447,7 +473,19 @@ function createOceanSurface(T,world){
     s.uniforms.tideTime=tideTime;
     s.vertexShader='varying vec2 floorUV;varying float sunWater;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nfloorUV=uv;sunWater=1.-smoothstep(5.,47.,-position.y);');
     s.fragmentShader='uniform float tideTime;varying vec2 floorUV;varying float sunWater;\n'+s.fragmentShader.replace('#include <color_fragment>',
-      '#include <color_fragment>\nfloat ripple=sin(floorUV.x*3.+sin(floorUV.y*1.14)+floorUV.y*.75);float gleam=abs(sin(floorUV.x*.85+1.3*sin(floorUV.y*.60+tideTime*.21))+sin(floorUV.y*.73+.84*cos(floorUV.x*.49-tideTime*.14)));diffuseColor.rgb*=1.+(.07*ripple+.18*sunWater*(1.-smoothstep(.02,.18,gleam)))/(1.+.04*length(fwidth(floorUV)));');
+      `#include <color_fragment>
+      float ripple=sin(floorUV.x*3.+sin(floorUV.y*1.14)+floorUV.y*.75);
+      float gleam=abs(sin(floorUV.x*.85+1.3*sin(floorUV.y*.60+tideTime*.21))+sin(floorUV.y*.73+.84*cos(floorUV.x*.49-tideTime*.14)));
+      float pixel=length(fwidth(floorUV));
+      vec2 grainCell=floorUV*17.;
+      vec2 tile=floor(grainCell);
+      float grain=fract(sin(dot(tile,vec2(17.31,78.17)))*4375.7);
+      vec2 center=vec2(.30+.40*grain,.34+.30*fract(grain*11.3));
+      float fleck=(1.-smoothstep(.08,.27,length(fract(grainCell)-center)))*(grain-.49);
+      float grit=1.-smoothstep(.008,.060,pixel);
+      float bed=.035*sin(floorUV.x*13.+floorUV.y*2.+2.*sin(floorUV.y*1.2));
+      diffuseColor.rgb*=1.+(.07*ripple+.18*sunWater*(1.-smoothstep(.02,.18,gleam)))/(1.+.04*pixel)
+        +grit*(.19*fleck+sunWater*bed);`);
   };
   sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
   const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;

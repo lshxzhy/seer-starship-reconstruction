@@ -106,6 +106,14 @@
       shell(scaled(plan,.982,.98),.27,.108,edge,.030,.29);
       shell(plan,.384,.194,orange,.038,.32);
       shell(mirrored(stripe,s),.612,.015,violet,.009,.15);
+      // The purple wing band turns down over the orange shoulder and ends
+      // above the silver skid. The inset joint keeps the two skins distinct.
+      shell(mirrored([[.65,.414],[1.06,.303],[1.16,.238],[1.17,.27],[1.068,.343],[.65,.449]],s),
+        .611,.006,darkRed,.002);
+      for(const z of [-.46,.32]){
+        disc(s*1.34,.605,z,.034,.035,.012,edge);
+        box(s*1.34,.615,z,.035,.006,.008,tin,0,s*.5);
+      }
       shell(mirrored([[1.075,.18],[1.235,.145],[1.273,.201],[1.105,.241]],s),
         .616,.007,teal,.003);
       // Paired forward-facing ports, dark bores within a silver barrel.
@@ -125,6 +133,11 @@
       disc(s*.99,.174,-.02,.176,.165,.034,gasket);
       disc(s*.99,.153,-.02,.128,.125,.023,liftLight);
       ring(s*.99,.159,-.02,.18,.018,tin,Math.PI/2);
+      for(let i=0;i<9;i++){
+        const a=i*2*Math.PI/9;
+        box(s*.99+.102*Math.cos(a),.134,-.02+.102*Math.sin(a),.103,.018,.024,edge,0,-a+.37);
+      }
+      disc(s*.99,.132,-.02,.042,.048,.022,tin);
       for(const z of [-.44,.40]){
         box(s*.99,.171,z,.15,.20,.13,edge);
         box(s*.99,.047,z,.238,.072,.26,gasket);
@@ -144,6 +157,8 @@
       box(s*.30,.68,1.12,.21,.10,.032,edge);
       box(s*.30,.69,1.14,.14,.032,.011,amber);
       for(const z of [.65,.79,.93])disc(s*.485,.708,z,.021,.021,.03,tin,0);
+      box(s*.18,.904,1.108,.28,.104,.030,darkRed);
+      for(let j=0;j<4;j++)box(s*(.09+.056*j),.904,1.128,.028,.079,.010,edge,0,0,s*.16);
     }
     for(const [material,b] of batches){
       const g=new T.BufferGeometry();
@@ -186,7 +201,7 @@
       root.visible=true;
       hull.position.y=lift+pulse;
       groundMaterial.uniforms.strength.value=.46/(1+1.7*hull.position.y);
-      liftLight.emissiveIntensity=mounted ? .85+.065*Math.min(12,Math.abs(speed))+.10*Math.sin(clock*7) : .16;
+      liftLight.emissiveIntensity=mounted ? .85+.040*Math.min(24,Math.abs(speed))+.10*Math.sin(clock*7) : .16;
       return footHeight;
     }
     return {

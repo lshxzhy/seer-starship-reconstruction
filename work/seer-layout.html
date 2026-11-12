@@ -10,6 +10,7 @@
     <div class="ship-car-display" data-lift-readout hidden><span data-car-message></span><span data-car-height></span><progress data-car-progress max="1" value="0" aria-label="升降行程"></progress></div>
     <div class="ship-actions">
       <button type="button" class="ship-key" data-embark hidden>乘廊车去登陆艇</button>
+      <button type="button" class="ship-key" data-duty-contact hidden></button>
       <button type="button" class="ship-key" data-see-pipi hidden>观察皮皮</button>
       <button type="button" class="ship-key" data-encounter hidden>接触精灵</button>
       <button type="button" class="ship-key" data-wetland-action hidden>捕猎场</button>
@@ -68,6 +69,10 @@
         <div data-page="map" hidden></div>
         <div data-page="bag" hidden></div>
         <div data-page="exchange" hidden></div>
+        <section data-page="crew" class="ship-systems" hidden>
+          <h3 data-duty-post></h3><ul data-duty-facts></ul>
+          <button type="button" data-duty-chat hidden>开启本机通讯</button>
+        </section>
         <div data-page="terminal" class="ship-systems" hidden>
           <section data-boarding-controls><h3>赛尔操控</h3><div class="ship-row">
             <label>镜头 <select data-perspective><option value="follow">跟随</option><option value="eye">第一人称</option></select></label>

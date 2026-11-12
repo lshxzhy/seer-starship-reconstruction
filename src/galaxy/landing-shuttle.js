@@ -181,6 +181,8 @@ function createLandingShuttle(T) {
       const a=k*Math.PI/6;
       const louver=box(staticBody,alloy,side*2.58+.53*Math.cos(a),1.78+.53*Math.sin(a),4.87,.10,.075,.30);
       louver.rotation.z=a;
+      const vane=box(staticBody,alloy,side*2.58+.316*Math.cos(a),1.78+.316*Math.sin(a),5.132,.134,.030,.042);
+      vane.rotation.z=a+.39;
     }
     const plume=put(plumeGeo,exhaustMat,root,side*2.58,1.78,5.16,.37,1,.37);
     plume.rotation.x=Math.PI/2;plumes.push(plume);plume.castShadow=false;
@@ -321,6 +323,7 @@ function createLandingShuttle(T) {
   rod(staticBody,rubber,vector(-.90,3.198,5.615),vector(.90,3.198,5.615),.032);
   const rampHinge=new T.Group();rampHinge.position.set(0,layout.floorY,5.55);root.add(rampHinge);
   const rampTip=new T.Group();rampHinge.add(rampTip);
+  const rampActuators=[];
   const fixedRamp=2.21,rampRun=layout.rampEnd[2]-rampHinge.position.z;
   const fullRamp=Math.hypot(rampRun,layout.floorY),travel=fullRamp-fixedRamp;
   box(rampHinge,blue,0,-.115,fixedRamp/2,1.965,.23,fixedRamp);
@@ -329,6 +332,11 @@ function createLandingShuttle(T) {
   for(let i=1;i<10;i++)box(rampHinge,alloy,0,.006,i*.21,1.59,.012,.045);
   for(let i=1;i<5;i++)box(rampTip,rubber,0,-.008,i*.22,1.56,.015,.044);
   for(const s of [-1,1]){
+    const shoulder=vector(s*1.13,2.87,4.02),lug=vector(s*.948,-.07,1.08);
+    box(staticBody,edge,shoulder.x,shoulder.y,shoulder.z,.21,.205,.27);
+    ellipse(staticBody,gold,shoulder.x,shoulder.y,shoulder.z+.085,.103,.103,.105);
+    ellipse(rampHinge,alloy,lug.x,lug.y,lug.z,.09,.095,.092);
+    rampActuators.push({shoulder,lug,sleeve:put(barrel,edge,root),shaft:put(barrel,alloy,root)});
     box(rampHinge,gold,s*.916,.012,fixedRamp/2,.090,.018,fixedRamp-.07);
     box(rampTip,gold,s*.845,-.009,travel/2,.055,.019,travel-.03);
     box(rampHinge,cream,s*.59,-.240,fixedRamp/2,.52,.05,1.57);
@@ -418,9 +426,11 @@ function createLandingShuttle(T) {
     let x=pos.x,z=T.MathUtils.clamp(pos.z,-3.31,limit);
     const count=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.22));
     for(let i=0;i<count;i++){
-      x=T.MathUtils.clamp(x+dx/count,-widthAt(z),widthAt(z));
-      const next=T.MathUtils.clamp(z+dz/count,-3.31,limit);
-      if(Math.abs(x)<=widthAt(next))z=next;
+      // Follow the sloping sill into the narrower cockpit and ramp, including
+      // when the pilot walks straight ahead with a shoulder beside the rail.
+      z=T.MathUtils.clamp(z+dz/count,-3.31,limit);
+      const width=widthAt(z);
+      x=T.MathUtils.clamp(x+dx/count,-width,width);
     }
     return vector(x,floorAt(z),z);
   }
@@ -458,10 +468,24 @@ function createLandingShuttle(T) {
     ctx.fillStyle=pads==='动作中'?'#f0b75e':'#94cfce';ctx.fillText('起落架 '+pads,402,242);
     instrument.map.needsUpdate=true;
   }
+  const ramAxis=vector(0,1,0),ramTip=vector(),ramDir=vector();
+  let ramDoor=-1;
   function update({door=0,gear=1,thrust=0,speed=0,altitude=0,mode='',destination=''}={}){
     const d=clamp01(door),g=clamp01(gear),t=clamp01(thrust);
     rampHinge.rotation.x=T.MathUtils.lerp(-Math.PI/2,Math.atan2(layout.floorY,rampRun),d);
     rampTip.position.z=fixedRamp-travel*(1-d);
+    if(d!==ramDoor){
+      ramDoor=d;
+      for(const {shoulder,lug,sleeve,shaft} of rampActuators){
+        ramTip.copy(lug).applyQuaternion(rampHinge.quaternion).add(rampHinge.position);
+        ramDir.subVectors(ramTip,shoulder);
+        const length=ramDir.length(),outer=1.72;
+        ramDir.normalize();sleeve.quaternion.setFromUnitVectors(ramAxis,ramDir);
+        sleeve.position.copy(shoulder).addScaledVector(ramDir,outer/2);sleeve.scale.set(.055,outer,.055);
+        shaft.quaternion.copy(sleeve.quaternion);shaft.scale.set(.036,length-outer+.05,.036);
+        shaft.position.copy(shoulder).addScaledVector(ramDir,(length+outer-.05)*.5);
+      }
+    }
     for(const {pivot,foot,dir} of pads){
       pivot.rotation.x=-dir*(1-g)*1.42;foot.rotation.x=-pivot.rotation.x;
     }

@@ -51,6 +51,7 @@ function createSafariFigure(T,id){
     const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pos,3));g.setIndex(indices);g.computeVertexNormals();geometry.add(g);
     return mesh(g,col,0,0,0,1,1,1,parent);
   }
+  const eyelids=[];
   function eye(s,x,y,z,w,h,iris=ink,slant=0){
     // Place the eye on the curved face instead of projecting a flat front
     // view into empty space at each cheek. Ignore glass and distant trim.
@@ -65,9 +66,13 @@ function createSafariFigure(T,id){
       socket.quaternion.setFromUnitVectors(V(0,0,1),normal);
     }
     socket.rotateZ(s*slant);
+    eyelids.push(socket);
     oval('#323044',0,0,-.003,w*1.08,h*1.06,.016,socket);
     oval(iris,0,0,.002,w,h,.016,socket);
-    if(iris!==ink)oval('#242638',0,h*.11,.014,w*.62,h*.67,.006,socket);
+    if(iris!==ink){
+      oval('#242638',0,h*.11,.014,w*.62,h*.67,.006,socket);
+      oval(iris,w*.19,-h*.45,.015,w*.30,h*.14,.004,socket);
+    }
     oval(white,-w*.23,h*.30,.021,w*.31,h*.34,.006,socket);
   }
   function joint(x,y,z,axis,amplitude,phase=0){
@@ -392,6 +397,8 @@ function createSafariFigure(T,id){
   return {root,update(dt,effort=0){
     time+=dt;body.rotation.z=.018*Math.sin(time*2.1)+effort*.035*Math.sin(time*7);
     body.scale.y=1+.009*Math.sin(time*3);
+    const blink=Math.min(1,.12+Math.abs(((time+id*.27)%4.4)-.14)*8);
+    for(const socket of eyelids)socket.scale.y=blink;
     for(const {g,axis,amplitude,phase} of moving)g.rotation[axis]=amplitude*Math.sin(time*(2.8+effort*2)+phase);
   },dispose(){geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());}};
 }

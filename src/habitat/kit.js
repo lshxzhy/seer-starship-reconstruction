@@ -12,7 +12,7 @@
   // Joint widths, captive screws, overhead air slots and tread are inferred.
   function cabinFinish(kind){
     return cabinAsset(cabinAssets.canvases,'finish/'+kind,()=>{
-      const deck=kind==='deck'||kind==='tread',lid=kind==='soffit';
+      const deck=['deck','tread','sealed','inlay','ribbed'].includes(kind),lid=kind==='soffit';
       const n=deck?512:256;
       const makeCanvas=()=>{
         const c=document.createElement('canvas');c.width=n;c.height=n;return c;
@@ -62,6 +62,26 @@
           for(let j=0;j<12;j++)for(let i=0;i<14;i++){
             const x=15+i*17+(j%2)*5,y=21+j*18;
             stroke([[x,y],[x+5,y-3]],2.1,226,205,153);
+          }
+        }else if(kind==='sealed'){
+          // Flush resin pans in the laboratory and workshop. Double joints
+          // trap liquid at the perimeter, leaving a smooth central field.
+          stroke([[14,24],[24,14],[232,14],[242,24],[242,232],[232,242]],
+            1.5,215,99,225);
+          for(const x of [25,31,37,43])stroke([[x,221],[x+4,217]],1.1,194,103,199);
+        }else if(kind==='inlay'){
+          // Hairline metal inlay and broad, polished chamfers for the civic decks.
+          for(const side of [-1,1]){
+            const x=side<0?15:241;
+            stroke([[x,35],[x,19],[x-side*5,14],[x-side*28,14]],1.8,217,151,96);
+          }
+          stroke([[14,220],[14,237],[20,243],[68,243]],1.4,216,151,105);
+        }else if(kind==='ribbed'){
+          // Finely ribbed foot panels beside optics and exterior observation rails.
+          for(let i=0;i<20;i++){
+            const y=28+i*10;
+            stroke([[18,y],[44,y],[48,y-2],[80,y-2]],1.65,223,184,160);
+            stroke([[176,y+2],[206,y+2],[211,y],[238,y]],1.65,223,184,160);
           }
         }
       }else if(lid){
@@ -295,6 +315,29 @@
       return frame;
     }
 
+    // Flush mechanical dial on a +Z operating face. The bezel catches local
+    // light; the printed scale is shared and the needle casts its own relief.
+    function dial(x,y,z,r,tint,fraction,opts={}){
+      const frame=new T.Group();frame.position.set(x,y,z);frame.rotation.set(opts.rx||0,opts.ry||0,opts.rz||0);
+      frame.scale.setScalar(r);(opts.parent||root).add(frame);
+      const local={parent:frame};
+      cyl(0,0,0,1,1,.20,0x6b777e,{...local,rx:Math.PI/2,segments:36,metalness:.70,roughness:.29});
+      const scale=texture('printed-dial/'+tint,()=>canvasMap(160,160,(ctx,w,h)=>{
+        ctx.translate(w/2,h/2);ctx.scale(w/2,h/2);
+        ctx.fillStyle='#d5dcd2';ctx.beginPath();ctx.arc(0,0,.97,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle=cssHex(tint);ctx.lineWidth=.08;ctx.beginPath();ctx.arc(0,0,.75,.76*Math.PI,1.64*Math.PI);ctx.stroke();
+        for(let i=0;i<=24;i++){
+          const a=(.76+1.48*i/24)*Math.PI,s=Math.sin(a),c=Math.cos(a),l=i%4===0?.61:.72;
+          ctx.strokeStyle='#263746';ctx.lineWidth=i%4===0?.025:.014;ctx.beginPath();
+          ctx.moveTo(l*c,l*s);ctx.lineTo(.84*c,.84*s);ctx.stroke();
+        }
+      }));
+      face(0,0,.103,1.92,1.92,scale,local);
+      torus(0,0,.11,.936,.066,0x52616b,{...local,segments:40,metalness:.72,roughness:.26});
+      const a=(.76+1.48*fraction)*Math.PI,dx=Math.cos(a),dy=-Math.sin(a);
+      beam([-.14*dx,-.14*dy,.13],[.69*dx,.69*dy,.13],.047,.035,0xb54f37,local);
+      cyl(0,0,.15,.09,.10,.04,0x35424c,{...local,rx:Math.PI/2,segments:16});
+    }
     const family=spec.id||'';
     const defaultAccent=({power:0xf2aa48,machine:0xdfa24d,workshop:0xc0ce64,
       honors:0xe7b35a,captain:0x71adce,archives:0x66aab7,laboratory:0x4cc8b9,
@@ -335,7 +378,10 @@
     const floorFace=box(0,-.125,0,W,.25,D,frameColor,shellOpts);
     floorFace.name='连续甲板';
 
-    const floorMaterial=material(floorColor,{finish:family==='power'?'tread':'deck',roughness:.80,metalness:.12});
+    const floorFinish=({power:'tread',teleport:'tread',machine:'tread',laboratory:'sealed',workshop:'sealed',
+      captain:'inlay',honors:'inlay',archives:'inlay',observation:'ribbed',terraceAccess:'ribbed'})[family]||'deck';
+    const floorMaterial=material(floorColor,{finish:floorFinish,
+      roughness:floorFinish==='inlay'?.60:floorFinish==='sealed'?.69:.80,metalness:.12});
     const floorUV=geom('metric-deck/'+W+'/'+D,()=>cabinMetricUV(faceGeometry.clone(),W,D,1));
     const tiles=place(floorUV,floorMaterial,0,.004,0,{rx:-Math.PI/2,parent:shell});
     tiles.scale.set(W,D,1);
@@ -559,5 +605,5 @@
         }
       }
     }
-    return {T,root,W,D,H,box,cyl,ball,beam,pipe,torus,panel,text,block,shell,roof};
+    return {T,root,W,D,H,box,cyl,ball,beam,pipe,torus,panel,text,dial,block,shell,roof};
   }

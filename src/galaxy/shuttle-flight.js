@@ -1,7 +1,7 @@
 // In the planet-fixed frame distances are metres, velocities are m/s. The
 // vehicle origin is the plane through the three deployed landing feet.
 function createShuttleFlight(T,body,dock,saved){
-  const clamp=T.MathUtils.clamp,R=body.radius;
+  const clamp=T.MathUtils.clamp,R=body.radius,highSpeed=8000;
   const position=dock.position.clone(),quaternion=dock.quaternion.clone(),velocity=new T.Vector3();
   const dockForward=new T.Vector3(0,0,-1).applyQuaternion(dock.quaternion);
   const dockUp=new T.Vector3(0,1,0).applyQuaternion(dock.quaternion);
@@ -13,7 +13,7 @@ function createShuttleFlight(T,body,dock,saved){
   const home=body.landingSites[0];
   const heading=new T.Vector3(),desired=new T.Vector3(),right=new T.Vector3(),up=new T.Vector3();
   const eastAxis=new T.Vector3(),northAxis=new T.Vector3();
-  const attitude=new T.Quaternion(),basis=new T.Matrix4(),bankPitch=new T.Euler(0,0,0,'YXZ');
+  const attitude=new T.Quaternion(),inclination=new T.Quaternion(),transport=new T.Quaternion(),basis=new T.Matrix4(),bankPitch=new T.Euler(0,0,0,'YXZ');
   let phase='docked',auto=null,leg='',target=null,detour=null,detourClock=0;
   let pitch=0,roll=0,riseLevel=0,latitude=0,longitude=0,altitude=0,ground=0,power=0;
   let pad=null,range=0,timeScale=1,stage='泊位锁定';
@@ -65,7 +65,7 @@ function createShuttleFlight(T,body,dock,saved){
       basis.makeBasis(right,up,tangent.copy(heading).negate());
       attitude.setFromRotationMatrix(basis);
       bankPitch.set(pitch,0,roll,'YXZ');
-      attitude.multiply(new T.Quaternion().setFromEuler(bankPitch));
+      attitude.multiply(inclination.setFromEuler(bankPitch));
       const gap=altitude-ground;
       if(pad?.ok&&gap<2.8&&velocity.length()<4&&leg!=='rise'){
         const target=attitude.clone();
@@ -153,9 +153,10 @@ function createShuttleFlight(T,body,dock,saved){
     return autopilot('surface',{lat:latitude,lon:longitude,name:'当前着陆点'});
   }
   function manualLimit(agl){
-    if(agl<120)return 10+.85*Math.max(0,agl);
-    if(agl<1400)return 112+.46*(agl-120);
-    return Math.min(4400,701+.21*(agl-1400));
+    if(agl<12)return 10+Math.max(0,agl);
+    if(agl<120)return 22+1.65*(agl-12);
+    if(agl<1400)return 200.2+.79*(agl-120);
+    return Math.min(highSpeed,1211.4+.41*(agl-1400));
   }
   // Limit both commanded speed and braking distance. Fine approach speed
   // tends continuously to zero when the position error vanishes.
@@ -200,7 +201,7 @@ function createShuttleFlight(T,body,dock,saved){
   function dockGuidance(dt){
     if(!leg)leg='outer';
     const goal=leg==='outer'?exteriorWaypoint(dt):leg==='gate'?gate:dock.position;
-    const limit=leg==='outer'?150:leg==='gate'?70:12;
+    const limit=leg==='outer'?230:leg==='gate'?70:12;
     const distance=seek(goal,limit,leg==='latch'?4.5:18,leg==='latch'?.85:.65);
     range=position.distanceTo(dock.position);
     if(leg==='latch')stage='倒车入坞 · 对接锁捕获';
@@ -243,12 +244,12 @@ function createShuttleFlight(T,body,dock,saved){
   function manualGuidance(input,dt,limit){
     const value=k=>clamp(Number(input[k])||0,-1,1);
     const turn=value('turn');
-    heading.applyAxisAngle(up,-turn*dt*(1.12-.60*clamp(velocity.length()/1500,0,1)));
+    heading.applyAxisAngle(up,-turn*dt*(1.36-.72*clamp(velocity.length()/2200,0,1)));
     right.crossVectors(heading,up).normalize();
     pitch=clamp(pitch+value('pitch')*dt*.67,-1.1,1.1);
     roll+=(-turn*.23-roll)*(1-Math.exp(-3*dt));
     const forward=value('forward'),side=value('strafe'),lift=value('lift');
-    const cruise=input.boost?limit:Math.min(limit,Math.max(12,limit*.24));
+    const cruise=input.boost?limit:Math.min(limit,Math.max(12,limit*.36));
     desired.copy(heading).multiplyScalar(forward*Math.cos(pitch)).addScaledVector(right,side*.64)
       .addScaledVector(up,lift+forward*Math.sin(pitch)).clampLength(0,1).multiplyScalar(cruise);
     if(input.brake)desired.set(0,0,0);
@@ -273,7 +274,7 @@ function createShuttleFlight(T,body,dock,saved){
     if(vr<-downLimit)desired.addScaledVector(up,-downLimit-vr);
     delta.subVectors(desired,velocity);
     const demand=clamp(delta.length()/Math.max(1,accel*.65),0,1);
-    power+=(Math.max(demand,clamp(velocity.length()/4400,0,1)) - power)*(1-Math.exp(-4*dt));
+    power+=(Math.max(demand,clamp(velocity.length()/highSpeed,0,1)) - power)*(1-Math.exp(-4*dt));
     const dv=delta.dot(up);
     delta.addScaledVector(up,-dv).clampLength(0,.71*accel*dt);
     velocity.add(delta).addScaledVector(up,clamp(dv,-.70*accel*dt,.70*accel*dt));
@@ -288,9 +289,10 @@ function createShuttleFlight(T,body,dock,saved){
       destUp.copy(up).multiplyScalar(Math.cos(angle));
       if(speed)destUp.addScaledVector(tangent,Math.sin(angle)/speed);
       next.copy(destUp).multiplyScalar(radial+vr*dt);
-      tangent.projectOnPlane(destUp);
-      if(speed)tangent.setLength(speed);
-      velocity.copy(tangent).addScaledVector(destUp,vr);
+      transport.setFromUnitVectors(up,destUp);
+      // Apply the same parallel transport to the craft and its velocity after the
+      // sweep accepts the new position. This keeps a straight course near a pole.
+      velocity.applyQuaternion(transport);
     }
     if(hitsHull(position,next)){
       velocity.set(0,0,0);stage='舰体净空限制';
@@ -298,6 +300,17 @@ function createShuttleFlight(T,body,dock,saved){
       return;
     }
     const ll=angles(next),height=next.length()-R,terrain=body.height(ll.lat,ll.lon);
+    if(Math.min(altitude-ground,height-terrain)<190){
+      const samples=Math.ceil(next.distanceTo(position)/padFootprint);
+      for(let i=1;i<samples;i++){
+        probe.lerpVectors(position,next,i/samples);
+        const mid=angles(probe);
+        if(probe.length()-R+.08<body.flightHeight(mid.lat,mid.lon,padFootprint)){
+          const climb=Math.max(0,velocity.dot(up));velocity.copy(up).multiplyScalar(climb);
+          stage='地形净空限制';return;
+        }
+      }
+    }
     if(height<terrain+190){
       const roof=body.flightHeight(ll.lat,ll.lon,padFootprint);
       const nearGround=height<Math.max(roof,terrain)+3;
@@ -325,13 +338,14 @@ function createShuttleFlight(T,body,dock,saved){
         }
       }
     }
+    if(!nearDock)heading.applyQuaternion(transport);
     position.copy(next);
   }
   function step(dt,input){
     const frame=currentFrame();
     levelHeading(frame);
     const agl=Math.max(0,altitude-ground),limit=manualLimit(agl),near=position.distanceTo(dock.position);
-    let accel=clamp(16+agl*.07,16,135);
+    let accel=clamp(18+agl*.18,18,420);
     let dockPose=false;
     if(leg==='undock'){
       const end=dock.position.clone().addScaledVector(dockForward,corridor+5);
@@ -345,12 +359,16 @@ function createShuttleFlight(T,body,dock,saved){
     }else if(auto==='outbound'){
       if(near<2000){
         const exit=probe.copy(dock.position).addScaledVector(dockForward,2400);
-        seek(exit,near<180?35:Math.min(limit,320),20);stage='离开母舰航道';
+        seek(exit,near<180?35:Math.min(limit,480),32);stage='离开母舰航道';
       }else{desired.copy(up).multiplyScalar(limit);stage='爬升至转移轨道';}
     }else if(auto==='dock'&&((near<2400&&velocity.length()<132)||leg)){
-      dockGuidance(dt);accel=leg==='latch'?5:20;dockPose=leg==='latch'||leg==='gate';
+      dockGuidance(dt);accel=leg==='latch'?5:28;dockPose=leg==='latch'||leg==='gate';
     }else if(auto)planetaryGuidance(limit,accel);
-    else manualGuidance(input,dt,Math.min(limit,near<150?22+near*.20:near<1300?60+near*.8:limit));
+    else{
+      const dockLimit=Math.min(22+near*.27,Math.sqrt(22*22+2*.63*accel*near));
+      manualGuidance(input,dt,Math.min(limit,dockLimit));
+      if(input.brake)accel*=2.5;
+    }
     if(phase!=='flying')return;
     if(auto){
       if(!dockPose&&desired.lengthSq()>1)alignHeading(desired,dt);
@@ -361,17 +379,21 @@ function createShuttleFlight(T,body,dock,saved){
     pose(dt,dockPose);advance(dt,accel,input);
   }
   function tick(realDt,input={}){
-    if(phase!=='flying'||!(realDt>0)||!Number.isFinite(realDt))return;
+    if(!(realDt>0)||!Number.isFinite(realDt))return 0;
+    realDt=Math.min(realDt,.25);
+    if(phase!=='flying')return realDt;
     const near=position.distanceTo(dock.position);
     // Guided time compression increases the number of ordinary physics
     // steps. The acceleration, sweep and landing checks are identical.
     const space=T.MathUtils.smoothstep(Math.min(altitude-ground,near),140,1900);
-    timeScale=auto?1.5+3.7*space:1;
-    let remaining=Math.min(realDt,.25)*timeScale;
+    timeScale=auto?1.5+4.9*space:1;
+    const rate=timeScale,budget=realDt*rate;
+    let remaining=budget;
     while(remaining>1e-7&&phase==='flying'){
       const dt=Math.min(remaining,1/30);step(dt,input);remaining-=dt;
     }
     currentFrame();
+    return budget-remaining+remaining/rate;
   }
   function snapshot(){
     return {version:1,phase,auto,leg,target:target?{id:target.id,name:target.name,lat:target.lat,lon:target.lon}:null,
@@ -386,7 +408,7 @@ function createShuttleFlight(T,body,dock,saved){
     if(next.length()<R*.99||next.length()>R*1000)return false;
     position.copy(next);const frame=currentFrame();
     phase=s.phase;heading.fromArray(s.heading);levelHeading(frame);quaternion.fromArray(s.q).normalize();
-    velocity.fromArray(s.v).clampLength(0,4500);
+    velocity.fromArray(s.v).clampLength(0,highSpeed);
     pitch=clamp(Number(s.pitch)||0,-1.1,1.1);roll=clamp(Number(s.roll)||0,-.3,.3);
     if(phase==='landed'){
       // A parked craft already has a berth. Keep its latitude and longitude

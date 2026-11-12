@@ -240,6 +240,16 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
       }
       box(0,2.99,scanZ,2*(jambX-.28),.26,.29,steel);
       text(0,2.995,scanZ+.155,slot+'  '+destinationName,2.08,.22,white);
+      // Opposed three-lens scan heads sit flush on the outside jambs. Their
+      // smoked hood and inset cyan optics keep the passage physically clear.
+      for(const s of [-1,1]){
+        stamp(frame,unitBox,graphite,[s*jambX,1.62,scanZ+.158],[.195,.55,.056]);
+        for(let j=0;j<3;j++){
+          const y=1.46+j*.16;
+          stamp(frame,roundPin,alloy,[s*jambX,y,scanZ+.208],[.062,.056,.062],[PI/2,0,0]);
+          ball(s*jambX,y,scanZ+.243,.041,.041,.019,tint,{glow:.40,roughness:.20});
+        }
+      }
       casting(footRibGeo,0x8e9a98,.68,.38,.60);
       for(const s of [-1,1]) {
         stamp(frame,unitBox,graphite,[s*1.75,.86,.935],[.16,.30,.025]);
@@ -434,6 +444,10 @@ function buildShipTransporterRoom(kit,roomId,placements) {
     cyl(0,2.30,.93,.93,.93,.23,0x367ba5,{rx:PI/2});
     cyl(0,2.30,1.064,.76,.76,.045,0x246e7d,{rx:PI/2,glow:.12});
     torus(0,2.30,1.10,.76,.075,cyan,{glow:.25});
+    for(let mark=0;mark<15;mark++){
+      const a=(mark/14*1.46-.73)*PI;
+      box(Math.sin(a)*.64,2.30+Math.cos(a)*.64,1.120,.021,mark%2?.07:.13,.021,white,{rz:-a});
+    }
     text(0,2.31,1.15,'16.1',1.25,.44,cyan);
     box(0,.91,1.02,1.25,.46,.79,gold,{rx:-.30});
     for(let row=0;row<3;row++)for(let col=0;col<3;col++)

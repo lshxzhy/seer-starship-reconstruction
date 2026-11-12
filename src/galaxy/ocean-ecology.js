@@ -162,7 +162,9 @@ function createOceanEcology(T,parent,definition,surface){
         if(surface.canSwim(candidate.lat,candidate.lon,model.radius)){x=ix;z=iz;at=candidate;found=true;break;}
       }
     }
-    return {site,model,anchor,turn,key,id,level,x,z,ix:x,iz:z,at,yaw:.5*i,t:1.69*i,rest:0};
+    const radius=id===34?2.6:id===30?1.15:1.68,t=1.69*i;
+    return {site,model,anchor,turn,key,id,level,radius,cx:x-radius*Math.sin(t),cz:z-radius*.65*Math.cos(t),
+      ix:x,iz:z,at,yaw:.5*i,t,rest:0,sign:1,blocked:0,age:t};
   });
   const sites=Object.keys(OCEAN_HABITATS),interval=75,rareWindow=45;
   let lastVisitor=null;
@@ -174,28 +176,34 @@ function createOceanEcology(T,parent,definition,surface){
       const active=walking&&wetDistance(p.site,lastVisitor)<46&&p.rest<=now&&
         (p.id!==108||(p.site.id===rareSite&&cycle%interval<rareWindow));
       p.anchor.visible=active;if(!active)continue;
-      p.t+=dt*(p.id===34?.39:p.id===30?.47:.82);
-      const radius=p.id===34?2.6:p.id===30?1.15:1.68;
-      const nextX=p.x+radius*Math.sin(p.t),nextZ=p.z+radius*.65*Math.cos(p.t);
-      const candidate=surface.move(p.site.lat,p.site.lon,nextX,-nextZ);
-      const oldDistance=wetDistance(lastVisitor,p.at),newDistance=wetDistance(lastVisitor,candidate);
-      const schoolClear=nodes.every(other=>{
-        if(other===p||!other.anchor.visible||other.site!==p.site)return true;
-        const distance=wetDistance(other.at,candidate);
-        return distance>=p.model.radius+other.model.radius||distance>wetDistance(other.at,p.at);
-      });
-      if(schoolClear&&(newDistance>.36+p.model.radius||newDistance>=oldDistance)&&surface.canSwim(candidate.lat,candidate.lon,p.model.radius)){
-        const dx=nextX-p.ix,dz=nextZ-p.iz,heading=Math.atan2(dx,dz);
-        if(dx*dx+dz*dz>.0000001){
-          const d=Math.atan2(Math.sin(heading-p.yaw),Math.cos(heading-p.yaw));
-          p.yaw+=T.MathUtils.clamp(d,-2.6*dt,2.6*dt);
+      const cadence=p.id===34?.39:p.id===30?.47:.82,steps=Math.max(1,Math.ceil(dt/.06)),sub=dt/steps;
+      let distanceMoved=0;p.age+=dt;
+      for(let i=0;i<steps&&sub>0;i++){
+        const tangent=Math.atan2(p.sign*Math.cos(p.t),-p.sign*.65*Math.sin(p.t));
+        const bend=Math.atan2(Math.sin(tangent-p.yaw),Math.cos(tangent-p.yaw));
+        p.yaw+=T.MathUtils.clamp(bend,-2.6*sub,2.6*sub);
+        const alignment=Math.max(0,Math.cos(tangent-p.yaw));
+        if(alignment<.5)continue;
+        const t=p.t+sub*cadence*p.sign*alignment*alignment;
+        const nextX=p.cx+p.radius*Math.sin(t),nextZ=p.cz+p.radius*.65*Math.cos(t);
+        const candidate=surface.move(p.site.lat,p.site.lon,nextX,-nextZ);
+        const oldDistance=wetDistance(lastVisitor,p.at),newDistance=wetDistance(lastVisitor,candidate);
+        const clear=nodes.every(other=>{
+          if(other===p||!other.anchor.visible||other.site!==p.site)return true;
+          const distance=wetDistance(other.at,candidate);
+          return distance>=p.model.radius+other.model.radius||distance>wetDistance(other.at,p.at);
+        });
+        if(clear&&(newDistance>.36+p.model.radius||newDistance>=oldDistance)&&surface.canSwim(candidate.lat,candidate.lon,p.model.radius)){
+          distanceMoved+=Math.hypot(nextX-p.ix,nextZ-p.iz);
+          p.ix=nextX;p.iz=nextZ;p.at=candidate;p.t=t;p.blocked=0;
+        }else if((p.blocked+=sub)>.65){
+          p.sign=-p.sign;p.blocked=0;
         }
-        p.ix=nextX;p.iz=nextZ;p.at=candidate;
       }
-      const offset=p.id===30?.09+.03*Math.sin(p.t):.7+.16*Math.sin(1.7*p.t);
+      const offset=p.id===30?.09+.03*Math.sin(p.age):.7+.16*Math.sin(1.7*p.age);
       p.anchor.position.copy(surface.point(p.at.lat,p.at.lon,offset));
       p.anchor.quaternion.copy(surface.frame(p.at.lat,p.at.lon).quaternion);
-      p.turn.rotation.y=p.yaw;p.model.update(dt,.6);
+      p.turn.rotation.y=p.yaw;p.model.update(dt,dt?Math.min(1,distanceMoved/(dt*p.radius*cadence)):0);
       p.anchor.updateMatrixWorld(true);
     }
   }

@@ -394,7 +394,9 @@ function createKloseSafari(T,surface){
     const at=viewer||wet.site;syncGuest(at);
     actors.forEach((p,i)=>patrol(p,i,dt,at,boat));
     if(guest){
-      guest.yaw=Math.atan2(at.x-wet.site.x-guest.x,at.z-wet.site.z-guest.z);guest.update(dt);
+      const toward=Math.atan2(at.x-wet.site.x-guest.x,at.z-wet.site.z-guest.z)-guest.yaw;
+      guest.yaw+=T.MathUtils.clamp(Math.atan2(Math.sin(toward),Math.cos(toward)),-3.2*dt,3.2*dt);
+      guest.update(dt);
       place(guest,guest.method==='tree'?.21+.04*Math.sin(clock*3):0);
     }
   }

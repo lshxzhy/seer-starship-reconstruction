@@ -61,6 +61,13 @@ cabinBuilders.instructor = function(kit) {
   cyl(-.05,1.61,-5.72,.50,.56,.16,dark);
   cyl(-.05,1.79,-5.72,.41,.48,.21,gold);
   cyl(-.05,1.936,-5.72,.30,.38,.085,cream);
+  // The cyan projection pedestal on the command desk tapers toward its lens.
+  // Modelled above the working surface, with the sight returning to its base.
+  cyl(-2.08,1.58,-4.47,.41,.49,.11,dark);
+  cyl(-2.08,1.68,-4.47,.31,.39,.10,cream);
+  torus(-2.08,1.75,-4.47,.27,.036,cyan,{rx:PI/2,glow:.22});
+  cyl(-2.08,1.93,-4.47,.08,.15,.34,steel);
+  ball(-2.08,2.13,-4.47,.12,.18,.12,cyan,{glow:.23,roughness:.19});
   for(const s of [-1,1])
     beam([-.05+s*.19,1.985,-5.82],[-.05,1.985,-5.63],.042,.044,gold);
   text(-2.2,1.18,-3.43,'总教官  雷蒙',3.65,.30,white);
@@ -79,6 +86,11 @@ cabinBuilders.instructor = function(kit) {
     beam([-1.5,.4,1.15],[-1.5,2.8,-.5],.32,.52,cream);
     beam([1.5,.4,1.15],[1.5,2.8,-.5],.32,.52,cream);
     box(0,1.52,.43,2.68,2.75,.22,cyan,{rx:-.55,glow:.18});
+    for(const side of [-1,1])for(let j=0;j<3;j++){
+      const y=.81+j*.70,z=.94-j*.43;
+      box(side*1.44,y,z,.40,.73,.23,steel,{rx:-.55});
+      box(side*1.44,y+.01,z+.083,.35,.66,.16,cream,{rx:-.55});
+    }
     for(let i=0;i<7;i++)box(0,.83+i*.245,.91-i*.15,2.22,.035,.045,0xb5fff2);
     box(0,3.26,-.73,3.1,.83,.46,cream);
     box(0,3.27,-.46,1.60,.54,.12,dark);
@@ -185,6 +197,20 @@ cabinBuilders.honors = function(kit) {
     const a=i*PI/6;
     ball(Math.cos(a)*2.31,4.02+Math.sin(a)*2.31,-10.9,.067,.067,.045,0xffe6aa);
   }
+  // The construction of the gong's reverse is visible from within the room:
+  // a central hub and two radial suspension shoes tie the relief to its stand.
+  cyl(0,4.02,-11.83,.64,.70,.17,shell,{rx:PI/2});
+  for(const side of [-1,1]){
+    beam([side*.32,4.05,-11.95],[side*1.49,5.42,-11.85],.15,.20,dark);
+    cyl(side*1.49,5.42,-11.99,.19,.19,.19,gold,{rx:PI/2,segments:24});
+    // Raised laurel leaves flank the face and leave the central star unobscured.
+    for(let i=0;i<6;i++){
+      const a=.30+i*.22;
+      const leaf=ball(side*1.90*Math.cos(a),4.02-1.90*Math.sin(a),-10.854,
+        .070,.184,.048,0xffdd84,{rz:side*(a-.59)});
+      leaf.castShadow=false;
+    }
+  }
   for(const s of [-1,1]) {
     box(s*1.08,6.07,-11.8,.72,2,.18,blue,{rz:s*.29});
     box(s*1.08,6.07,-11.69,.11,1.98,.06,cyan,{rz:s*.29});
@@ -201,6 +227,11 @@ cabinBuilders.honors = function(kit) {
   box(-14.96,4.35,-5.71,.83,.39,.08,white,{rz:-.27});
   box(-15.18,2.83,-5.79,1.45,.08,.08,cyan);
   text(-15.18,2.57,-5.75,'SENIOR',1.80,.32,white);
+  // G06's round amber pivot and pale cap flank the memorial's teal face.
+  cyl(-13.15,5.15,-6.45,.84,.90,.50,dark,{rx:PI/2,segments:40});
+  torus(-13.15,5.15,-6.14,.66,.15,gold,{glow:.18,metalness:.39});
+  cyl(-13.15,5.15,-6.14,.43,.55,.24,white,{rx:PI/2,segments:32});
+  box(-13.15,5.15,-5.995,.13,.31,.041,shell,{rz:-.32});
   box(-16.7,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
   box(-13.8,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
   block(-15.3,-6.8,5.7,4.2);
@@ -315,7 +346,26 @@ cabinBuilders.terraceAccess = function(kit) {
     torus(x,y,z,.295,.020,pale,{rx:Math.PI/2});
   }
   cyl(mx,3.95,mz,.86,1.02,.28,gold);
-  ball(mx,4.19,mz,.32,.32,.32,cyan,{glow:.45});
+  // The 2011 machine illustration gives the crown four gold points and a
+  // face beneath the glass, with dark flank pods and a diamond-shaped bill.
+  ball(mx,4.15,mz,.73,.60,.71,0x187e9a,{metalness:.42,roughness:.29});
+  for(let i=0;i<4;i++){
+    const a=Math.PI*.25+i*Math.PI/2;
+    cyl(mx+.55*Math.cos(a),4.50,mz+.55*Math.sin(a),.045,.18,.52,gold,
+      {rx:.38*Math.sin(a),rz:-.38*Math.cos(a),segments:8});
+  }
+  cyl(mx,4.20,mz+.68,.24,.24,.16,dark,{rx:Math.PI/2,segments:28});
+  ball(mx,4.20,mz+.77,.155,.155,.053,gold);
+  for(const s of [-1,1]){
+    beam([mx+s*.84,1.86,mz+.38],[mx+s*.65,3.83,mz+.31],.115,.16,dark);
+    ball(mx+s*1.28,1.00,mz+.19,.39,.58,.50,0x334757,{rz:-s*.37});
+    cyl(mx+s*1.35,1.36,mz+.56,.20,.20,.18,steel,{rx:Math.PI/2});
+    ball(mx+s*.67,1.28,mz+1.10,.26,.40,.13,dark,{rz:-s*.24});
+    ball(mx+s*.67,1.30,mz+1.235,.105,.20,.04,cyan,{glow:.22});
+  }
+  ball(mx,1.17,mz+1.26,.26,.22,.11,gold);
+  box(mx,1.17,mz+1.365,.16,.16,.06,0xe69835,{rz:Math.PI/4});
+  torus(mx,1.77,mz,1.305,.055,0xad483d,{rx:Math.PI/2});
   box(mx,.72,mz+1.36,1.30,.68,.24,dark);
   box(mx,.73,mz+1.5,1.01,.40,.06,0x0f2637);
   cyl(mx+.77,1.27,mz+1.19,.24,.24,.21,gold,{rx:Math.PI/2});

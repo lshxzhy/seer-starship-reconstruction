@@ -37,6 +37,14 @@
     }
     const benchButton=root.querySelector('[data-bench]');
     const embarkButton=root.querySelector('[data-embark]');
+    const dutyButton=root.querySelector('[data-duty-contact]');
+    function nearbyDuty(){
+      return active&&pose&&!lifts.riding&&!flight.mounted?population.nearestNamed(pose,4):null;
+    }
+    function meet(member){
+      if(member)stage.dispatchEvent(new CustomEvent('seer-visit-crew',{detail:{characterId:member.characterId}}));
+    }
+    dutyButton.addEventListener('click',()=>meet(nearbyDuty()));
     const exchangeButton=root.querySelector('[data-exchange]');
     const pickRay=new T.Raycaster(),pickPoint=new T.Vector2();
     const routeButton=root.querySelector('[data-delivery-track]');
@@ -117,11 +125,10 @@
       notifyPlayer(on?'已装备双臂挖矿钻头。':'挖矿钻头已放回背包。');
     }
     benchButton.addEventListener('click',useBench);
-    const walkSpeed=3.6,runSpeed=6.8;
     let smiling=false;
     const crewDialogue=createCrewDialogue({
       context:()=>({roomId:currentRoomId,location:tag.textContent,
-        nearby:active&&pose?population.nearest(pose,4):null}),
+        nearby:nearbyDuty()||(active&&pose?population.nearest(pose,4):null)}),
       inRange:id=>{
         const member=active&&pose?population.getById(id)?.position:null;
         return Boolean(member&&member.level===pose.level&&Math.hypot(member.x-pose.x,member.z-pose.z)<=4);
@@ -320,8 +327,10 @@
     const flyHint='W/A/S/D 驾驶 · Shift 加速 · 空格上升 / C 下降 · F 着陆下机';
     function flightControls(){
       const berth=currentBerth();
+      const officer=nearbyDuty();dutyButton.hidden=!officer;
+      if(officer)dutyButton.textContent='拜访'+officer.name;
       embarkButton.hidden=!berth;
-      if(berth)embarkButton.textContent=shuttleAway()?'登陆艇停在克洛斯星 · 查看艇位':berth.name+' · 乘廊车去登陆艇';
+      if(berth)embarkButton.textContent=shuttleAway()?'登陆艇已着陆 · 查看艇位':berth.name+' · 乘廊车去登陆艇';
       const label=flight.label(pose);
       if(mount.textContent!==label)mount.textContent=label;
       mount.hidden=!active||lifts.riding||(!flight.mounted&&!flight.reachable(pose));
@@ -338,12 +347,12 @@
       if(batches.length)record+='。'+batches.map((n,i)=>'回执 '+(i+1)+'（'+n+' 份，'+n*trainingTerms.unitReward+' 豆）').join('，');
       if(jobRecord.textContent!==record)jobRecord.textContent=record;
       hint.textContent=flight.mounted?flyHint:walkHint;
-      if(!lifts.riding)status.textContent=flight.mounted?'滑翔翼 · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
+      if(!lifts.riding)status.textContent=flight.mounted?'滑翔翼 · '+flight.speed.toFixed(1)+' m/s · 悬浮 '+flight.altitude.toFixed(1)+' 米':'玩家 SE-00001';
     }
     function operateFlyer(){
       if(!active||flight.landing||lifts.riding)return;
       if(lifts.status(pose)?.inside){notifyPlayer('请先走出轿厢，再取出滑翔翼。');return;}
-      crewDialogue.close();clearInputs();
+      crewDialogue.close();clearInputs(!flight.mounted);
       const result=flight.interact(pose,yaw);
       if(result.pose){pose=result.pose;pilot.arrive(pose,yaw);habitat.updateLOD(pose);refreshPlace(true);}
       info.textContent=result.notice;notifyPlayer(result.notice);locker.write(pack());
@@ -367,12 +376,12 @@
     function focusFlightControls() {
       boardButton.focus({preventScroll:true});
     }
-    function clearInputs() {
+    function clearInputs(stopFlyer=true) {
       keys.clear();
       touchKeys.clear();
       frameTime = inputStart = 0;
       lookDrag = null;
-      flight.stop();
+      if(stopFlyer)flight.stop();
     }
     function has(code) {
       if (keys.has(code)) return true;
@@ -498,7 +507,7 @@
       setCameraLens(false);
       boardControls.hidden=true;movePad.hidden=true;liftControl.hidden=true;
       callButton.hidden=liftReadout.hidden=true;delete stage.dataset.liftTravel;
-      mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=exchangeButton.hidden=embarkButton.hidden=routeHint.hidden=notice.hidden=true;
+      dutyButton.hidden=mount.hidden=climb.hidden=descend.hidden=benchButton.hidden=exchangeButton.hidden=embarkButton.hidden=routeHint.hidden=notice.hidden=true;
       guide.hide();
       delete stage.dataset.boarded;
       hint.textContent='拖动旋转 · 滚轮或双指缩放';
@@ -523,11 +532,10 @@
       let forward = Number(has('KeyW')||has('ArrowUp'))-Number(has('KeyS')||has('ArrowDown'));
       let strafe = Number(has('KeyD')) - Number(has('KeyA'));
       const magnitude = Math.hypot(forward,strafe);
-      const sin=Math.sin(yaw),cos=Math.cos(yaw),norm=magnitude||1;
-      const dx=(strafe*cos-forward*sin)/norm,dz=(-strafe*sin-forward*cos)/norm;
+      const {x:dx,z:dz}=walkDirection(forward,strafe,yaw);
       const boost=has('ShiftLeft')||has('ShiftRight');
       if(lifts.riding){
-        if(magnitude)lifts.movePassenger(dx*walkSpeed*dt,dz*walkSpeed*dt);
+        if(magnitude)lifts.movePassenger(dx*walkPace.walk*dt,dz*walkPace.walk*dt);
         pose=lifts.passengerPose();
         const s=lifts.status(pose);
         habitat.updateLiftLOD(s.lineId,s.center.y);
@@ -541,7 +549,7 @@
         habitat.updateLOD(pose);refreshPlace();
         if(result.notice){info.textContent=result.notice;notifyPlayer(result.notice);}
       }else if(magnitude && dt){
-        const step=dt*(boost?runSpeed:walkSpeed);
+        const step=dt*(boost?walkPace.run:walkPace.walk);
         pose=habitat.move(pose,dx*step,dz*step,.43,
           (from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
         habitat.updateLOD(pose);
@@ -549,7 +557,8 @@
       }
       const station=lifts.status(pose),cabin=cabinFor(station);
       const ride=lifts.riding?null:flight.draw(pose,dt);
-      companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0,cabin);
+      const contactInView=pilot.style==='eye'&&!ride&&!cabin?nearbyDuty()?.position:null;
+      companion.update(pose,yaw,dt,pilot.style,Boolean(ride),ride?.footOffset||0,cabin,contactInView);
       marker.copy(habitat.worldPosition(pose.x,pose.y+eyeHeight+(ride?.footOffset||0),pose.z));
       nearFill.position.copy(marker);nearFill.position.y+=.35*worldMetre;
       const sight=pilot.positionCamera(pose,yaw,pitch,dt,eyeHeight,ride,cabin);
@@ -566,7 +575,7 @@
       routeHint.hidden=!direction||lifts.riding;
       if(time-idleClock.lastReadout>250){flightControls();refreshPopulation();idleClock.lastReadout=time;}
       if(time-lastLiftReadout>90||arrival){showLift(station);lastLiftReadout=time;}
-      const animate=moving||lifts.moving;
+      const animate=moving||flight.inMotion||lifts.moving;
       if(!animate)idleClock.timer=setTimeout(()=>{if(active&&!document.hidden&&inView)requestFrame();},42);
       return animate;
     }
@@ -612,10 +621,15 @@
       const tap=e.type==='pointerup' && lookDrag.travel<5;
       lookDrag=null;
       const berth=tap?currentBerth():null;
-      if(tap&&!lifts.riding&&(berth||atExchange()||lifts.station(pose))){
+      const officer=tap&&nearbyDuty();
+      if(tap&&!lifts.riding&&(officer||berth||atExchange()||lifts.station(pose))){
         const r=canvas.getBoundingClientRect();
         pickPoint.set(2*(e.clientX-r.left)/r.width-1,1-2*(e.clientY-r.top)/r.height);
         pickRay.setFromCamera(pickPoint,camera);
+        if(officer){
+          const hit=population.namedContact(pickRay,pose,4);
+          if(hit){meet(hit);return;}
+        }
         if(berth){
           const room=habitat.byId.get(currentRoomId).group;
           const hits=pickRay.intersectObjects(room.children,true);
@@ -626,7 +640,7 @@
           const room=habitat.byId.get('power').group;
           const hit=pickRay.intersectObjects(room.children,true).find(h=>h.object.visible);
           if(hit?.object.userData.oreIntake)exchangeButton.click();
-        }else{
+        }else if(lifts.station(pose)){
           const key=pickRay.intersectObjects(habitat.liftPlant.buttonsAt(pose),false)[0]?.object.userData;
           if(key?.liftAction==='floor')selectLiftFloor(key.liftLevel);
           if(key?.liftAction==='call'&&!callButton.hidden)callButton.click();
@@ -635,12 +649,6 @@
       persist();
     }
     for (const name of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(name,finishLook);
-    function keyCode(e){
-      if(e.code && e.code!=='Unidentified')return e.code;
-      if(e.key===' ')return 'Space';
-      if(e.key==='Shift')return e.location===2?'ShiftRight':'ShiftLeft';
-      return /^[wasdcvf]$/i.test(e.key)?'Key'+e.key.toUpperCase():e.key;
-    }
     function beginHold(){
       if(!hasMotion())frameTime=inputStart=performance.now();
     }
@@ -656,14 +664,17 @@
       frame(now);
     }
     function startKey(e){
-      if(!active || crewDialogue.isOpen || stage.hasAttribute('data-console-open') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey)return;
+      if(!active || crewDialogue.isOpen || stage.hasAttribute('data-console-open') || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing)return;
       const target=e.target;
       if(target!==window && target!==document && target!==document.body && target!==document.documentElement &&
         !root.contains(target))return;
       if(target.isContentEditable || target.closest?.('input,select,textarea,[role="textbox"]'))return;
-      const code=keyCode(e);
-      if((code==='KeyE'||e.key.toLowerCase()==='e')&&currentBerth()){
+      const code=seerControlCode(e);
+      if(code==='KeyE'&&currentBerth()){
         e.preventDefault();if(!e.repeat)embarkButton.click();return;
+      }
+      if(code==='KeyE'&&nearbyDuty()){
+        e.preventDefault();if(!e.repeat)meet(nearbyDuty());return;
       }
       if(code==='KeyF'||code==='KeyV'){
         e.preventDefault();
@@ -679,7 +690,7 @@
       requestFrame();
     }
     function endKey(e) {
-      const code=keyCode(e);
+      const code=seerControlCode(e);
       if(!keys.has(code))return;
       finishHold(code);keys.delete(code);
       if(!hasMotion())frameTime=inputStart=0;
@@ -706,13 +717,13 @@
       btn.addEventListener('click',e=>{
         if (!active || crewDialogue.isOpen || e.detail!==0) return;
         // A keyboard-activated movement button advances one short step.
-        const along=btn.dataset.step==='KeyW'?.65:btn.dataset.step==='KeyS'?-.65:0;
-        const across=btn.dataset.step==='KeyD'?.65:btn.dataset.step==='KeyA'?-.65:0;
-        const dx=across*Math.cos(yaw)-along*Math.sin(yaw),dz=-across*Math.sin(yaw)-along*Math.cos(yaw);
+        const along=Number(btn.dataset.step==='KeyW')-Number(btn.dataset.step==='KeyS');
+        const across=Number(btn.dataset.step==='KeyD')-Number(btn.dataset.step==='KeyA');
+        const {x,z}=walkDirection(along,across,yaw),dx=x*.24,dz=z*.24;
         if(lifts.riding){
           lifts.movePassenger(dx,dz);pose=lifts.passengerPose();requestFrame();persist();return;
         }
-        if(flight.mounted)pose=flight.drive(pose,dx/.65,dz/.65,false,.12).pose;
+        if(flight.mounted)pose=flight.drive(pose,x,z,false,.055).pose;
         else pose=habitat.move(pose,dx,dz,.43,(from,to)=>flight.clearsParked(from,to)&&population.clearsCrew(from,to));
         habitat.updateLOD(pose);refreshPlace();requestFrame();persist();
       });
@@ -737,6 +748,8 @@
         stage.dispatchEvent(new Event('seer-pack-change'));requestFrame();
       },
       openSpiritDialogue:(context,onClose)=>crewDialogue.openSpirit?.(context,onClose)??false,
+      get localComms(){return Boolean(crewDialogue.local);},
+      openDutyChat:id=>crewDialogue.openCharacter?.(id),
       get inTransit(){return lifts.riding;},
       get commsOpen(){return crewDialogue.isOpen;},
       consoleState(){return {active,pose:pose?{...pose}:null,roomId:currentRoomId,mounted:flight.mounted,

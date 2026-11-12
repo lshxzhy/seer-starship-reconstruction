@@ -7,6 +7,22 @@
     let current=null,opener=null;
     const getState=()=>boarding.consoleState();
     const exchange=createSupplyExchange({container:pages.get('exchange'),getState,onDeliver:boarding.deliver,onClose:close});
+    const crewPage=pages.get('crew'),dutyChat=crewPage.querySelector('[data-duty-chat]');
+    function visitCrew(event){
+      const id=event.detail?.characterId,profile=SEER_DUTY_PROFILES[id];
+      if(!profile||!getState().active)return;
+      open('crew');
+      if(current!=='crew')return;
+      opener=root.querySelector('[data-duty-contact]');
+      title.textContent=profile.name+' · '+profile.title;
+      crewPage.querySelector('[data-duty-post]').textContent=habitat.byId.get(profile.roomId)?.name||profile.title;
+      crewPage.querySelector('[data-duty-facts]').replaceChildren(...profile.facts.map(fact=>{
+        const line=document.createElement('li');line.textContent=fact;return line;
+      }));
+      dutyChat.hidden=!boarding.localComms;dutyChat.dataset.characterId=id;
+    }
+    stage.addEventListener('seer-visit-crew',visitCrew);
+    dutyChat.addEventListener('click',()=>{const id=dutyChat.dataset.characterId;close(false);boarding.openDutyChat(id);});
     root.querySelector('[data-exchange]').addEventListener('click',()=>open('exchange'));
     const map=createShipMap({container:pages.get('map'),getState,parkedRamp,drawSystemChart,
       onTravel:(id,pose)=>{close(false);onTravel(id,pose);canvas.focus({preventScroll:true});},
@@ -91,9 +107,9 @@
       sync(aboard){
         dock.querySelector('[data-spirit-book]').hidden=!aboard;
         dock.querySelector('[data-console="bag"]').hidden=!aboard;
-        if(!aboard&&(current==='bag'||current==='exchange'))close(false);
+        if(!aboard&&['bag','exchange','crew'].includes(current))close(false);
         if(current==='map')map.refresh();if(current==='bag')inventory.refresh();
       },
-      dispose(){window.removeEventListener('keydown',onKey,true);stage.removeEventListener('seer-pack-change',refreshPack);map.dispose();inventory.dispose();exchange.dispose();}
+      dispose(){window.removeEventListener('keydown',onKey,true);stage.removeEventListener('seer-visit-crew',visitCrew);stage.removeEventListener('seer-pack-change',refreshPack);map.dispose();inventory.dispose();exchange.dispose();}
     };
   }

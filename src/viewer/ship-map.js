@@ -247,6 +247,8 @@
         directions.push('沿甲板通路前往'+target.name);
         text.textContent=directions.join(' → ')+'。';
       }
+      const officer=target?.kind==='room'?namedCrewPosts[target.id]:null;
+      if(officer)text.textContent+='　值班：'+officer.name+' · '+SEER_DUTY_PROFILES[officer.id].title;
       plot(deck,items,pose,route);
     }
     function select(e){

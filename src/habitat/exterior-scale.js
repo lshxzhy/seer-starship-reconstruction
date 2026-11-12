@@ -52,6 +52,19 @@
       fitting(f,0,-3.62,1.27,19.8,.38,2.6,mats.cobalt);
       fitting(f,0,-2.23,1.58,11.4,.15,.17,mats.ochre);
       for(let j=0;j<6;j++) fitting(f,9.9,-2.8+j*.54,.84,1.36,.13,.42,mats.steel);
+      // Vent cassettes follow each side of the curved aft service belt.
+      // The channels terminate in visible clamps instead of wrapping the
+      // continuous primary armour or the occupied window bands.
+      for(const x of [-3.76,-3.45,3.36,3.67]){
+        const vent=surfaceFrame(x,2.31,side,.072);
+        fitting(vent,0,0,0,12.0,4.16,.52,mats.edge);
+        fitting(vent,0,0,.29,11.20,3.56,.19,mats.dark);
+        for(let i=0;i<7;i++)fitting(vent,-4.55+i*1.51,0,.49,.54,2.66,.30,mats.steel,-.15);
+        for(const s of [-1,1]){
+          fitting(vent,s*5.62,0,.47,.34,3.51,.27,mats.pearl);
+          fitting(vent,s*4.71,1.63,.46,.76,.20,.19,mats.ochre);
+        }
+      }
     }
     for(const [material,transforms] of batches){
       const instances=new T.InstancedMesh(unitBox,material,transforms.length);

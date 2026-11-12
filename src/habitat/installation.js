@@ -422,6 +422,19 @@
         plate(deck.group,paint.light,q-.43,2.13,z-s*.41,.37,.17,.018);
       }
     }
+    // Tile lengths are physical metres on the branch, spine and ward gallery.
+    // These light-receiving sheets sit below all existing raised route strips.
+    function floorPlates(group,x,y,z,width,depth,finish,tone=paint.floor){
+      const surf=cabinAsset(cabinAssets.materials,'passage/'+finish+'/'+tone.uuid,()=>{
+        const m=tone.clone(),maps=cabinFinish(finish);
+        m.map=maps.map;m.bumpMap=maps.bumpMap;m.roughnessMap=maps.roughnessMap;
+        m.bumpScale=maps.bumpScale/metresPerRenderUnit;m.roughness=.77;return m;
+      });
+      const g=cabinAsset(cabinAssets.geometries,'passage-plane/'+width+'/'+depth,()=>
+        cabinMetricUV(new T.PlaneGeometry(width,depth),1,1,1));
+      const sheet=new T.Mesh(g,surf);sheet.rotation.x=-Math.PI/2;
+      sheet.position.set(x,y,z);sheet.receiveShadow=true;group.add(sheet);
+    }
     function buildSpine(deck){
       const xs=deck.ports.map(p=>p.x);
       const lo=Math.min(...xs)-6.5,hi=Math.max(...xs)+6.5,mid=(lo+hi)/2;
@@ -430,6 +443,7 @@
       const h=crossSection.height;
       const g=deck.group;
       plate(g,paint.floor,mid,-.105,0,hi-lo,.21,crossSection.width);
+      floorPlates(g,mid,.002,0,hi-lo,crossSection.width,deck.id==='pod'||deck.id==='lower'?'tread':'deck');
       plate(g,paint.ceiling,mid,h+.10,0,hi-lo,.20,crossSection.width+.46);
       for(const s of [-1,1]){
         plate(g,paint.trim,mid,.007,s*2.40,hi-lo,.014,.45);
@@ -518,6 +532,7 @@
       floorRect(deck,x-w/2,x+w/2,s*halfAisle,door-s*.60);
       floorRect(deck,x-crossSection.doorWidth/2,x+crossSection.doorWidth/2,door-s*.70,door+s*.22);
       plate(g,paint.floor,x,-.105,mid,w,.21,D);
+      floorPlates(g,x,.002,mid,w,D,'deck');
       plate(g,paint.ceiling,x,h+.09,mid,w+.28,.18,D);
       for(const sign of [-1,1]){
         const wx=x+sign*(w/2+.09);
@@ -557,7 +572,26 @@
       buildSpine(deck);
       for(const room of rooms.filter(r=>r.level===deck.id))buildBranch(deck,room);
       for(const zone of crewBerths.byLevel.get(deck.id)||[]){
-        wardGroups.set(zone.id,installCrewWard(deck,zone,{plate,metal,paint,floorRect,wayfinding}));
+        const ward=installCrewWard(deck,zone,{plate,metal,paint,floorRect,wayfinding});
+        wardGroups.set(zone.id,ward);
+        floorPlates(ward,0,.0165,zone.depth/2,4.48,zone.depth-.28,'ribbed',paint.trim);
+        // Separate charging-bank sections can be isolated at their rear wall.
+        // Place the bus conductors and disconnect cabinets over the rack ends.
+        const wall=zone.depth-.08;
+        for(const side of [-1,1]){
+          const end=side*(zone.width/2-2.35),inner=side*4.8;
+          for(const dy of [0,.17])plate(ward,metal(0xa77a51),(end+inner)/2,3.47+dy,wall-.07,
+            Math.abs(end-inner),.072,.09);
+          for(let j=0;j<4;j++){
+            const x=inner+(end-inner)*(j+.5)/4;
+            plate(ward,paint.base,x,3.50,wall-.015,.21,.46,.14);
+            plate(ward,paint.ivory,x,2.14,wall-.075,1.15,1.40,.21);
+            plate(ward,paint.trim,x,2.16,wall-.204,.88,1.05,.055);
+            plate(ward,metal(deck.accent),x,2.40,wall-.246,.45,.13,.055);
+            plate(ward,paint.silver,x,2.03,wall-.259,.15,.34,.105);
+            plate(ward,paint.base,x,3.08,wall-.048,.13,.48,.12);
+          }
+        }
       }
     }
     const liftPlant=createLiftPlant({installation,lines:liftLines,halfAisle,floorRect,plate,metal,paint,wayfinding});

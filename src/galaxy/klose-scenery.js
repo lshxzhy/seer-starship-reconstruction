@@ -12,6 +12,33 @@ function kloseClearsCover(cover,x,z,r,height){
 }
 // All scenery is authored geometry. Sites share one tangent chart and leave
 // the original map connections open. The historic hunting rooms share a biome.
+// Scalloped, overlapping tufts give the blue moss and ochre crowns the soft
+// edge of the map paintings. Keep a single closed mesh per crown in both LODs.
+function kloseCanopyGeometry(T,near){
+  const slices=near?36:18,rows=near?14:8,p=[],rgb=[],ix=[];
+  for(let j=0;j<=rows;j++)for(let i=0;i<slices;i++){
+    const lat=Math.PI*j/rows,a=i*2*Math.PI/slices,s=Math.sin(lat),c=Math.cos(lat);
+    const lobe=.5+.5*Math.cos(6*a+2.3*c+.30*Math.sin(3*a));
+    const folds=.5+.5*Math.cos(12*a-3*c);
+    const w=s*(.78+.15*lobe+.045*folds+.020*Math.sin(3*a));
+    const skirt=s*s*(1-lobe);
+    p.push(w*Math.cos(a),.87*c-.12*skirt+.06*s*s*Math.cos(3*a+c),w*Math.sin(a));
+    const light=.66+.22*(c+1)/2+.09*lobe+.03*folds-.10*skirt;
+    rgb.push(light*.96,light,Math.min(1,light+.028));
+    if(j<rows){
+      const a0=j*slices+i,b0=j*slices+(i+1)%slices;
+      if(j)ix.push(a0,b0,a0+slices);
+      if(j<rows-1)ix.push(b0,b0+slices,a0+slices);
+    }
+  }
+  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));
+  g.setAttribute('color',new T.Float32BufferAttribute(rgb,3));g.setIndex(ix);g.computeVertexNormals();
+  for(let i=0;i<slices;i++){
+    g.attributes.normal.setXYZ(i,0,1,0);g.attributes.normal.setXYZ(rows*slices+i,0,-1,0);
+  }
+  return g;
+}
+
 function createKloseScenery(T, parent, surface) {
   const {sites,pools,height,frame,move,point,chart,trail,radius,padClear,groundCorrection}=surface;
   const color=hex=>new T.Color(hex).convertSRGBToLinear();
@@ -46,22 +73,65 @@ function createKloseScenery(T, parent, surface) {
   // A keeled leaf has its own bent midrib, so both moonlight and sunlight
   // reveal the blade, even without alpha textures.
   function leafGeometry() {
-    const p=[],index=[];
-    for (let j=0;j<=6;j++) {
-      const f=j/6,w=(.025+Math.sin(Math.PI*f)**.8)*.21;
-      p.push(-w,.56*Math.sin(f*Math.PI*.9)+.12*f,f,0,.67*Math.sin(f*Math.PI*.9)+.12*f,f,w,.56*Math.sin(f*Math.PI*.9)+.12*f,f);
-      if (j) {const a=3*(j-1);index.push(a,a+3,a+1,a+1,a+3,a+4,a+1,a+4,a+2,a+2,a+4,a+5);}
+    const p=[],rgb=[],index=[],across=[-1,-.36,0,.36,1];
+    for(let j=0;j<=10;j++){
+      const t=j/10,arch=Math.sin(t*Math.PI*.90),width=(.009+Math.sin(Math.PI*t)**.74)*.217;
+      for(const [i,u] of across.entries()){
+        const fold=1-Math.abs(u),curl=.062*t*t;
+        const h=(.54+.11*fold)*arch+.12*t+.023*u*Math.sin(5*t);
+        p.push(width*u+curl,h,t-.07*Math.abs(u)*Math.sin(t*Math.PI));
+        const vein=i===2?1:.72+.15*fold+.07*t+.04*Math.cos(5*t+u);
+        rgb.push(vein*.98,vein,Math.min(1,vein+.035));
+        if(i&&j){
+          const n=j*5+i;index.push(n-6,n-1,n,n-6,n,n-5);
+        }
+      }
     }
-    const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setIndex(index);g.computeVertexNormals();return g;
+    return meshData(p,rgb,index);
   }
-  shape('leaf',leafGeometry());
   const mushroomProfile=[[.02,.025],[.49,.02],[.88,.075],[1,.16],[.95,.32],[.78,.52],[.48,.69],[.12,.77],[0,.77]];
-  shape('cap',new T.LatheGeometry(mushroomProfile.map(([x,y])=>new T.Vector2(x,y)),32));
-  const crystalShape=new T.LatheGeometry([[.04,-.04],[.29,0],[.36,.16],[.31,.72],[0,1]].map(([x,y])=>new T.Vector2(x,y)),6);
+  // Six separate flat growth faces, with a narrow weathered band, chipped
+  // shoulder and an offset apex. Shared vertices within a face keep its
+  // strata planar; adjacent faces meet at a sharp crystal edge.
+  const crystalShape=(()=>{
+    const p=[],rgb=[],ix=[];
+    const bands=[[-.03,.19,.42],[.06,.33,.56],[.17,.35,.72],[.35,.344,.80],
+      [.365,.341,.61],[.379,.340,.86],[.59,.319,.91],[.601,.316,.75],[.616,.313,.92],[.74,.30,1],[1,0,1]];
+    for(let side=0;side<6;side++){
+      const first=p.length/3;
+      for(let j=0;j<bands.length;j++)for(let k=0;k<2;k++){
+        const [y,r,tone]=bands[j],a=(side+k)*tau/6,sheen=.90+.10*Math.cos(side*2.62);
+        const shoulder=j===9?.050*Math.sin(2*a+.4):0;
+        p.push(r*Math.cos(a)+.051*y*y,y+shoulder,r*Math.sin(a)-.035*y*y);
+        const v=tone*sheen;rgb.push(v,Math.min(1,v+.018*y),Math.min(1,v+.029*y));
+      }
+      for(let j=0;j<bands.length-1;j++){
+        const i=first+2*j;ix.push(i,i+2,i+1);if(j<bands.length-2)ix.push(i+1,i+2,i+3);
+      }
+    }
+    return meshData(p,rgb,ix);
+  })();
+  gloss.vertexColors=true;
   shape('crystal',crystalShape,gloss);
-  shape('coreCrystal',crystalShape,new T.MeshStandardMaterial({flatShading:true,roughness:.39,
+  shape('coreCrystal',crystalShape,new T.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:.39,
     metalness:.09,emissive:color('#09665d'),emissiveIntensity:.32}));
   const colored=new T.MeshStandardMaterial({vertexColors:true,roughness:.8,side:T.DoubleSide});
+  const mushroomCap=(()=>{
+    const p=[],rgb=[],ix=[],segments=64;
+    for(const [j,[r,y]] of mushroomProfile.entries())for(let k=0;k<segments;k++){
+      const a=k*tau/segments,gill=k%2,edge=j<=3?.025*Math.cos(9*a)*r:0;
+      const relief=j===1||j===2?.044*gill:0;
+      p.push((r+edge)*Math.cos(a),y+relief,(r+edge)*Math.sin(a));
+      const v=j<=2?.57+.23*gill:.84+.16*Math.sin(a+1.2)*r;
+      rgb.push(v,Math.min(1,v+.035),v*.93);
+      if(j){const i=(j-1)*segments+k,n=(j-1)*segments+(k+1)%segments;
+        ix.push(i,i+segments,n,n,i+segments,n+segments);}
+    }
+    return meshData(p,rgb,ix);
+  })();
+  shape('cap',mushroomCap,colored);
+  shape('leaf',leafGeometry(),colored);
+  shape('canopy',kloseCanopyGeometry(T,true),colored);
   function meshData(positions,colors,indices) {
     const g=new T.BufferGeometry();
     g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
@@ -99,7 +169,7 @@ function createKloseScenery(T, parent, surface) {
     return meshData(p,rgb,idx);
   }
   shape('sod',sodGeometry(),colored);
-  const distantShapes={round:new T.SphereGeometry(1,8,5),rock:new T.IcosahedronGeometry(1,0),
+  const distantShapes={round:new T.SphereGeometry(1,8,5),rock:new T.IcosahedronGeometry(1,0),canopy:kloseCanopyGeometry(T,false),
     cane:new T.CylinderGeometry(.79,1,1,5),twig:new T.CylinderGeometry(.62,1,1,5)};
   const temp=new T.Object3D(),axis=new T.Vector3(0,1,0),v=(x,y,z)=>new T.Vector3(x,y,z);
   const batches=[],pipi=[];
@@ -198,7 +268,7 @@ function createKloseScenery(T, parent, surface) {
         tendril([v(x,g+.36*s,z),v(x+.37*s*dx,g+.08*s,z+.37*s*dz),root],s*.135,bark);
         const end=v(top.x+s*.73*dx,top.y+(.16+seed()*.38)*s,top.z+s*.73*dz);
         tendril([mid,v(top.x+s*.32*dx,top.y-.39*s,top.z+s*.32*dz),end],s*.13,bark);
-        stamp('rock',end.x,end.y,end.z,s*.72,s*.32,s*.65,choose(crown),seed()*.22,a);
+        stamp('canopy',end.x,end.y,end.z,s*.72,s*.32,s*.65,choose(crown),seed()*.22,a);
         if(flame) leafFan(end.x,end.y+.18*s,end.z,.65*s,crown,6);
       }
       if(vineColor) {
@@ -240,6 +310,13 @@ function createKloseScenery(T, parent, surface) {
         const a=tau*k/8,l=(.45+seed()*.7)*s;
         stamp(amber?'crystal':'coreCrystal',x+.32*s*Math.cos(a),y-.12*s,z+.32*s*Math.sin(a),l,l*1.33,l,
           choose(palette),-.42*Math.sin(a),a,.37*Math.cos(a));
+      }
+      // Short side growths and matrix stones stay inside the same outcrop.
+      for(let k=0;k<5;k++){
+        const a=k*tau/5+.26,dx=Math.cos(a)*s,dz=Math.sin(a)*s;
+        stamp('rock',x+dx*.47,y+.012*s,z+dz*.46,.29*s,.14*s,.25*s,amber?'#876c51':'#445849',.17,a);
+        stamp(amber?'crystal':'coreCrystal',x+dx*.46,y+.052*s,z+dz*.46,.31*s,.34*s,.31*s,
+          palette[(k+1)%palette.length],-.36*Math.sin(a),a,.46*Math.cos(a));
       }
       if(s>.75)obstacle(x,z,.80*s);
     }
@@ -348,6 +425,13 @@ function createKloseScenery(T, parent, surface) {
       stamp('facet',x,g+.27,z,2.8,.54,2.65,'#986446');
       stamp('facet',x,g+.55,z,2.33,.15,2.30,'#9cbd46');
       stamp('rim',x,g+.64,z,1.74,1.72,.45,'#e6b975',Math.PI/2);
+      // The 550 wetland isle has a stone kerb around a recessed green basin.
+      stamp('round',x,g+.601,z,1.42,.064,1.31,'#637937');
+      stamp('round',x,g+.658,z,1.08,.046,1.05,'#9ea740');
+      for(let j=0;j<9;j++){
+        const a=j*tau/9;
+        stamp('rock',x+1.97*Math.cos(a),g+.48,z+1.86*Math.sin(a),.42,.22,.27,'#b0a164',0,-a);
+      }
     }
     for(const p of pools.filter(p=>p.id===site.id)) {
       const x=p.dx,z=p.dz,y=yAt(x,z),isCore=site.id==='core',isWet=site.id==='wetland';

@@ -110,6 +110,16 @@
           .035,.025,i%2?.07:.13,C.paper,{rx:.197,ry:a});
       }
     }
+    // Two projected tracks join the cyan plots on the sloping map surface.
+    // Anchoring their heights to the slab keeps every station on the glass.
+    const plot=(x,z)=>[mx+x,2.015-z*Math.tan(.197),mz-.39+z];
+    for(const track of [[[-2.10,.52],[-1.57,.27],[-1.20,-.18],[-.38,-.58],[.65,-.52],[1.26,-.07]],
+      [[-.75,1.14],[-.16,.69],[.63,.75],[1.16,.48],[1.77,.25]]]){
+      const stationPoints=track.map(([x,z])=>plot(x,z));
+      for(let j=1;j<stationPoints.length;j++)beam(stationPoints[j-1],stationPoints[j],.027,.031,C.cyan);
+      for(const p of stationPoints)ball(...p,.053,.032,.053,C.paper,{glow:.30});
+    }
+    kit.dial(mx-1.43,.73,mz+2.46,.32,C.green,.64);
     // Rear projection mast and small raised tactical reticle.
     cyl(mx+2.3,2.13,mz-1.6,.08,.12,1.35,C.steel);
     ball(mx+2.3,2.85,mz-1.6,.21,.21,.21,C.cyan,{glow:.5});
@@ -252,6 +262,17 @@
       cyl(-12.4+i*.65,1.9,-7.18,.15,.18,.65,C.paper);
       cyl(-12.4+i*.65,2.25,-7.18,.16,.16,.12,C.red);
     }
+    // A slide carriage and twin eyepieces complete the preparation station;
+    // the complete assembly stays on the bench inside its registered footprint.
+    const stand=-9.64;
+    box(stand,1.59,-7.94,.89,.12,.83,C.navy);
+    beam([stand+.26,1.66,-8.22],[stand+.26,2.48,-8.22],.13,.16,C.edge);
+    beam([stand+.26,2.46,-8.22],[stand-.14,2.48,-7.91],.14,.16,C.steel);
+    box(stand-.07,1.86,-7.85,.61,.055,.48,C.navy);
+    box(stand-.07,1.90,-7.85,.40,.017,.19,C.cyan);
+    cyl(stand-.14,2.26,-7.91,.12,.064,.28,C.steel);
+    for(const dx of [-.12,.12])
+      tube([stand-.14,2.47,-7.91],[stand-.14+dx,2.64,-7.79],.056,C.ink);
     for(const dx of [-2.1,0,2.1])box(-11.8+dx,.78,-6.71,1.75,.8,.07,C.steel);
     block(-11.8,-8,6.9,3.0);
     // Source's front-right cyan specimen platform, expanded to a walk-around bay.
@@ -402,6 +423,20 @@
     }
     for(const x of [-1.8,1.8])floorLine(x,3,.12,16,C.green);
     for(const z of [4.5,8])floorLine(0,z,3.5,.09,C.edge);
+    // The 2012 archive screenshot shows a stamped S inside a pale circular
+    // field on the green aisle. Its closed extruded outline stays flush.
+    const stampZ=6.35;
+    cyl(0,.052,stampZ,1.27,1.27,.015,0x719680,{segments:64});
+    torus(0,.061,stampZ,1.15,.022,0x456d57,{rx:Math.PI/2});
+    const letter=new kit.T.Shape();
+    letter.moveTo(.52,.54);letter.bezierCurveTo(-.08,.92,-.87,.65,-.68,.16);
+    letter.bezierCurveTo(-.53,-.16,.43,-.09,.39,-.34);
+    letter.bezierCurveTo(.36,-.52,-.16,-.52,-.53,-.27);letter.lineTo(-.70,-.51);
+    letter.bezierCurveTo(-.05,-.95,.77,-.66,.70,-.19);
+    letter.bezierCurveTo(.64,.24,-.33,.14,-.37,.34);
+    letter.bezierCurveTo(-.38,.53,.10,.59,.40,.35);letter.closePath();
+    const inlay=box(0,.062,stampZ,1,1,1,0x3c6550,{rx:-Math.PI/2});
+    inlay.geometry=new kit.T.ExtrudeGeometry(letter,{depth:.004,steps:1,curveSegments:12,bevelEnabled:false});
     // Low entrance-side return stands stay well clear of the unique centre door.
     for(const x of [-9,9]){
       box(x,.70,9.1,3.2,1.4,1.2,C.ivory);
@@ -697,6 +732,21 @@
       const t=j*1.7,p=[sx+Math.sin(t)*1.65,1.64+(j%3)*.20,sz+Math.cos(t)*1.65];
       ball(...p,.09,.09,.09,C.cyan,{glow:.48});
       if(j<4)beam(p,[sx+Math.sin(t+1.7)*1.65,1.64+((j+1)%3)*.20,sz+Math.cos(t+1.7)*1.65],.025,.025,C.cyan);
+    }
+    // Oblique horizon arcs above the projection carry a bearing scale on
+    // its rim, leaving the shallow silhouette of the original chart visible.
+    for(let k=0;k<36;k++){
+      const a=2*Math.PI*k/36,r=k%3?2.60:2.51;
+      beam([sx+r*Math.sin(a),1.50,sz+r*Math.cos(a)],
+        [sx+2.69*Math.sin(a),1.50,sz+2.69*Math.cos(a)],.021,.022,k%3?C.edge:C.amber);
+    }
+    for(const angle of [-.55,.68]){
+      const pts=[];
+      for(let j=0;j<=20;j++){
+        const a=Math.PI*j/20,x=2.25*Math.cos(a);
+        pts.push([sx+x*Math.cos(angle),1.51+.48*Math.sin(a),sz+x*Math.sin(angle)]);
+      }
+      pipe(pts,.017,C.cyan,{glow:.32,segments:6});
     }
     screen(sx,1.47,sz+2.36,1.85,.50,C.cyan,-.5);keys(sx,1.50,sz+2.73,1.6);
     block(sx,sz,7.4,7.4);

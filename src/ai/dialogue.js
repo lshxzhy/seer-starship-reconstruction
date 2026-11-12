@@ -272,7 +272,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
     }
     const context=readContext(),nearby=context.nearby;
     const availableCrew=new Map(knownCrew);
-    if(nearby?.id!==undefined&&nearby?.id!==null&&genericCharacter) {
+    if(nearby?.id!==undefined&&nearby?.id!==null&&!nearby.characterId&&genericCharacter) {
       const id=String(nearby.id);
       if(!availableCrew.has(id))availableCrew.set(id,{id,role:String(nearby.role||'船员'),zone:nearby.zone});
     }
@@ -284,7 +284,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
       const key='character:'+character.id;
       const label=[character.name,character.title].filter(Boolean).join(' · ')||character.id;
       targets.set(key,{key,character,label});
-      const option=make('option','',namedGroup,label+(character.aboard===false?'（远程）':''));option.value=key;
+      const option=make('option','',namedGroup,(nearby?.characterId===character.id?'附近 · ':'')+label+(character.aboard===false?'（远程）':''));option.value=key;
     }
     if(availableCrew.size&&genericCharacter) {
       const group=make('optgroup','',people);group.label='岗位船员通讯';
@@ -295,7 +295,7 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
         const option=make('option','',group,(isNearby?'附近 · ':'已联系 · ')+label);option.value=key;
       }
     }
-    const nearbyKey=nearby?.id!==undefined?'crew:'+String(nearby.id):'';
+    const nearbyKey=nearby?.characterId?'character:'+nearby.characterId:nearby?.id!==undefined?'crew:'+String(nearby.id):'';
     const local=characters.find(character=>character!==genericCharacter&&character.roomId===context.roomId&&character.aboard!==false);
     const desired=preferNearby&&targets.has(nearbyKey)?nearbyKey:
       targets.has(previous)?previous:local?'character:'+local.id:targets.keys().next().value||'';
@@ -596,6 +596,14 @@ ${scope} .sc-primary{background:#286278;border-color:#5997a9}
   updateControls();renderHistory();
   return {
     get isOpen(){return !panel.hidden;},
+    get local(){return localGame;},
+    openCharacter(id){
+      if(!boarded||!localGame||!SEER_DUTY_PROFILES[id])return;
+      const key='character:'+id;
+      if(catalogReady)selectTarget(key);
+      else currentKey=key;
+      openPanel();
+    },
     openSpirit(context,onClose=null){
       if(disposed||!context||!Number.isSafeInteger(context.speciesId)||context.speciesId<=0||!context.name)return false;
       if(!panel.hidden)closePanel(false);

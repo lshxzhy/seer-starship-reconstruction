@@ -13,7 +13,7 @@ function createWetlandEvolution(T,id){
   const root=new T.Group(),body=new T.Group();root.add(body);root.name='图鉴 '+id;
   const globe=new T.SphereGeometry(1,28,18),pointed=new T.ConeGeometry(1,1,12);
   const extraGeometry=[];
-  const palette=new Map(),wingParts=[],extras=[];
+  const palette=new Map(),wingParts=[],extras=[],eyesets=[],legs=[];
   const white=0xf5f3e5,dark=0x263148,gold=0xf8c934,green=0x69a664,cream=0xf5dfa0;
   function mat(c){
     if(!palette.has(c))palette.set(c,new T.MeshStandardMaterial({color:new T.Color(c).convertSRGBToLinear(),roughness:.52}));
@@ -31,19 +31,28 @@ function createWetlandEvolution(T,id){
   const tip=(a,b,r,c,flat)=>segment(a,b,r,c,true,flat);
   function eyes(y,z,x=.17,r=.08,colour=dark){
     for(const k of [-1,1]){
-      oval(k*x,y,z,r*.78,r,r*.37,colour,k*.08);
-      if(colour!==dark)oval(k*x,y+.09*r,z+r*.27,r*.49,r*.69,r*.17,dark,k*.08);
-      oval(k*x-r*.14,y+r*.32,z+r*.40,r*.22,r*.27,r*.12,white);
+      const socket=new T.Group();socket.position.set(k*x,y,z);socket.rotation.z=k*.08;body.add(socket);
+      socket.add(oval(0,0,-.04*r,r*.84,r*1.05,r*.31,dark));
+      socket.add(oval(0,0,0,r*.78,r,r*.37,colour));
+      if(colour!==dark)socket.add(oval(0,.09*r,r*.27,r*.49,r*.69,r*.17,dark));
+      socket.add(oval(-r*.14,r*.32,r*.40,r*.22,r*.27,r*.12,white));
+      eyesets.push(socket);
     }
+  }
+  function leg(hip,ankle,toe,radius,size,c,phase){
+    const pivot=new T.Group();pivot.position.set(...hip);body.add(pivot);
+    const shin=segment(hip,ankle,radius,c),foot=oval(...toe,...size,c);
+    // Reparent without changing the authored neutral stance.
+    for(const part of [shin,foot]){pivot.add(part);part.position.sub(pivot.position);}
+    legs.push({pivot,foot,phase});
   }
   function biped(c,h=.56){
     oval(0,h,0,.28,.34,.24,c);
-    for(const k of [-1,1]){segment([k*.15,.48,0],[k*.17,.12,.08],.09,c);oval(k*.17,.08,.13,.13,.075,.14,c);}
+    for(const k of [-1,1])leg([k*.15,.48,0],[k*.17,.12,.08],[k*.17,.08,.13],.09,[.13,.075,.14],c,k);
   }
   function paws(c,s=1){
     for(const k of [-1,1])for(const z of [-.26,.25]){
-      segment([k*.20,.49,z],[k*.28,.13,z+.05],.095*s,c);
-      oval(k*.28,.09,z+.1,.12*s,.08*s,.15*s,c);
+      leg([k*.20,.49,z],[k*.28,.13,z+.05],[k*.28,.09,z+.1],.095*s,[.12*s,.08*s,.15*s],c,k*Math.sign(z));
     }
   }
   function wings(y,z,span,c,low=false){
@@ -218,7 +227,14 @@ function createWetlandEvolution(T,id){
   }
   for(const w of wingParts)extras.push([w,w.rotation.z]);
   let clock=0;
-  return {root,update(dt){clock+=dt;body.position.y=.019*(1+Math.sin(clock*2.8));
-      for(const [w,angle] of extras)w.rotation.z=angle+(w.userData.motionSign||1)*.042*Math.sin(clock*3.7);},
+  let stride=0;
+  return {root,update(dt,effort=0){clock+=dt;stride+=dt*(4+5*effort);
+      body.position.y=legs.length?.009*effort*Math.abs(Math.sin(stride)):.019*(1+Math.sin(clock*2.8));
+      const blink=Math.min(1,.10+Math.abs(((clock+id*.37)%4.65)-.16)*8);
+      for(const socket of eyesets)socket.scale.y=blink;
+      for(const {pivot,foot,phase} of legs){
+        pivot.rotation.x=phase*.28*effort*Math.sin(stride);foot.rotation.x=-pivot.rotation.x*.76;
+      }
+      for(const [w,angle] of extras)w.rotation.z=angle+(w.userData.motionSign||1)*(.042+.10*effort)*Math.sin(clock*(3.7+2*effort));},
     dispose(){globe.dispose();pointed.dispose();for(const g of extraGeometry)g.dispose();for(const m of palette.values())m.dispose();}};
 }

@@ -1,5 +1,6 @@
 """Assemble the same scene as an embeddable fragment and a portable offline viewer."""
 from html import escape
+import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -25,12 +26,12 @@ ship = root / 'src' / 'ship'
 habitat = root / 'src' / 'habitat'
 population = root / 'src' / 'population'
 spirits = root / 'src' / 'spirits'
-scripts = [viewer/'start.js', spirits/'challenges.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
+scripts = [viewer/'start.js', viewer/'walking.js', spirits/'challenges.js', viewer/'orbit-sky.js', viewer/'lighting.js', ship/'livery.js', viewer/'primitives.js']
 scripts.extend(ship/name for name in ('hull-next.js','bridge-and-pod.js','machinery.js','scene-finish.js'))
 scripts.extend([habitat/'exterior-scale.js', ship/'interior.js', habitat/'registry.js', habitat/'kit.js'])
 scripts.extend(habitat/name for name in ('engineering.js','science.js','transporter.js','civic.js','crew.js'))
 scripts.extend([population/'berths.js',habitat/'lift-plant.js',habitat/'installation.js',habitat/'layout-record.js',
-                population/'robot.js',population/'population.js',population/'mining-drill.js',population/'player.js',
+                population/'robot.js',root/'src'/'ai'/'characters.json',population/'named-crew.js',population/'population.js',population/'mining-drill.js',population/'player.js',
                 population/'super-nono.js',population/'personal-flyer.js'])
 scripts.extend([viewer/'finish.js',root/'src'/'ai'/'dialogue.js',viewer/'personal-flight.js',
                 viewer/'locker-record.js',viewer/'pilot-locker.js',viewer/'wayfinding.js',viewer/'ship-map.js',
@@ -43,6 +44,10 @@ scripts.extend(spirits/name for name in ('catalog.json','safari-rules.js','syste
 scripts.append(viewer/'explore.js')
 def script_source(path):
     raw = path.read_text('utf-8')
+    if path.name == 'characters.json':
+        profiles = {row['id']: {key: row[key] for key in ('name', 'title', 'roomId', 'facts')}
+                    for row in json.loads(raw)['characters'] if row.get('aboard') and not row.get('generic')}
+        return 'const SEER_DUTY_PROFILES = ' + json.dumps(profiles, ensure_ascii=False).replace('<', r'\u003c') + ';'
     if path == spirits/'catalog.json':
         return '/* spirit-catalog:start */\nconst SEER_SPIRIT_DATA = '+raw.strip().replace('<',r'\u003c')+';\n/* spirit-catalog:end */'
     return raw

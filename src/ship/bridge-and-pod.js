@@ -109,6 +109,21 @@
     const framing=new T.BufferGeometry();
     framing.setAttribute('position',new T.Float32BufferAttribute(posts,3));
     framing.computeVertexNormals();mesh(framing,mats.edge,0,0,0,bridge);
+    // Short metal pressure clips lie across both edges of each glazed panel.
+    // Their facets share one draw, unlike a separate tube along every window.
+    const clips=[];
+    for(let bay=0;bay<22;bay++){
+      const a=2*Math.PI*(bay+.5)/22;
+      for(const level of [.012,.149]){
+        const strip=h=>[height+h,aft-.039,forwardReach+.044,depth*1.014];
+        const quad=[pointOnRim(strip(level),a-.035,.82),pointOnRim(strip(level+.016),a-.035,.82),
+          pointOnRim(strip(level+.016),a+.035,.82),pointOnRim(strip(level),a+.035,.82)];
+        for(const i of [0,1,2,0,2,3])clips.push(...quad[i]);
+      }
+    }
+    const clipsGeometry=new T.BufferGeometry();
+    clipsGeometry.setAttribute('position',new T.Float32BufferAttribute(clips,3));
+    clipsGeometry.computeVertexNormals();mesh(clipsGeometry,mats.steel,0,0,0,bridge);
     for (const sign of [-1, 1]) {
       insetStrip(bridge, mid, sign * .14, sign * .43, mats.cyan, .018, .82);
       insetStrip(bridge, mid, sign * .52, sign * 1.02, mats.blue, .016, .82);

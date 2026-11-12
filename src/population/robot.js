@@ -12,8 +12,9 @@
     const clamp = T.MathUtils.clamp;
     // The portrait graphics are drawn once per expression and shared across rigs.
     const faceMaterials=new Map();
-    function faceMaterial(frame) {
-      if (faceMaterials.has(frame)) return faceMaterials.get(frame);
+    function faceMaterial(frame,officer) {
+      const key=officer?officer+'/'+frame:frame;
+      if (faceMaterials.has(key)) return faceMaterials.get(key);
       const canvas=document.createElement('canvas');
       canvas.width=canvas.height=512;
       const ctx=canvas.getContext('2d');
@@ -32,7 +33,7 @@
         ctx.scale(1,opening);
         // Create the gradient in eye coordinates so the lower rim remains shaded.
         const white=ctx.createRadialGradient(-12,-32,9,0,2,81);
-        white.addColorStop(0,'#fffefa');white.addColorStop(.78,'#f6f6ed');
+        white.addColorStop(0,'#fffefa');white.addColorStop(.78,officer==='roger'?'#d6f3f1':'#f6f6ed');
         white.addColorStop(1,'#bec8ca');
         ctx.fillStyle=white;
         ctx.beginPath();ctx.ellipse(0,0,48,82,0,0,TAU);ctx.fill();
@@ -51,10 +52,24 @@
         }
         ctx.restore();
       }
+      // The captain peers down from under his cap; Shawn's left optical pane
+      // is drawn across the same moving eye instead of hiding it behind an opaque patch.
+      if(officer==='roger'||officer==='raymond'){
+        ctx.fillStyle='#141920';
+        ctx.beginPath();ctx.moveTo(18,20);ctx.lineTo(238,20);ctx.lineTo(231,69);
+        ctx.quadraticCurveTo(162,80,128,officer==='roger'?103:92);
+        ctx.quadraticCurveTo(95,80,25,68);ctx.closePath();ctx.fill();
+      }else if(officer==='shawn'){
+        ctx.beginPath();ctx.moveTo(151,0);ctx.lineTo(256,0);ctx.lineTo(256,256);ctx.lineTo(112,256);ctx.closePath();
+        const lens=ctx.createLinearGradient(130,0,225,256);
+        lens.addColorStop(0,'rgba(7,73,102,.72)');lens.addColorStop(.57,'rgba(9,150,164,.58)');lens.addColorStop(1,'rgba(91,218,236,.43)');
+        ctx.fillStyle=lens;ctx.fill();ctx.strokeStyle='#394d5a';ctx.lineWidth=4;ctx.stroke();
+        ctx.fillStyle='rgba(98,241,255,.72)';ctx.beginPath();ctx.ellipse(194,76,10,21,-.18,0,TAU);ctx.fill();
+      }
       const map=new T.CanvasTexture(canvas);
       map.encoding=T.sRGBEncoding;
       const material=new T.MeshBasicMaterial({map,toneMapped:false});
-      faceMaterials.set(frame,material);
+      faceMaterials.set(key,material);
       return material;
     }
     const skinMaterials = {
@@ -86,10 +101,11 @@
       return suitMaterials.get(key);
     }
     const templates = new Map();
-    function template(simple) {
-      if (templates.has(simple)) return templates.get(simple);
+    function template(simple,officer=false) {
+      const variant=officer?'officer':simple?'crew':'pilot';
+      if (templates.has(variant)) return templates.get(variant);
       const parts = new Map(), primitives = [];
-      const segments = simple ? 16 : 48;
+      const segments = simple ? 24 : 48;
       function profile(points, radialSegments=segments) {
         const geometry = new T.LatheGeometry(points.map(([radius,y]) => new T.Vector2(radius,y)),radialSegments);
         primitives.push(geometry);
@@ -171,10 +187,12 @@
         [.082,.075],[.099,.081],[0,.081]]);
       const button = profile([[0,0],[.170,0],[.200,.014],[.215,.11],[.209,.125],
         [.184,.137],[0,.137]]);
-      coreShape(stem,0,.483,0,graphite);
-      cast('core',button,0,.563,0,1,1.33,1,paint);
-      cast('core',drum,0,.570,0,.174,.013,.174,dark);
-      if (!simple) {
+      if(!officer){
+        coreShape(stem,0,.483,0,graphite);
+        cast('core',button,0,.563,0,1,1.33,1,paint);
+        cast('core',drum,0,.570,0,.174,.013,.174,dark);
+      }
+      if (!simple&&!officer) {
         const socketLip=profile([[.078,0],[.104,0],[.112,.005],[.111,.012],[.100,.017],[.078,.017]]);
         coreShape(socketLip,0,.487,0,0x696d70);
         const capInset=profile([[.143,0],[.154,0],[.155,.002],[.153,.004],[.145,.004],[.143,.002]]);
@@ -196,6 +214,16 @@
         for(const [dy,dz,height] of [[.010,-.018,.221],[.066,.062,.075],[-.071,.007,.070]])
           cast('core',cube,sign*.563,dy,.031+sign*dz,.007,height,.029,graphite,null,-sign*.55);
       }
+
+      // Removable rear access plate follows the painted shell rather than
+      // adding a backpack to the round silhouette of the registration sprite.
+      const rearLip=profile([[.205,0],[.228,.001],[.232,.007],[.228,.012],[.206,.013],[.205,0]]);
+      cast('core',rearLip,0,-.02,.510,1,.70,.84,bronze,null,PI/2);
+      const rearCover=new T.SphereGeometry(1,simple?18:36,simple?10:18);
+      primitives.push(rearCover);
+      cast('core',rearCover,0,-.02,.473,.209,.177,.086,paint);
+      for(const sign of [-1,1])
+        cast('core',cube,sign*.148,-.02,.537,.034,.008,.010,graphite,null,0,sign*.33);
 
       const faceY = faceAxisY;
       const bezel = profile([[.339,-.130],[.374,-.13],[.409,-.097],[.419,-.056],
@@ -223,7 +251,7 @@
         primitives.push(cover);
         cast('core',cover,0,faceY,glassZ,glassRadius,glassRadius,glassDepth+.031,0x12181b,'glass');
       }
-      const screen=new T.SphereGeometry(1,simple?12:48,simple?8:32,PI,PI);
+      const screen=new T.SphereGeometry(1,simple?22:48,simple?14:32,PI,PI);
       const pos=screen.getAttribute('position'), uv=screen.getAttribute('uv');
       for (let i=0;i<pos.count;i++) uv.setXY(i,(1-pos.getX(i))/2,(1+pos.getY(i))/2);
       screen.scale(glassRadius,glassRadius,glassDepth);
@@ -252,6 +280,11 @@
         cast(foot,drum,0,-.003,0,.103,.040,.105,bronze);
         cast(foot,drum,0,.020,0,.084,.014,.086,gold);
         cast(foot,cube,-sign*.073,-.104,-.285,.074,.041,.044,bronze,null,-.42,0,0);
+        if(!simple){
+          for(let j=0;j<3;j++)
+            cast(foot,cube,sign*.177,-ankleY+.029,-.145+j*.074,.030,.011,.032,graphite);
+          cast(foot,cube,0,-.093,.159,.105,.026,.023,rubber,null,.18);
+        }
       }
 
       const entries=[];
@@ -266,7 +299,7 @@
       }
       for (const geometry of primitives) geometry.dispose();
       entries.push({bone:'core',family:'screen',geometry:screen});
-      templates.set(simple,entries);
+      templates.set(variant,entries);
       return entries;
     }
 
@@ -314,8 +347,9 @@
       const rig=skeleton();
       rig.root.name=options.name||'赛尔机器人';
       rig.expression='neutral';
+      rig.portrait=['roger','raymond','shawn'].includes(options.officer)?options.officer:null;
       rig.faceFrame='neutral';
-      for(const entry of template(options.simple===true)){
+      for(const entry of template(options.simple===true,Boolean(options.officer))){
         const m=entry.family==='paint'?suitMaterial(color,options.simple===true):skinMaterials[entry.family];
         const mesh=new T.Mesh(entry.geometry,m);
         const opaqueBody=entry.family!=='glass' && entry.family!=='screen';
@@ -323,6 +357,7 @@
         mesh.receiveShadow=opaqueBody;
         if (entry.family==='screen') {
           mesh.name='赛尔面盘 · 曲面显示屏';
+          mesh.material=faceMaterial('neutral',rig.portrait);
           rig.screen=mesh;
         }
         rig.bones[entry.bone].add(mesh);
@@ -331,7 +366,7 @@
     }
     function showFaceFrame(rig,frame){
       if (rig.faceFrame===frame) return;
-      rig.screen.material=faceMaterial(frame);
+      rig.screen.material=faceMaterial(frame,rig.portrait);
       rig.faceFrame=frame;
     }
     function setExpression(rig,expression){

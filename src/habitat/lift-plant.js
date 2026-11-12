@@ -90,6 +90,10 @@
       plate(g,paint.floor,x,-.09,(halfAisle+lip)/2,3.08,.18,lip-halfAisle+.13);
       plate(g,rail,x,-.024,lip+.025,opening+.15,.05,.13);
       plate(g,safety,x,.007,lip-.19,opening,.012,.11);
+      // The door leaves slide side-to-side. Twin channels and the central
+      // bridge plate show where the car sill meets the fixed landing sill.
+      for(const off of [-.035,.035])
+        plate(g,rubber,x,.003,lip+.026+off,opening+.10,.008,.018);
       for(let i=0;i<6;i++)plate(g,rubber,x-1.10+i*.43,.017,lip-.19,.16,.012,.11,-.20);
       for(const side of [-1,1]){
         plate(g,paint.base,x+side*2.14,1.51,lip+.02,1.58,3.05,.29);
@@ -139,6 +143,15 @@
       C(enamel,0,3.0,2.44,4.41,.34,.15);
       for(const x of [-2.09,0,2.09])C(enamel,x,1.83,2.43,.1,2.20,.14);
       C(rail,0,.69,2.33,4.15,.066,.072);
+      // Between the rear mullions, mount the two cable inspection covers
+      // below the windows. Maintenance and passenger cars use their own trim.
+      for(const side of [-1,1]){
+        const x=side*1.15;
+        C(rubber,x,.37,2.355,1.48,.48,.07);
+        C(lineId==='service'?brass:enamel,x,.37,2.304,1.39,.40,.041);
+        for(const dx of [-.59,.59])roller(car,rail,x+dx,.37,2.278,.044,.032,'z');
+        for(let i=0;i<5;i++)C(night,x-.30+i*.15,.36,2.274,.075,.14,.032);
+      }
       C(blue,0,3.03,front,4.38,.25,.22);
       wayfinding(car,line.carName,0,3.04,front+.12,2.42,.18,0,'#efc770');
       // A cabinet on the front return carries the floor controls. Large

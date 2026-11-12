@@ -49,7 +49,10 @@ function createSpiritEscort(T,world,metre=1){
         goal=candidate;break;
       }
     }
-    if(!goal){anchor.visible=false;foot=null;return false;}
+    if(!goal){
+      if(!foot){anchor.visible=false;return false;}
+      goal=trail.find(point=>direction(foot,point).distance>.32&&clear(point,radius))||foot;
+    }
     if(!foot){foot={...goal};heading=face+Math.PI;stalled=0;}
     if(!clear(foot,radius)){anchor.visible=false;foot=null;return false;}
     let target=goal;
@@ -62,20 +65,20 @@ function createSpiritEscort(T,world,metre=1){
       }
     }
     const vector=direction(foot,target);
-    const distance=vector.distance,step=Math.min(distance,8.6*dt,distance*(1-Math.exp(-8*dt)));
+    const distance=vector.distance;
+    const look=distance>.07?vector:direction(foot,owner);
+    const aim=Math.atan2(look.x,look.z),bend=Math.atan2(Math.sin(aim-heading),Math.cos(aim-heading));
+    heading+=T.MathUtils.clamp(bend,-9*dt,9*dt);turntable.rotation.y=heading;
+    const alignment=Math.max(0,Math.cos(aim-heading));
+    const step=Math.min(distance,12.5*dt,distance*(1-Math.exp(-9*dt)))*alignment*alignment;
     const previous=foot;
     if(step>.002){
-      const next=move(foot,vector.x*step/distance,vector.z*step/distance);
+      const next=move(foot,Math.sin(heading)*step,Math.cos(heading)*step);
       if(clear(next,radius))foot=next;
     }
     const delta=direction(previous,foot);
     if(distance>.45&&delta.distance<step*.4)stalled+=dt;
     else if(target===goal)stalled=0;
-    if(direction(foot,owner).distance>8){hide();return false;}
-    const glance=delta.distance>.004?delta:direction(foot,owner);
-    const aim=Math.atan2(glance.x,glance.z);
-    const bend=Math.atan2(Math.sin(aim-heading),Math.cos(aim-heading));
-    heading+=bend*(1-Math.exp(-11*dt));turntable.rotation.y=heading;
     const effort=dt?Math.min(1,delta.distance/(dt*3.6)):0;
     stride+=delta.distance*8;
     gait.position.y=stepHeight*Math.abs(Math.sin(stride))*effort;

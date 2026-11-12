@@ -386,6 +386,16 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
       for(const sx of [-1,1])plate([[-.3,1.23],[-.3,3.4],[.08,3.64],[.47,2.9],[.52,1.3]],
         .6,x+sx*1.91,0,-5.97,P.brown,'边机折面');
       screen(x,3.46,-5.03,1.5,.63,s<0?'资源转换':'支路监控');
+      // Service take-offs emerge from the two cylindrical conversion banks.
+      // The copper line and isolating wheel run above the old service plinth.
+      box(x,2.27,-5.12,1.46,1.08,.22,P.trim);
+      kit.dial(x,2.28,-4.96,.43,P.cyan,s<0?.41:.66);
+      pipe([[x+.48,2.04,-5.14],[x+.76,1.94,-4.93],[x+.82,1.40,-5.02]],.055,0xaa8659);
+      torus(x+.82,1.46,-4.96,.22,.038,P.brown);
+      for(let j=0;j<3;j++){
+        const a=j*Math.PI*2/3;
+        beam([x+.82,1.46,-4.96],[x+.82+.20*Math.cos(a),1.46+.20*Math.sin(a),-4.96],.029,.03,P.trim);
+      }
       pipe([[x,7.5,-7.6],[x,11.65,-7.6],[s*8.1,11.65,-7.6],
         [s*3.4,11.2,-6.9],[s*2.6,10.8,-6.9]],.27,C.steel);
       socket([s*2.6,10.8,-6.9],[s*.8,.4,0],.27);
@@ -486,6 +496,18 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     arm([[bx+2.3,1.5,bz-2.3],[bx+2.8,3.5,bz-2.3],[bx+1.4,4.2,bz-1.4],[bx+.7,3.4,bz-.2]],C.ivory);
     cyl(bx+.7,3.17,bz-.2,.3,.18,.35,C.steel);
     cyl(bx+.7,2.94,bz-.2,.17,.17,.1,C.cyan,{glow:.3});
+    // Fit-out on the repair cradle: a clamping slide with opposing V-blocks
+    // and a hand screw. It belongs to the top of the existing lift bed.
+    for(const s of [-1,1]){
+      box(bx+s*.83,1.84,bz+.65,.23,.06,2.32,C.edge);
+      for(const dz of [-.77,.77]){
+        const xx=bx+s*.73,zz=bz+.65+dz;
+        box(xx,1.94,zz,.38,.16,.44,C.navy);
+        box(xx-s*.12,2.06,zz,.13,.18,.42,C.steel,{rz:-s*.32});
+        cyl(xx+s*.30,1.97,zz,.066,.066,.39,C.edge,{rz:Math.PI/2,segments:16});
+        cyl(xx+s*.50,1.97,zz,.12,.12,.075,C.blue,{rz:Math.PI/2,segments:12});
+      }
+    }
     screen(bx,1.1,bz+3.79,2.5,.54,'维修升降台');
     pipe([[bx+2.35,1.4,bz-3],[bx+2.35,.52,bz-4.3],[bx+2.6,.52,bz-5.1]],.11,C.dark);
     block(bx,-4.2,6.7,10.6);
@@ -722,6 +744,14 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     box(mx,1.56,mz,1.26,1.35,1.35,C.blue);
     cyl(mx,1.8,mz+.72,.37,.37,.24,C.dark,{rx:Math.PI/2});
     torus(mx,1.8,mz+.86,.33,.07,C.cyan,{glow:.25});
+    // Recessed three-leaf chuck on the blue bench tool seen in W05/W06.
+    cyl(mx,1.8,mz+.885,.238,.238,.07,C.steel,{rx:Math.PI/2,segments:32});
+    cyl(mx,1.8,mz+.93,.13,.13,.04,C.dark,{rx:Math.PI/2,segments:24});
+    for(let j=0;j<3;j++){
+      const a=j*Math.PI*2/3;
+      box(mx+.175*Math.sin(a),1.8+.175*Math.cos(a),mz+.965,.082,.15,.08,C.edge,{rz:-a});
+    }
+    kit.dial(mx+.43,2.04,mz+.70,.15,C.cyan,.57);
     box(mx,2.29,mz-.12,.9,.12,1.06,C.edge);
     screen(mx,1.12,mz+.86,1.02,.36,'原型工装');
     block(mx,mz,3.4,3.4);

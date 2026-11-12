@@ -47,6 +47,12 @@
     part(body,'下沿青色导光条',inset(0,.04,1.335,1.06,1.023,.91,0,.422),aqua);
     part(body,'弧面墨色屏',inset(0,.057,1.305,1.015,1.036,.91,0,.373),glass);
     part(body,'面屏左上柔光',inset(-.53,.59,.205,.202,1.046,1,.36),reflection);
+    // The unseen rear service cover follows the pearl sphere without changing its outline.
+    const seam=new T.MeshStandardMaterial({color:0xb5cbce,metalness:.16,roughness:.42});
+    part(body,'后壳同色检修边',inset(Math.PI,-.19,.68,.55,1.008,.83),seam);
+    part(body,'检修盖',inset(Math.PI,-.19,.66,.53,1.014,.83),shell);
+    for(const side of [-1,1])
+      part(body,'翼根内缘',inset(side*2.36,.47,.129,.067,1.010,.79,side*.24),seam);
 
     // Project the strokes onto the visor. A blink changes a stroke's shape
     // in angular coordinates so its centre stays on the curved glass.
@@ -140,9 +146,33 @@
     const ease=T.MathUtils.smoothstep;
     const glances=[[0,0],[-.14,.05],[0,.02],[.12,-.07],[0,0],[.08,.085],[0,0]];
     let sampleDue=0,formation=null,retracing=false,stalled=0,previousCar=null;
+    let ownerX=0,ownerZ=0,ownerSpeed=0;
     const trail=[];
     const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
-    function formationPoint(p,yaw,style,mounted){
+    function clearsVisitor(from,to,person,clearance){
+      const was=(from.x-person.x)**2+(from.z-person.z)**2,next=(to.x-person.x)**2+(to.z-person.z)**2;
+      return next>=clearance*clearance||next>=was;
+    }
+    function visitorSlot(p,officer){
+      const dx=officer.x-p.x,dz=officer.z-p.z,d=Math.hypot(dx,dz);
+      if(d<.05)return current||p;
+      const fx=dx/d,fz=dz/d,rx=-fz,rz=fx,room=habitat.location(p).roomId;
+      let best=null,bestGap=-Infinity;
+      for(const [side,along] of [[1.52,.26],[-1.52,.26],[1.14,-.82],[-1.14,-.82],[0,-1.45]]){
+        const x=rx*side+fx*along,z=rz*side+fz*along;
+        const q=habitat.move(p,x,z,radius,(a,b)=>clearsVisitor(a,b,officer,1.10)),sx=q.x-p.x,sz=q.z-p.z;
+        if(habitat.location(q).roomId!==room||Math.hypot(sx,sz)<.86)continue;
+        // Preserve enough angle for both the hovering sphere and the officer's
+        // face. A simple point-ray check still lets a wing cover half a visor.
+        const depth=fx*sx+fz*sz,lateral=Math.abs(rx*sx+rz*sz);
+        const gap=depth<=-.57?1.0:lateral-.75-.67*Math.max(0,depth)/d;
+        if(gap>=0&&Math.hypot(sx-x,sz-z)<.14)return q;
+        if(gap>bestGap){best=q;bestGap=gap;}
+      }
+      return best||current||p;
+    }
+    function formationPoint(p,yaw,style,mounted,officer=null){
+      if(officer)return visitorSlot(p,officer);
       const c=Math.cos(yaw),s=Math.sin(yaw),eye=style==='eye';
       const aspect=Math.max(.30,camera.aspect);
       const side=mounted?2.25:(eye?Math.min(1.22,.92+.16*aspect):1.20);
@@ -164,6 +194,7 @@
     }
     function arrive(p,yaw=0){
       current=formationPoint(p,yaw,'follow',false);goal=current;
+      ownerX=p.x;ownerZ=p.z;ownerSpeed=0;
       previousCar=null;
       hover=1;heading=yaw+Math.PI;body.rotation.set(0,heading,0,'YXZ');salute=0;
       effort=lean=bank=gazeX=gazeY=0;
@@ -186,6 +217,7 @@
     }
     function restoreInCar(p,yaw,cabin){
       current=cabinSlot(p,cabin);previousCar={...cabin.center};goal=current;
+      ownerX=p.x;ownerZ=p.z;ownerSpeed=0;
       heading=yaw+Math.PI;hover=1.02;root.visible=true;trail.length=0;formation=null;
       effort=lean=bank=gazeX=gazeY=0;
     }
@@ -209,35 +241,55 @@
       trail.length=0;retracing=false;formation=null;
       drawCompanion(p,yaw,dt,style,0,0,bounds.height,current.x-wasX,current.z-wasZ);
     }
-    function update(p,yaw,dt,style='follow',mounted=false,rideHeight=0,cabin=null){
+    function update(p,yaw,dt,style='follow',mounted=false,rideHeight=0,cabin=null,officer=null){
       if(!current)return;
       dt=T.MathUtils.clamp(dt,0,.10);
-      if(cabin){updateInCar(p,yaw,dt,style,cabin);return;}
+      if(cabin){ownerX=p.x;ownerZ=p.z;ownerSpeed=0;updateInCar(p,yaw,dt,style,cabin);return;}
       previousCar=null;
       if(current.level!==p.level||Math.abs(current.y-p.y)>.8)arrive(p,yaw);
+      if(dt>0)ownerSpeed=damp(ownerSpeed,Math.hypot(p.x-ownerX,p.z-ownerZ)/dt,9,dt);
+      ownerX=p.x;ownerZ=p.z;
       sampleDue-=dt;
       if(!trail.length||distance(trail[trail.length-1],p)>.40)trail.push({...p});
       // Keep recent corners while the companion is catching up.
       if(trail.length>128)trail.shift();
-      if(!formation||formation.style!==style||formation.mounted!==mounted||Math.abs(formation.aspect-camera.aspect)>.03||
+      if(!formation||formation.style!==style||formation.mounted!==mounted||
+        formation.officerX!==officer?.x||formation.officerZ!==officer?.z||Math.abs(formation.aspect-camera.aspect)>.03||
         (sampleDue<=0&&(distance(formation,p)>.07||Math.abs(formation.yaw-yaw)>.035))){
-        goal=formationPoint(p,yaw,style,mounted);
-        formation={x:p.x,z:p.z,yaw,style,mounted,aspect:camera.aspect};sampleDue=.082;
+        goal=formationPoint(p,yaw,style,mounted,officer);
+        formation={x:p.x,z:p.z,yaw,style,mounted,officerX:officer?.x,officerZ:officer?.z,aspect:camera.aspect};
+        sampleDue=.082;
       }
       let target=goal;
       if(retracing){
         while(trail.length>1&&distance(current,trail[0])<.36)trail.shift();
         target=trail[0]||goal;
-        if(distance(current,p)<.66){retracing=false;stalled=0;target=goal;}
+        if(distance(current,p)<(officer?1.65:.66)){retracing=false;stalled=0;target=goal;}
       }else if(trail.length>1){
         // Trim corners already reached. Keep a chain behind the owner for
         // doorways where a direct line from the escort position hits a jamb.
         while(trail.length>1&&distance(current,trail[1])<1.28)trail.shift();
       }
-      const remaining=distance(current,target),step=Math.min(remaining,(mounted?16:12)*dt,remaining*(1-Math.exp(-10*dt)));
+      if(officer&&!retracing){
+        // When swapping sides, pass behind the visitor rather than through their chassis.
+        const tx=target.x-current.x,tz=target.z-current.z,span=tx*tx+tz*tz;
+        const t=span>.04?((p.x-current.x)*tx+(p.z-current.z)*tz)/span:0;
+        if(t>.03&&t<.97&&Math.hypot(current.x+tx*t-p.x,current.z+tz*t-p.z)<.7){
+          const d=distance(p,officer)||1,fx=(officer.x-p.x)/d,fz=(officer.z-p.z)/d;
+          const side=Math.sign((current.x-p.x)*-fz+(current.z-p.z)*fx)||1;
+          const via=habitat.move(p,-fx*1.22-fz*side*.75,-fz*1.22+fx*side*.75,radius);
+          if(distance(via,p)>.85)target=via;
+        }
+      }
+      const remaining=distance(current,target);
+      // At full glider speed the escort still traces the pilot's turns.
+      // The arrival cap eases the last metre without cutting a corner.
+      const pace=mounted?Math.max(16,ownerSpeed*1.25+2):Math.max(12,ownerSpeed+2);
+      const step=Math.min(remaining,pace*dt,remaining*(1-Math.exp(-10*dt)));
       const wasX=current.x,wasZ=current.z;
       if(step>.001){
-        const q=habitat.move(current,(target.x-current.x)*step/remaining,(target.z-current.z)*step/remaining,radius);
+        const allow=officer?(a,b)=>clearsVisitor(a,b,officer,1.10)&&clearsVisitor(a,b,p,.70):null;
+        const q=habitat.move(current,(target.x-current.x)*step/remaining,(target.z-current.z)*step/remaining,radius,allow);
         const travel=distance(current,q);current=q;
         stalled=remaining>.44&&travel<step*.36?stalled+dt:0;
         if(stalled>.22){

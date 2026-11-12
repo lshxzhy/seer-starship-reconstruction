@@ -114,6 +114,7 @@
     const workByLevel = new Map();
     const tasks = [];
     const roomRoutes = new Map();
+    const officerRigs=new Map();
     const clockStart = 37.0;
     const nominalPlayer = habitat.byId.get('teleport');
     let lastPlayer = {x:nominalPlayer.door[0],y:nominalPlayer.door[1],z:nominalPlayer.door[2]+nominalPlayer.side*2.25,level:nominalPlayer.level,yaw:nominalPlayer.yawRad};
@@ -155,9 +156,9 @@
     // An injective shuffle of 1..11999 spreads the watch across the berth
     // decks; 421 and 11999 are coprime. Zero is reserved for the pilot.
     let nextAssignment=0;
-    function post(level,role,zone,position) {
+    function post(level,role,zone,position,officer=null) {
       const i=1+((nextAssignment++*421+493)%11999);
-      const task={level,role,zone,position,index:i};
+      const task={level,role,zone,position,index:i,officer};
       crew[i].task=task;
       tasks.push(task);
       listFor(workByLevel,level).push(i);
@@ -218,6 +219,18 @@
       // Prefer one mid-ground workstation visible from the entrance, then
       // spread the other duties throughout the ship-local room.
       const chosen=[];
+      // Reserve a single accessible work position beside the documented station.
+      // Use the same connected component as the room's other standing and walking jobs.
+      const officer=namedCrewPosts[room.id];
+      if(officer&&open.length){
+        let best=null,distance=Infinity;
+        for(const n of open){
+          const x=xAt(n%nx),z=zAt(Math.floor(n/nx)),d=(x-officer.x)**2+(z-officer.z)**2;
+          if(d>=distance||!clear(x-.28,z-.28,x+.28,z+.28))continue;
+          best={x,end:x,z};distance=d;
+        }
+        if(best)chosen.push(best);
+      }
       while(chosen.length<count && candidates.length){
         let best=-1,score=-Infinity;
         for(let j=0;j<candidates.length;j++){
@@ -245,16 +258,24 @@
     const makePoint=(x,y,z,level,yaw=0,speed=0,phase=0)=>({x,y,z,level,yaw,speed,phase});
     function roomPose(room,count,slot,i,seconds) {
       const line=lanesFor(room,count)[slot],len=line.end-line.x;
-      const pace=.85+hash(i+548)*.48,travel=len/pace,dwell=2.5+hash(i+332)*4;
+      const orientation=room.side===1?-1:1;
+      if(slot===0&&namedCrewPosts[room.id]){
+        const x=room.center[0]+orientation*line.x,z=room.center[2]+orientation*line.z;
+        const yaw=Math.atan2(x-room.door[0],z-room.door[2]);
+        return makePoint(x,room.center[1],z,room.level,yaw);
+      }
+      const pace=.85+hash(i+548)*.48,ramp=Math.min(.38,len/pace*.5);
+      const travel=len/pace+ramp,dwell=2.5+hash(i+332)*4;
       const period=2*(travel+dwell),t=(seconds+hash(i+925)*period)%period;
       const outward=t<travel+dwell,leg=outward?t:t-travel-dwell;
-      const walkingSeconds=Math.min(leg,travel),delta=walkingSeconds*pace;
-      const orientation=room.side===1?-1:1;
+      const moving=Math.min(leg,travel),left=travel-moving;
+      const delta=!ramp?0:moving<ramp?pace*moving*moving/(2*ramp):
+        left<ramp?len-pace*left*left/(2*ramp):pace*(moving-ramp*.5);
       const x=room.center[0]+orientation*(outward?line.x+delta:line.end-delta);
       const direction=(outward?1:-1)*orientation;
-      const yaw=-direction*Math.PI/2+Math.PI*Math.min(1,Math.max(0,leg-travel)/dwell);
-      const speed=leg<travel?pace:0;
-      return makePoint(x,room.center[1],room.center[2]+orientation*line.z,room.level,yaw,speed,seerRobots.phaseStep(pace,walkingSeconds)+slot);
+      const yaw=-direction*Math.PI/2+Math.PI*T.MathUtils.smoothstep(leg-travel,.1,dwell-.1);
+      const speed=ramp?pace*Math.min(1,moving/ramp,left/ramp):0;
+      return makePoint(x,room.center[1],room.center[2]+orientation*line.z,room.level,yaw,speed,seerRobots.phaseStep(pace,delta/pace)+slot);
     }
     const roles={power:'动力巡检',machine:'机修技师',workshop:'试制员',teleport:'传送值班员',
       instructor:'训练教员',captain:'舰桥值班员',laboratory:'实验技术员',archives:'资料管理员',
@@ -262,17 +283,30 @@
     for(const r of habitat.rooms){
       if(!roles[r.id])continue;
       const count=Math.max(3,Math.min(11,Math.round(r.spec.width*r.spec.depth/135)));
-      for(let slot=0;slot<count;slot++)
-        post(r.level,roles[r.id],r.name,(i,t)=>roomPose(r,count,slot,i,t));
+      for(let slot=0;slot<count;slot++){
+        const officer=slot===0?namedCrewPosts[r.id]:null;
+        post(r.level,officer?.role||roles[r.id],r.name,(i,t)=>roomPose(r,count,slot,i,t),officer);
+      }
     }
 
     // All four segments of a corridor circuit are inside the wheelhouse
     // floor polygons. The regular headway keeps opposing traffic in lanes.
     function circuit(deck,caption,points,speed,headway){
-      const segments=points.map(([x,z],j)=>{
+      const sides=points.map(([x,z],j)=>{
         const [xx,zz]=points[(j+1)%points.length];
-        return {x,z,dx:xx-x,dz:zz-z,length:Math.hypot(xx-x,zz-z)};
+        const length=Math.hypot(xx-x,zz-z);
+        return {x,z,dx:(xx-x)/length,dz:(zz-z)/length,length};
       });
+      // Corridors form rectangular tracks. Round each corner on the inside,
+      // keeping the tangent and the distance clock continuous through a turn.
+      const radii=sides.map((side,i)=>Math.min(.58,.23*side.length,.23*sides[(i+3)%4].length));
+      const segments=[];
+      for(let i=0;i<sides.length;i++){
+        const s=sides[i],j=(i+1)%sides.length,n=sides[j],r=radii[j];
+        segments.push({x:s.x+s.dx*radii[i],z:s.z+s.dz*radii[i],dx:s.dx,dz:s.dz,length:s.length-radii[i]-r});
+        segments.push({x:n.x-s.dx*r+n.dx*r,z:n.z-s.dz*r+n.dz*r,dx:s.dx,dz:s.dz,
+          nextX:n.dx,nextZ:n.dz,radius:r,length:r*Math.PI/2});
+      }
       const length=segments.reduce((s,d)=>s+d.length,0);
       if(length<8)return;
       const count=Math.max(1,Math.floor(length/headway));
@@ -280,9 +314,15 @@
         const odometer=t*speed+(k+.43)*length/count;
         let travel=odometer%length;
         for(const s of segments){
-          if(travel<s.length+1e-7)
-            return makePoint(s.x+s.dx*travel/s.length,deck.floorY,s.z+s.dz*travel/s.length,
-              deck.id,Math.atan2(-s.dx,-s.dz),speed,seerRobots.phaseStep(speed,odometer/speed)+i);
+          if(travel<s.length+1e-7){
+            let x=s.x+s.dx*travel,z=s.z+s.dz*travel,dx=s.dx,dz=s.dz;
+            if(s.radius){
+              const a=travel/s.radius,c=Math.cos(a),sn=Math.sin(a);
+              x=s.x+s.radius*(s.dx*sn-s.nextX*c);z=s.z+s.radius*(s.dz*sn-s.nextZ*c);
+              dx=s.dx*c+s.nextX*sn;dz=s.dz*c+s.nextZ*sn;
+            }
+            return makePoint(x,deck.floorY,z,deck.id,Math.atan2(-dx,-dz),speed,seerRobots.phaseStep(speed,odometer/speed)+i);
+          }
           travel-=s.length;
         }
       });
@@ -381,7 +421,7 @@
       const c=crew[i],t=now(),near=nearby.find(a=>a.i===i);
       const position=near?.p||locate(i,t);
       const role=i===0?'参观机组':c.task?.role||(watch(c.row,t)===i?'驻舱巡检':'驻位充能');
-      return {id:keyFor(i),number:i+1,player:i===0,role,
+      return {id:keyFor(i),number:i+1,player:i===0,role,characterId:c.task?.officer?.id,name:c.task?.officer?.name,
         zone:i===0?habitat.location(lastPlayer).name:c.task?.zone||c.home.zone,
         position:{x:position.x,y:position.y,z:position.z,level:position.level},
         berth:{index:i,level:c.home.level,zone:c.home.zone,x:c.home.x,y:c.home.y,z:c.home.z}};
@@ -407,6 +447,8 @@
         visibleIds=candidates(p,t);lastScan=elapsed;lastLevel=p.level;lastX=p.x;lastZ=p.z;
       }
       nearby=[];drawnCount=0;
+      let ordinaryCount=0;
+      for(const rig of officerRigs.values())rig.root.visible=false;
       for(const i of visibleIds){
         const a=locate(i,t);
         const dx=a.x-p.x,dz=a.z-p.z,d=Math.hypot(dx,dz);
@@ -423,34 +465,63 @@
         }
         if(!blocksSight(a,p,eye)){
           const y=a.y+contactFloor(a);
-          const feet=batch.write(drawnCount,a.x,y,a.z,a.yaw,crew[i].tint,a.phase,a.speed);
-          contacts.write(drawnCount,a.x,y,a.z,a.yaw,feet);
+          const officer=crew[i].task?.officer;
+          let feet,heading=a.yaw;
+          if(officer){
+            if(!officerRigs.has(i)){
+              const rig=createOfficerFigure(officer);rig.root.rotation.y=rig.lastYaw=a.yaw;
+              officerRigs.set(i,rig);batch.root.add(rig.root);
+            }
+            const rig=officerRigs.get(i);
+            const desired=d<4&&habitat.location(p).roomId===crew[i].task.room.id?Math.atan2(dx,dz):a.yaw;
+            let delta=desired-rig.root.rotation.y;
+            delta=Math.atan2(Math.sin(delta),Math.cos(delta));
+            heading=rig.root.rotation.y+=delta*(1-Math.exp(-4.5*Math.max(0,dt)));
+            rig.root.visible=true;rig.root.position.set(a.x,y,a.z);
+            seerRobots.animate(rig,0,0,dt);feet=rig.bones;
+          }else feet=batch.write(ordinaryCount++,a.x,y,a.z,a.yaw,crew[i].tint,a.phase,a.speed);
+          contacts.write(drawnCount,a.x,y,a.z,heading,feet);
           drawnCount++;
         }
         nearby.push({i,p:a});
       }
-      batch.finish(drawnCount);
+      batch.finish(ordinaryCount);
       contacts.finish(drawnCount);
     }
     function setActive(value){
       active=Boolean(value);batch.root.visible=active;
+      for(const rig of officerRigs.values())rig.root.visible=false;
       lastScan=-Infinity;lastLevel='';visibleIds=[];nearby=[];drawnCount=0;batch.finish(0);
       contacts.finish(0);
     }
-    function nearest(p,maxMetres=4){
+    function nearest(p,maxMetres=4,namedOnly=false){
       let match=null,best=maxMetres**2;
+      const room=namedOnly?habitat.location(p).roomId:null;
       for(const a of nearby){
+        if(namedOnly&&(!crew[a.i].task?.officer||crew[a.i].task.room.id!==room))continue;
         const d=(p.x-a.p.x)**2+(p.z-a.p.z)**2;
         if(a.p.level===p.level && d<best){match=a;best=d;}
       }
       return match?{...getById(match.i+1),distance:Math.sqrt(best)}:null;
+    }
+    function namedContact(picker,p,maxMetres=4){
+      const member=nearest(p,maxMetres,true);
+      if(!member)return null;
+      const rig=officerRigs.get(member.number-1);
+      if(!rig?.root.visible)return null;
+      const hit=picker.intersectObject(rig.root,true)[0];
+      if(!hit)return null;
+      const room=crew[member.number-1].task.room;
+      const surface=picker.intersectObject(room.group,true)[0];
+      return surface&&surface.distance<hit.distance-.001?null:{...member,hitDistance:hit.distance};
     }
     function clearsCrew(p,q,radius=.43){
       if(!active||!nearby.length||p.level!==q.level)return true;
       return nearby.every(n=>{
         if(n.p.level!==q.level)return true;
         const dist=(q.x-n.p.x)**2+(q.z-n.p.z)**2;
-        return dist>=(radius+.41)**2 || dist>=(p.x-n.p.x)**2+(p.z-n.p.z)**2;
+        const clearance=radius+(crew[n.i].task?.officer ? .68 : .41);
+        return dist>=clearance**2 || dist>=(p.x-n.p.x)**2+(p.z-n.p.z)**2;
       });
     }
     function constrainStep(p,next){
@@ -463,8 +534,11 @@
       }
       return p;
     }
-    return {update,setActive,getById,nearest,clearsCrew,constrainStep,
-      dispose(){batch.root.remove(contacts.mesh);contacts.dispose();},
+    return {update,setActive,getById,nearest,nearestNamed:(p,max=4)=>nearest(p,max,true),namedContact,clearsCrew,constrainStep,
+      dispose(){
+        for(const rig of officerRigs.values()){batch.root.remove(rig.root);rig.disposeKit();}
+        officerRigs.clear();batch.root.remove(contacts.mesh);contacts.dispose();
+      },
       get summary(){const onDuty=1+tasks.length+rotatingRows;
         return {total,npc:total-1,capacity:residences.capacity,visible:drawnCount,active:onDuty,charging:total-onDuty};}
     };

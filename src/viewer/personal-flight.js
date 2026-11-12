@@ -45,7 +45,7 @@
     }
     function interact(p,yaw){
       if(mounted){
-        landing=true;targetHeight=0;stop();
+        landing=true;targetHeight=0;
         return {notice:'正在着陆'};
       }
       if(!reachable(p)){
@@ -61,28 +61,55 @@
     function changeHeight(delta,p){
       if(mounted&&!landing)targetHeight=T.MathUtils.clamp(targetHeight+delta,0,heightLimit(p));
     }
+    const serviceBrake=48;
+    function clearAhead(p,dx,dz,speed){
+      const reach=speed*speed/(2*serviceBrake)+.42;
+      const steps=Math.ceil(reach/.46);
+      let from=p,permitted=speed;
+      for(let i=1;i<=steps;i++){
+        const travel=reach*i/steps;
+        const to={...p,x:p.x+dx*travel,z:p.z+dz*travel};
+        if(!habitat.canStand(to,clearance)||(altitude<=1.9&&!population.clearsCrew(from,to,clearance))){
+          permitted=Math.min(speed,Math.sqrt(2*serviceBrake*reach*(i-1)/steps));break;
+        }
+        targetHeight=Math.min(targetHeight,heightLimit(to));
+        from=to;
+      }
+      // A slow manoeuvre may still slide along a bulkhead or door jamb.
+      return Math.max(2.4,permitted);
+    }
     function drive(p,dx,dz,boost,dt) {
-      const topSpeed=boost?11.5:8.2;
-      const gain=1-Math.exp(-dt*(landing?12:6));
-      vx+=((landing?0:dx*topSpeed)-vx)*gain;
-      vz+=((landing?0:dz*topSpeed)-vz)*gain;
-      if(Math.hypot(vx,vz)<.035)stop();
+      const magnitude=Math.hypot(dx,dz);
+      if(magnitude>1){dx/=magnitude;dz/=magnitude;}
+      const powered=!landing&&magnitude>.001;
+      const speed=powered?clearAhead(p,dx/Math.min(1,magnitude),dz/Math.min(1,magnitude),boost?24:15):0;
+      const tx=dx*speed,tz=dz*speed,ex=tx-vx,ez=tz-vz;
+      const accelerating=powered&&vx*tx+vz*tz>=vx*vx+vz*vz;
+      const response=accelerating?(boost?36:28):serviceBrake;
+      const u=Math.hypot(ex,ez),rampTime=Math.min(dt,u/response);
+      const fraction=u>1e-6?Math.min(1,response*dt/u):1;
+      const oldX=vx,oldZ=vz;
+      vx+=ex*fraction;vz+=ez*fraction;
+      const moveX=vx*dt+(oldX-vx)*rampTime*.5,moveZ=vz*dt+(oldZ-vz)*rampTime*.5;
       const canFly=(from,to)=>altitude<=heightLimit(to)+.02 &&
         (altitude>1.9 || population.clearsCrew(from,to,clearance));
-      const next=habitat.move(p,vx*dt,vz*dt,clearance,canFly);
+      const next=habitat.move(p,moveX,moveZ,clearance,canFly);
       const distance=Math.hypot(next.x-p.x,next.z-p.z);
       if(distance>.001){
         const desired=Math.atan2(p.x-next.x,p.z-next.z);
         const arc=Math.atan2(Math.sin(desired-heading),Math.cos(desired-heading));
         heading+=arc*(1-Math.exp(-dt*9));
-      }else if(dt>0)stop();
+      }
+      // Remove only the blocked axis, preserving a controlled slide along the other.
+      if(Math.abs(moveX-(next.x-p.x))>.001)vx=0;
+      if(Math.abs(moveZ-(next.z-p.z))>.001)vz=0;
       targetHeight=Math.min(targetHeight,heightLimit(next));
       parked={...next};
       const climb=T.MathUtils.clamp(targetHeight-altitude,-2.2*dt,2.2*dt);
       // A pilot can pass over a crew member but must descend onto clear deck.
       if(climb>=0 || altitude+climb>1.9 || !population.nearest(next,clearance+.41))altitude+=climb;
       else if(landing){landing=false;targetHeight=altitude;return {pose:next,notice:'下方有船员，请移到空处着陆。'};}
-      if(landing&&altitude<.015){
+      if(landing&&altitude<.015&&Math.hypot(vx,vz)<.1){
         const exit=beside(parked,heading,.43);
         landing=false;
         if(exit){park();return {pose:exit,steppedOff:true,notice:'已下机，滑翔翼留在停靠位置。'};}
@@ -111,6 +138,8 @@
       if(mounted)altitude=targetHeight=T.MathUtils.clamp(Number.isFinite(saved.altitude)?saved.altitude:0,0,heightLimit(p));
     }
     return {get mounted(){return mounted;},get altitude(){return altitude;},get landing(){return landing;},get stored(){return stored;},
+      get speed(){return Math.hypot(vx,vz);},
+      get inMotion(){return mounted&&(landing||Math.hypot(vx,vz)>.01||Math.abs(altitude-targetHeight)>.015);},
       setStored(value){if(!mounted){stored=value===true;if(stored)craft.hide();}},
       reachable,interact,drive,draw,changeHeight,clearsParked,restore,stop,park,
       label:p=>mounted?(landing?'着陆中':'着陆下机'):reachable(p)?'驾驶滑翔翼':'取出滑翔翼',
