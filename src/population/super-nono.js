@@ -4,6 +4,7 @@
     const root=new T.Group(),body=new T.Group();
     root.name='超能 NoNo · 玩家伙伴';root.visible=false;
     root.scale.setScalar(worldMetre);root.add(body);world.add(root);
+    body.scale.setScalar(1.12);
     const shell=new T.MeshPhysicalMaterial({color:0xeaf4f5,metalness:.13,roughness:.30,clearcoat:.54});
     const seal=new T.MeshStandardMaterial({color:0x223846,metalness:.38,roughness:.43});
     const glass=new T.MeshPhysicalMaterial({color:0x030b10,emissive:0x02080b,metalness:.12,roughness:.19,clearcoat:.72});
@@ -87,29 +88,32 @@
     }
     for(const eye of eyes)drawEye(eye,0,false,0,0);
 
-    function spindle(profile,paint){
+    function spindle(profile,paint,sweep=0){
       const g=new T.LatheGeometry(profile.map(([h,r])=>new T.Vector2(r,h)),32);
       if(paint){
         const p=g.getAttribute('position'),colors=[],color=new T.Color();
-        const foot=new T.Color(0x67efef),edge=new T.Color(0x21dce7),tip=new T.Color(0xc8ffff);
+        const foot=new T.Color(0xb8fff7),edge=new T.Color(0x38e9e8),tip=new T.Color(0x05f3f5);
         const len=profile[profile.length-1][0];
         for(let i=0;i<p.count;i++){
           const t=T.MathUtils.clamp(p.getY(i)/len,0,1);
+          // Sweep toward the rear while pinching the blade to a thin bright edge.
+          p.setZ(i,p.getZ(i)*(1-.36*t)+sweep*t*t);
           if(t<.27)color.copy(foot).lerp(edge,t/.27);
           else color.copy(edge).lerp(tip,(t-.27)/.73);
           colors.push(color.r,color.g,color.b);
         }
         g.setAttribute('color',new T.Float32BufferAttribute(colors,3));
+        g.computeVertexNormals();
       }
       return g;
     }
-    const crownShape=spindle([[0,0],[.014,.039],[.047,.061],[.094,.063],[.204,.057],[.312,.044],[.412,.029],[.470,.014],[.480,0]],true);
-    const finShape=spindle([[0,0],[.012,.029],[.04,.047],[.072,.051],[.115,.045],[.151,.031],[.180,.012],[.186,0]],true);
+    const crownShape=spindle([[0,0],[.014,.036],[.047,.056],[.094,.067],[.204,.066],[.312,.050],[.412,.028],[.470,.012],[.480,0]],true,.105);
+    const finShape=spindle([[0,0],[.012,.024],[.04,.047],[.072,.055],[.115,.048],[.151,.029],[.180,.010],[.186,0]],true,.055);
     const crownCup=spindle([[0,0],[.009,.040],[.028,.062],[.053,.072],[.075,.071],[.098,.060],[.107,.048],[.109,0]],false);
     const earGroups=[],fins=[];
     for(const side of [-1,1]){
       const ear=new T.Group();body.add(ear);earGroups.push(ear);
-      ear.position.set(side*.150,.317,.008);ear.rotation.set(.09,0,-side*.40);
+      ear.position.set(side*.150,.317,.008);ear.rotation.set(.09,0,-side*.46);
       const cup=part(ear,'耳翼悬浮白底座',crownCup,shell);cup.scale.z=.74;
       const blade=part(ear,'上部浮空能量翼',crownShape,blades);blade.position.y=.053;
       blade.scale.z=.54;
@@ -126,7 +130,7 @@
       fragmentShader:'varying vec2 v;uniform float strength;void main(){float r=dot(v,v);gl_FragColor=vec4(.015,.04,.055,strength*exp(-3.*r)*(1.-smoothstep(.65,1.,r)));}'
     });
     const shadow=part(root,'低悬投影',new T.PlaneGeometry(1,1).rotateX(-Math.PI/2),shadowMaterial);
-    const radius=.54;
+    const radius=.60;
     let current=null,goal=null,elapsed=0,salute=0,hover=1.0,heading=0;
     let effort=0,lean=0,bank=0,gazeX=0,gazeY=0;
     let lastSurface=null;
@@ -283,7 +287,7 @@
       const age=1.8-salute,reply=salute?Math.sin(Math.PI*age/1.8):0;
       const nod=salute ? .12*Math.sin(age*6.3)*reply : 0;
       const bob=.036*Math.sin(elapsed*2.8)+.017*Math.sin(elapsed*1.6+.7);
-      const limit=headroom-.87;
+      const limit=headroom-.99;
       hover=Math.min(limit,damp(hover,Math.min(limit,1.02+lift+bob*(1-.42*effort)+.105*reply),9,dt));
       body.position.y=hover;
       body.rotation.set(lean+.025*Math.cos(elapsed*2.8)+nod,heading,bank+.038*Math.sin(elapsed*1.9)+.115*reply,'YXZ');
@@ -293,10 +297,11 @@
         const side=eyes[i].side,ear=earGroups[i],fin=fins[i];
         const beat=Math.sin(elapsed*(3.05)+side*.40);
         ear.rotation.x=damp(ear.rotation.x,.10+.24*effort+.043*beat-nod,6.8,dt);
-        ear.rotation.z=damp(ear.rotation.z,-side*(.39+.047*beat+.10*reply+.045*effort)-.57*bank,6,dt);
+        ear.rotation.z=damp(ear.rotation.z,-side*(.46+.047*beat+.10*reply+.045*effort)-.57*bank,6,dt);
         ear.position.y=.317+.009*beat+.010*reply;
         fin.rotation.z=damp(fin.rotation.z,-side*(2.13+.13*beat-.23*effort+.25*reply)-.68*bank,10,dt);
         fin.rotation.x=.09*Math.sin(elapsed*2.62+side*.77)+.20*effort;
+        fin.rotation.y=damp(fin.rotation.y,side*(.10*beat+effort*.40)-.55*bank,8,dt);
         const clock=elapsed%12.17-i*.013;
         const blink=(1-ease(Math.abs(clock-2.80),.018,.137))+(1-ease(Math.abs(clock-7.71),.022,.15))+
           (1-ease(Math.abs(clock-8.04),.01,.09));

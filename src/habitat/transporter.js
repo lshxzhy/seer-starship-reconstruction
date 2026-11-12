@@ -263,7 +263,10 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
       for(const xx of [2.20,2.76])for(const y of [.63,2.19])captiveBolt(frame,xx,y,.520,.038);
       pipe([[1.95,3.52,-.15],[2.53,3.22,.03],[2.58,2.28,.20]],.10,dark);
       beam([2.1,.62,.18],[2.6,1.35,.18],.16,.16,steel);
-      panel(2.48,2.7,.39,.53,.62,tint);
+      panel(2.48,2.73,.39,.71,.72,tint);
+      // The cabinet and its reader stay outside the passenger scan opening.
+      stamp(frame,unitBox,graphite,[2.48,2.29,.437],[.58,.13,.095]);
+      stamp(frame,unitBox,alloy,[2.48,2.30,.49],[.43,.045,.03]);
       // Rear access panel and conduit can be seen on a walk around the appliance.
       box(0,3.3,-1.39,1.32,2.5,.18,0x445966);
       stamp(frame,unitBox,graphite,[0,3.19,-1.50],[1.05,1.61,.07]);

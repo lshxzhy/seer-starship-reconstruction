@@ -20,17 +20,12 @@ function createSpiritEscort(T,world,metre=1){
     hide();
     if(model){gait.remove(model.root);model.dispose();model=null;}
     selected=next;if(!selected)return;
-    model=createCompanionFigure(T,next);
+    model=createFieldSpirit(T,next);
     if(!model)return;
-    const bounds=new T.Box3().setFromObject(model.root),size=bounds.getSize(new T.Vector3());
-    const row=SEER_SPIRIT_DATA.index.find(p=>p[0]===next);
-    const height=row?.[3]>0?row[3]/100:size.y;
-    const factor=height/Math.max(.01,size.y);
-    model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
     model.root.traverse(part=>{if(part.isMesh){part.castShadow=true;part.receiveShadow=true;}});
-    radius=Math.max(.17,factor*Math.max(size.x,size.z)/2);
+    radius=Math.max(.17,model.radius);
     shadow.scale.setScalar(radius*2.25);
-    stepHeight=Math.min(.095,.08*height);stride=0;
+    stepHeight=Math.min(.12,.08*model.size);stride=0;
     gait.add(model.root);
   }
   function follow(owner,face,dt,firstPerson,direction,move,clear){

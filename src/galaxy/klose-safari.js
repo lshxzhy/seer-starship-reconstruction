@@ -57,21 +57,45 @@ function createKloseSafariModel(T,id){
     const plume=pivot(0,.748,0,'z',.055);
     fin('#e78b16',[[-.060,0,.001],[-.081,.092,.001],[-.03,.205,0],[.012,.31,0],[.074,.164,0],[.056,.033,0]],[.007,.114,.05],plume);
   }else if(id===30){
-    const olive='#688c2d',shell='#688c28',rim='#dfd474',seal='#524d20';
-    oval(seal,0,.295,-.018,.345,.312,.330);
-    oval(shell,0,.331,-.046,.334,.304,.31);
-    for(const side of [-1,1])for(let i=0;i<3;i++){
-      const x=side*(.148+.054*(i%2)),y=.48-.052*i,z=-.175+.14*i;
-      const patch=oval(i%2?'#7eae37':'#8db444',x,y,z,.104,.100,.011+.043*i);patch.rotation.z=-side*.48;
+    const olive='#95bb4e',shell='#729e27',rim='#dfd474',seal='#616a2d';
+    // Share the shell's boundary vertices between the green scutes and the
+    // lower band. Two almost coincident ellipsoids gave a serrated colour edge.
+    function shellPoint(azimuth,elevation,lift=0){
+      const t=Math.cos(elevation),s=Math.sin(elevation),upper=T.MathUtils.smoothstep(s,-.70,.12);
+      const rx=.345-.011*upper,ry=.312-.008*upper,rz=.330-.020*upper;
+      return [(rx+lift)*t*Math.sin(azimuth),.295+.036*upper+(ry+lift)*s,
+        -.018-.028*upper+(rz+lift)*t*Math.cos(azimuth)];
     }
-    path(rim,[[-.29,.158,.119],[-.292,.30,.15],[-.210,.498,.12],[-.072,.57,.077],[.107,.54,.096],[.252,.42,.141],[.302,.23,.141],[.244,.122,.133]],.042);
-    oval('#aaa253',0,.156,.156,.287,.119,.175);
-    for(let i=0;i<3;i++)path('#736d36',[[-.21+i*.025,.115+i*.047,.239],[0,.113+i*.052,.312],[.20-i*.018,.122+i*.047,.246]],.008);
-    oval(olive,0,.34,.189,.178,.148,.158);
+    const sectors=56,lowerRows=12,upperRows=22,rows=lowerRows+upperRows;
+    const shellGeo=new T.BufferGeometry(),positions=[],indices=[];
+    for(let j=0;j<=rows;j++)for(let k=0;k<sectors;k++){
+      const a=k*Math.PI*2/sectors,seam=-.33+.19*Math.cos(a)+.055*Math.cos(3*a);
+      const latitude=j<=lowerRows?T.MathUtils.lerp(-Math.PI/2,seam,j/lowerRows):
+        T.MathUtils.lerp(seam,Math.PI/2,(j-lowerRows)/upperRows);
+      positions.push(...shellPoint(a,latitude));
+      if(j<rows){
+        const left=j*sectors+k,right=j*sectors+(k+1)%sectors;
+        indices.push(left,right,left+sectors,right,right+sectors,left+sectors);
+      }
+    }
+    shellGeo.setAttribute('position',new T.Float32BufferAttribute(positions,3));shellGeo.setIndex(indices);shellGeo.computeVertexNormals();
+    const lowerCount=lowerRows*sectors*6;
+    shellGeo.addGroup(0,lowerCount,0);shellGeo.addGroup(lowerCount,indices.length-lowerCount,1);
+    add(shellGeo,[mat(seal),mat(shell)]);
     for(const side of [-1,1]){
-      eye(side*.082,.36,.317,.058,white,black);
-      const flipper=pivot(side*.203,.248,.11,'x',.12,side);oval('#86a83b',side*.023,-.043,.106,.082,.094,.10,flipper);
-      oval('#c1d365',side*.048,-.017,.176,.04,.042,.021,flipper);
+      path('#455d20',[[.72,1.10],[1.14,.95],[1.66,.87],[2.15,1.01],[2.47,1.22]].map(([a,h])=>shellPoint(side*a,h,.002)),.008);
+      for(const a of [1.14,2.15,2.89])path('#455d20',[[a,.94],[a+.12,.64],[a+.18,.35],[a+.14,.04]].map(([az,h])=>shellPoint(side*az,h,.002)),.007);
+    }
+    oval('#292a16',0,.313,.181,.280,.211,.089);
+    path(rim,[[-.27,.142,.145],[-.302,.295,.15],[-.204,.505,.133],[-.084,.56,.092],[.114,.52,.112],[.258,.406,.150],[.304,.23,.147],[.248,.134,.144]],.050);
+    oval('#b6aa5e',0,.177,.190,.283,.135,.177);
+    for(let i=0;i<3;i++)path('#796d37',[[-.208+i*.018,.105+i*.054,.258],[0,.100+i*.056,.342+i*.01],[.197-i*.016,.110+i*.056,.268]],.008);
+    oval(olive,0,.364,.204,.166,.145,.145);
+    const brow=oval('#78401f',0,.461,.267,.053,.054,.033);brow.rotation.x=-.46;
+    for(const side of [-1,1]){
+      eye(side*.075,.384,.317,.049,'#637b31','#181911');
+      const flipper=pivot(side*.207,.263,.144,'x',.12,side);oval('#8eaf3f',side*.023,-.029,.107,.082,.093,.10,flipper);
+      oval('#bada68',side*.031,-.002,.175,.044,.045,.023,flipper);
     }
   }else if(id===198){
     // The fish swims along its local nose. The brown ridged carapace wraps a blue body.
@@ -172,7 +196,9 @@ function createKloseSafari(T,surface){
   const enabled=()=>!!s?.active&&Number.isFinite(s.endsAt)&&s.endsAt>Date.now();
   function station(site,near,yAt,hazards,op,x,z,r){
     const root=new T.Group();root.position.set(x,yAt(x,z),z);near.add(root);
-    const item={root,site,near,x,z,op,r};stations.push(item);
+    const scale=op==='register'?1:KLOSE_ITEM_SCALE;
+    root.scale.setScalar(scale);r*=scale;
+    const item={root,site,near,x,z,op,r,reach:2.35+r};stations.push(item);
     if(r>.05)hazards.push({x:site.x+x,z:site.z+z,r});
     return item;
   }
@@ -188,15 +214,26 @@ function createKloseSafari(T,surface){
   }
   function rodStation(){
     const {site,near,yAt,hazards}=wet;
-    const row=station(site,near,yAt,hazards,'rod',-2,-4.3,.32),g=row.root;
+    const row=station(site,near,yAt,hazards,'rod',-2,-4.3,.43),g=row.root;
     mesh(g,cube,'#856443',0,.16,0,.75,.31,.41);mesh(g,cube,'#e6c86e',0,.322,0,.8,.065,.48);
     const rod=new T.Group();g.add(rod);row.rod=rod;
     const parts=[[-.25,.32,.12],[-.05,.62,.03],[.22,.96,.0],[.53,1.20,.03],[.74,1.28,.07]];
     for(let i=1;i<parts.length;i++)beam(rod,parts[i-1],parts[i],.038-i*.006,'#ba663f');
-    beam(rod,parts[4],[.74,.69,.07],.006,'#d4dfd6');
+    beam(rod,parts[0],[-.11,.53,.06],.052,'#d4a16a');
+    const reel=mesh(rod,new T.CylinderGeometry(1,1,1,20),'#687c7a',-.086,.58,.085,.065,.085,.065);
+    reel.rotation.x=Math.PI/2;
+    mesh(rod,round,'#dfc07f',-.086,.58,.134,.044,.044,.009);
+    const guides=new T.TorusGeometry(.024,.004,6,16);
+    for(let j=1;j<parts.length;j++){
+      const [x,y,z]=parts[j],guide=mesh(rod,guides,'#ead4a3',x,y-.027,z,1,1,1);
+      guide.rotation.y=.70;
+      if(j>1)beam(rod,[parts[j-1][0],parts[j-1][1]-.027,parts[j-1][2]],[x,y-.027,z],.003,'#d4dfd6');
+    }
+    beam(rod,[.74,1.26,.07],[.74,.69,.07],.004,'#d4dfd6');
     mesh(rod,round,'#cd694e',.74,.72,.07,.042,.079,.04);
+    mesh(rod,round,'#f8e4ae',.74,.757,.07,.039,.040,.038);
     sign(g,'普通钓竿',0,.18,.217,.64,.19);
-    const bank=station(site,near,yAt,hazards,'fish',-5.5,-6,.32),b=bank.root;
+    const bank=station(site,near,yAt,hazards,'fish',-5.5,-6,.54),b=bank.root;
     for(const side of [-1,1])beam(b,[side*.48,0,0],[side*.48,.85,0],.075,'#9c7455');
     sign(b,'垂钓区',0,.70,.05,1.13,.36);
     const float=mesh(b,round,'#ce723e',-1.42,.1,-.64,.067,.12,.067);
@@ -206,12 +243,23 @@ function createKloseSafari(T,surface){
     const {site,near,yAt,hazards}=wet;
     const node=station(site,near,yAt,hazards,'tree',6,-4,.77),trunk=new T.Group();node.root.add(trunk);node.branches=trunk;
     beam(trunk,[0,0,0],[-.15,1.4,.07],.34,'#854d76');
+    // Flared turquoise hollows and bunched red fruit in the 2011 forest scene.
+    const outline=[[.45,-.54],[.58,-.20],[.78,.16],[1,.39],[1.05,.51],[.91,.54],[.68,.34],[.12,.12]];
+    const calyx=new T.LatheGeometry(outline.map(([r,h])=>new T.Vector2(r,h)),28);
+    const rim=new T.TorusGeometry(.97,.066,8,28);
     for(const [x,y,z] of [[-.72,1.86,.1],[-.30,2.62,-.12],[.70,2.43,.24],[.94,1.93,-.40],[.17,2.97,.02]]){
       beam(trunk,[-.14,1.10,.02],[x,y,z],.21,'#6f529a');
-      const cup=mesh(trunk,new T.CylinderGeometry(1,.57,1,12),'#366cad',x,y,z,.34,.49,.27);
-      cup.rotation.z=-.23*x;
-      mesh(trunk,round,'#48cab9',x,y+.235,z,.34,.06,.28);
-      for(let j=0;j<3;j++)mesh(trunk,round,j%2?'#d64371':'#b73359',x+.17*(j-1),y-.17+.1*(j%2),z+.23,.115,.119,.093);
+      const cup=new T.Group();cup.position.set(x,y,z);cup.rotation.set(.12,-.17*x,-.33*x);trunk.add(cup);
+      mesh(cup,calyx,'#503f96',0,0,0,.40,.65,.32);
+      const lip=mesh(cup,rim,'#54cdd0',0,.33,0,.40,.32,.42);lip.rotation.x=-Math.PI/2;
+      mesh(cup,round,'#317f9e',0,.095,0,.26,.035,.22);
+      for(let j=0;j<7;j++){
+        const a=j*2.40,r=.14*Math.sqrt(j/6);
+        mesh(cup,round,j%3?'#bf395e':'#e65677',r*Math.cos(a),-.17+r*Math.sin(a),.25+j*.003,.079,.083,.070);
+      }
+      for(const side of [-1,1]){
+        const bract=mesh(cup,round,'#dabe60',side*.080,-.015,.24,.037,.094,.031);bract.rotation.z=-side*.72;
+      }
     }
     sign(node.root,'摇树区',0,.48,.39,.77,.24);
   }
@@ -222,40 +270,56 @@ function createKloseSafari(T,surface){
     for(let i=0;i<5;i++){
       const a=(i/4-.5)*2.4,x=.66*Math.sin(a),z=.42*Math.cos(a);
       const shard=new T.Mesh(new T.OctahedronGeometry(1),new T.MeshStandardMaterial({color:0x678489,emissive:0x246c78,roughness:.30}));
-      shard.position.set(x,.34,z);shard.scale.set(.113,.20,.098);g.add(shard);node.crystals.push(shard);
+      shard.position.set(x,.37+.04*(i%2),z);shard.scale.set(.141,.27+.10*(i%2),.12);
+      shard.rotation.z=-.30*Math.sin(a);g.add(shard);node.crystals.push(shard);
+      const socket=mesh(g,new T.CylinderGeometry(1,.82,1,6),'#746657',x,.237,z,.176,.10,.159);
+      socket.rotation.y=a;
     }
     sign(g,'闪光晶石',0,.139,.86,.77,.23);
   }
   function instantiate(site,near,yAt,hazards,cover){
-    if(site.id==='grassland'){register(site,near,yAt,hazards,-4,-14);return;}
-    if(site.id!=='wetland'||wet)return;
-    wet={site,near,yAt,hazards,cover};register(site,near,yAt,hazards,1.45,2.2);
-    rodStation();treeStation();denStation();
-    setState(s);
+    const start=stations.length;
+    if(site.id==='grassland')register(site,near,yAt,hazards,-4,-14);
+    else if(site.id==='wetland'&&!wet){
+      wet={site,near,yAt,hazards,cover};register(site,near,yAt,hazards,1.45,2.2);
+      rodStation();treeStation();denStation();
+      setState(s);
+    }
+    for(const p of stations.slice(start)){
+      const bounds=new T.Box3(),local=new T.Matrix4();
+      p.root.updateWorldMatrix(true,true);const inverse=p.root.matrixWorld.clone().invert();
+      p.root.traverse(part=>{
+        if(!part.isMesh)return;
+        const geo=part.geometry;if(!geo.boundingBox)geo.computeBoundingBox();
+        local.multiplyMatrices(inverse,part.matrixWorld);
+        bounds.union(geo.boundingBox.clone().applyMatrix4(local));
+      });
+      p.top=bounds.max.y*p.root.scale.y;
+      p.overhang=Math.hypot(Math.max(-bounds.min.x,bounds.max.x),Math.max(-bounds.min.z,bounds.max.z))*p.root.scale.x;
+    }
   }
-  function clear(x,z,r,actor){
+  function clear(x,z,r,size,actor){
     if(!wet||Math.hypot(x,z)<1.05+r)return false;
     const gx=wet.site.x+x,gz=wet.site.z+z;
     if(wet.hazards.some(h=>Math.hypot(gx-h.x,gz-h.z)<r+h.r))return false;
     if(pools.some(p=>Math.hypot((gx-p.x)/(p.rx+r),(gz-p.z)/(p.rz+r))<1.06))return false;
-    for(const box of wet.cover.get(Math.floor(x)*256+Math.floor(z))||[]){
-      if(box.underside>1.12)continue;
-      if(Math.hypot(Math.max(0,box.left-x,x-box.right),Math.max(0,box.back-z,z-box.front))<r)return false;
-    }
+    if(!kloseClearsCover(wet.cover,x,z,r,size+.15))return false;
+    if(guest&&guest!==actor&&Math.hypot(guest.x-x,guest.z-z)<guest.r+r)return false;
     return actors.every(p=>p===actor||Math.hypot(p.x-x,p.z-z)>=p.r+r);
   }
-  function locate(x,z,r){
+  function locate(x,z,model){
     for(let j=0;j<=14;j++)for(let k=0,n=Math.max(1,8*j);k<n;k++){
       const a=k*2*Math.PI/n,dx=x+Math.cos(a)*j*.38,dz=z+Math.sin(a)*j*.38;
-      if(clear(dx,dz,r,null))return {x:dx,z:dz};
+      if(clear(dx,dz,model.radius,model.size,null))return {x:dx,z:dz};
     }
     return null;
   }
-  const sizes=new Map(SEER_SPIRIT_DATA.index.map(r=>[r[0],(r[3]||56)/100]));
-  function createActor(id,x,z,method,level){
-    const model=createKloseSpiritModel(T,id)||createPartnerFigure(T,id);if(!model)return null;
-    const size=sizes.get(id)||.55,r=Math.min(.71,Math.max(.12,size*.32));
-    const actor={...model,id,key:'wetland-hunt-'+method+'-'+id,method,level:level||8,size,r,x,z,homeX:x,homeZ:z,yaw:0};
+  function createActor(id,originX,originZ,method,level){
+    const model=createFieldSpirit(T,id);if(!model)return null;
+    const spot=locate(originX,originZ,model);
+    if(!spot){model.dispose();return null;}
+    const {x,z}=spot;
+    const actor={...model,id,key:'wetland-hunt-'+method+'-'+id,method,level:level||8,r:model.radius,x,z,homeX:x,homeZ:z,yaw:0};
     model.root.userData.safariKey=actor.key;wet.near.add(model.root);place(actor,0);return actor;
   }
   function place(p,bob){
@@ -265,9 +329,7 @@ function createKloseSafari(T,surface){
   function buildField(){
     if(actors.length||!wet)return;
     for(const [i,id] of fieldIds.entries()){
-      const [x,z]=anchors[i],size=sizes.get(id)||.55,spot=locate(x,z,Math.min(.71,Math.max(.12,size*.32)));
-      if(!spot)continue;
-      const p=createActor(id,spot.x,spot.z,'field',7+i%5);if(!p)continue;
+      const [x,z]=anchors[i],p=createActor(id,x,z,'field',7+i%5);if(!p)continue;
       p.yaw=i*2.4;actors.push(p);
     }
   }
@@ -282,9 +344,7 @@ function createKloseSafari(T,surface){
     dropGuest();
     const point=method==='fish'?[-6.6,-7.4]:method==='tree'?[5.0,-3.6]:method==='bear'?[-4.0,5.4]:
       [viewer.x-wet.site.x+1.1,viewer.z-wet.site.z-1.6];
-    const r=Math.max(.12,Math.min(.70,(sizes.get(pet.speciesId)||.5)*.32));
-    const at=locate(point[0],point[1],r);if(!at)return;
-    guest=createActor(pet.speciesId,at.x,at.z,method,pet.level);
+    guest=createActor(pet.speciesId,point[0],point[1],method,pet.level);
     if(guest)guestKey=key;
   }
   function setState(state){
@@ -315,7 +375,7 @@ function createKloseSafari(T,surface){
     p.yaw+=T.MathUtils.clamp(angular,-dt*3.1,dt*3.1);
     const stride=Math.min(.52*dt,Math.hypot(dx,dz)),x=p.x+stride*Math.sin(p.yaw),z=p.z+stride*Math.cos(p.yaw);
     const gx=wet.site.x+x,gz=wet.site.z+z;
-    const walk=!busy&&Math.abs(angular)<.19&&clear(x,z,p.r,p)&&Math.hypot(viewer.x-gx,viewer.z-gz)>p.r+.36&&
+    const walk=!busy&&Math.abs(angular)<.19&&clear(x,z,p.r,p.size,p)&&Math.hypot(viewer.x-gx,viewer.z-gz)>p.r+.36&&
       (!boat||Math.hypot(boat.x-gx,boat.z-gz)>9+p.r);
     if(walk){p.x=x;p.z=z;}
     p.update(dt,walk?1:0);place(p,walk?.032*Math.abs(Math.sin(clock*6+i)):0);
@@ -411,9 +471,9 @@ function createKloseSafari(T,surface){
   function obstacleTop(x,z,r){
     let top=-Infinity;
     for(const p of stations){
-      if(Math.hypot(x-p.site.x-p.x,z-p.site.z-p.z)>r+p.r+1.0)continue;
+      if(Math.hypot(x-p.site.x-p.x,z-p.site.z-p.z)>r+p.overhang)continue;
       const coordinate=move(p.site.lat,p.site.lon,p.x,-p.z);
-      top=Math.max(top,surface.height(coordinate.lat,coordinate.lon)+(p.op==='tree'?3.25:p.op==='register'?1.9:1.4));
+      top=Math.max(top,surface.height(coordinate.lat,coordinate.lon)+p.top);
     }
     for(const p of obstacles())if(Math.hypot(x-p.x,z-p.z)<r+p.r)top=Math.max(top,p.top);
     return top;

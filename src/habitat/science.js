@@ -103,7 +103,12 @@
     for(const dx of [-1.15,1.15]){
       ring([mx+dx,2.02,mz-.45],[0,1,.2],.95,.055,C.cyan);
       ring([mx+dx,2.03,mz-.45],[0,1,.2],.57,.04,C.cyan);
-      cyl(mx+dx,2.03,mz-.45,.13,.13,.06,C.paper,{rx:.197,glow:.4});
+      cyl(mx+dx,2.055,mz-.45,.17,.17,.07,C.paper,{rx:.197,glow:.4});
+      for(let i=0;i<8;i++){
+        const a=i*Math.PI/4,offset=Math.cos(a)*.87;
+        box(mx+dx+Math.sin(a)*.87,2.03-offset*.20,mz-.45+offset,
+          .035,.025,i%2?.07:.13,C.paper,{rx:.197,ry:a});
+      }
     }
     // Rear projection mast and small raised tactical reticle.
     cyl(mx+2.3,2.13,mz-1.6,.08,.12,1.35,C.steel);
@@ -148,7 +153,7 @@
     keys(sx,1.72,-6.25,2.7);
     for(const dx of [-2.2,2.2])box(sx+dx,.8,-5.74,1.1,.38,.10,C.green,{glow:.2});
     block(sx,-7,6.9,2.9);
-    text(sx,.98,-5.68,'船 长 席',2.7,.36,C.ink);
+    text(sx,.98,-5.68,'船长  罗杰',2.7,.36,C.ink);
     // Side communications rack and briefing storage; the entrance centre stays open.
     smallConsole(-12.6,5.3,3.9,C.ivory);
     text(-12.6,2.2,4.9,'舰队通讯',2.6,.38,C.edge);
@@ -209,8 +214,9 @@
     cyl(10.1,1.48,-8.55,1.50,1.78,.30,C.navy);
     cyl(10.1,1.68,-8.55,1.35,1.35,.10,C.cyan,{glow:.3});
     for(const dx of [-1.05,1.05]){
-      cyl(10.1+dx,2.40,-8.9,.35,.48,1.35,C.steel);
-      ball(10.1+dx,3.2,-8.9,.48,.61,.48,C.green,{glow:.15});
+      cyl(10.1+dx,2.40,-8.9,.43,.53,1.35,C.steel);
+      ball(10.1+dx,3.30,-8.9,.61,.81,.61,C.green,{glow:.18});
+      ring([10.1+dx,3.04,-8.9],[0,1,0],.59,.048,C.edge);
     }
     smallConsole(10.1,-4.85,4.7,C.ivory);
     text(10.1,2.33,-5.2,'精灵融合转生仓',5.1,.46,C.edge);
@@ -374,7 +380,8 @@
     cyl(gx,1.19,gz,1.77,1.65,.22,C.ivory);
     cyl(gx,1.40,gz,1.42,1.63,.20,C.navy);
     glass(ball(gx,2.55,gz,1.47,1.47,1.47,C.cyan,{glow:.18}),.23);
-    for(const n of [[0,1,0],[0,0,1],[1,0,0]])ring([gx,2.55,gz],n,1.06,.036,C.cyan);
+    for(const n of [[0,1,0],[.62,.26,.70]])ring([gx,2.55,gz],n,1.44,.033,C.cyan);
+    ring([gx,2.55,gz],[.86,.18,-.38],1.51,.052,C.edge);
     pipe([[gx-.8,2.25,gz+.2],[gx-.4,3.25,gz+.4],[gx+.3,2.7,gz+.7],[gx+.8,3.0,gz]],.055,C.green);
     for(const s of [-1,1])beam([gx+s*1.5,1.4,gz],[gx+s*.72,3.78,gz],.15,.15,C.edge);
     box(gx,3.99,gz,1.4,.20,.55,C.edge);
@@ -625,12 +632,12 @@
     }
     for(const s of [-1,1]){
       const x=gx+s*2.45,z=gz+1.15;
-      cyl(x,1.295,z,.27,.27,.060,dark);
-      cyl(x,1.350,z,.215,.215,.080,stone);
-      ring([x,1.395,z],[0,1,0],.17,.012,C.edge);
-      box(x,1.396,z-.12,.025,.015,.11,C.paper);
-      for(let j=0;j<6;j++){
-        const t=j*Math.PI/3;box(x+Math.sin(t)*.225,1.394,z+Math.cos(t)*.225,.018,.012,.04,C.edge,{ry:t});
+      cyl(x,1.295,z,.36,.36,.060,dark);
+      cyl(x,1.350,z,.29,.29,.080,stone);
+      ring([x,1.395,z],[0,1,0],.235,.017,C.edge);
+      box(x+s*.05,1.41,z-.089,.035,.027,.21,C.paper,{ry:-s*.48});
+      for(let j=0;j<12;j++){
+        const t=j*Math.PI/6;box(x+Math.sin(t)*.308,1.330,z+Math.cos(t)*.308,.022,.012,j%3?.043:.072,C.edge,{ry:t});
       }
     }
     for(let j=0;j<3;j++)box(gx,.65+j*.14,gz+1.52,4.6,.055,.06,dark);

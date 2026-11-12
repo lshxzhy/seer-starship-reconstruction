@@ -49,9 +49,9 @@ function createPanoSystem(T,world){
     c.fillStyle=g;c.fillRect(0,0,128,128);return new T.CanvasTexture(canvas);
   }
   function remoteSphere(id,radius){
-    const m=new T.ShaderMaterial({uniforms:{sunDir:{value:new T.Vector3()},ocean:{value:id==='ocean'?1:0}},
+    const m=new T.ShaderMaterial({uniforms:{sunDir:{value:new T.Vector3()},pole:{value:new T.Vector3(...KLOSE_WORLD.rings.normal).normalize()},ocean:{value:id==='ocean'?1:0}},
       vertexShader:'varying vec3 n;void main(){n=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader:`varying vec3 n;uniform vec3 sunDir;uniform float ocean;
+      fragmentShader:`varying vec3 n;uniform vec3 sunDir,pole;uniform float ocean;
       float ring(vec3 p,vec3 center,float r){float d=distance(p,normalize(center))/r;
         return smoothstep(.66,.78,d)*(1.-smoothstep(.87,1.,d));}
       void main(){vec3 d=normalize(n);float light=max(0.,dot(d,sunDir));vec3 colour;
@@ -62,9 +62,11 @@ function createPanoSystem(T,world){
             +ring(d,vec3(.95,-.29,.18),.15)+ring(d,vec3(.26,-.38,.9),.19)+ring(d,vec3(-.83,.48,-.08),.20)+ring(d,vec3(-.18,-.59,-.83),.22);
           colour=mix(colour,vec3(.79,.86,.94),min(rims,1.)*.90);
         }else{
-          float b=d.y+.035*sin(d.x*7.+d.z*2.);colour=vec3(.54,.58,.65);
-          if(b>.57)colour=vec3(.60,.71,.70);else if(b>.20)colour=vec3(.60,.60,.40);
-          else if(b>-.14)colour=vec3(.67,.62,.71);else if(b>-.53)colour=vec3(.44,.49,.57);else colour=vec3(.74,.59,.60);
+          float b=dot(d,pole)+.018*sin(d.x*7.+d.z*2.);
+          colour=mix(vec3(.737,.588,.604),vec3(.435,.486,.569),smoothstep(-.382,-.338,b));
+          colour=mix(colour,vec3(.667,.616,.710),smoothstep(-.152,-.108,b));
+          colour=mix(colour,vec3(.600,.600,.400),smoothstep(.338,.382,b));
+          colour=mix(colour,vec3(.604,.722,.694),smoothstep(.738,.782,b));
         }gl_FragColor=vec4(colour*(.23+.77*sqrt(light)),1.);}`});
     const sphere=new T.Mesh(new T.SphereGeometry(radius,64,40),m);
     sphere.name=PANO_ORBITS[id].name;sphere.frustumCulled=false;root.add(sphere);return sphere;
@@ -116,12 +118,15 @@ function drawPanoChart(svg,{time=0,current='klose',selected=current,onSelect,veh
     }
     for(const id of ids){
       const orbit=PANO_ORBITS[id],[x,y]=project(panoCenter(id,time));
+      const radius=9*(id==='klose'?KLOSE_WORLD.radius:OCEAN_WORLD.radius)/KLOSE_WORLD.radius;
       const hit=mark('g',{'data-pano-planet':id,role:'button',tabindex:'0','aria-label':orbit.name,'aria-pressed':String(selected===id),style:'cursor:pointer'});
       for(const [tag,args,words] of [
         ['circle',{cx:x,cy:y,r:18,fill:'transparent'}],
-        ['circle',{cx:x,cy:y,r:8,fill:orbit.colour,stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2.5:1}],
+        ['circle',{cx:x,cy:y,r:radius,fill:id==='klose'?'#a6a27e':'#53829d',stroke:selected===id?'#f7fff2':'#346271','stroke-width':selected===id?2:1}],
         ['text',{x:x+13,y:y-7,fill:'#e5f2ec','font-size':13},orbit.name+(current===id?' · 当前':'')]
       ])hit.append(mark(tag,args,words));
+      if(id==='klose')hit.append(mark('ellipse',{cx:x,cy:y,rx:radius*1.39,ry:radius*.31,transform:'rotate(-24 '+x+' '+y+')',fill:'none',stroke:orbit.colour,'stroke-width':2}));
+      else for(const [dx,dy,r] of [[-.36,-.22,.27],[.39,.22,.20]])hit.append(mark('circle',{cx:x+dx*radius,cy:y+dy*radius,r:r*radius,fill:'none',stroke:'#b7d6e2','stroke-width':1}));
       hit.onclick=()=>onSelect?.(id);
       hit.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onSelect?.(id);}};
     }

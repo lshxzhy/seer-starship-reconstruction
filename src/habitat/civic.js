@@ -58,7 +58,11 @@ cabinBuilders.instructor = function(kit) {
   box(-3.3,1.65,-5.65,1.95,.12,.22,dark);
   box(-.7,1.59,-4.82,1.25,.08,.76,dark);
   for(let i=0;i<6;i++)box(-1.12+i*.17,1.646,-4.7,.095,.025,.35,cream);
-  cyl(-.05,1.66,-5.72,.35,.45,.28,gold);
+  cyl(-.05,1.61,-5.72,.50,.56,.16,dark);
+  cyl(-.05,1.79,-5.72,.41,.48,.21,gold);
+  cyl(-.05,1.936,-5.72,.30,.38,.085,cream);
+  for(const s of [-1,1])
+    beam([-.05+s*.19,1.985,-5.82],[-.05,1.985,-5.63],.042,.044,gold);
   text(-2.2,1.18,-3.43,'总教官  雷蒙',3.65,.30,white);
   // An office chair with back, arms and a connected swivel base.
   cyl(-2.2,.17,-7.3,.6,.66,.16,dark);
@@ -77,7 +81,9 @@ cabinBuilders.instructor = function(kit) {
     box(0,1.52,.43,2.68,2.75,.22,cyan,{rx:-.55,glow:.18});
     for(let i=0;i<7;i++)box(0,.83+i*.245,.91-i*.15,2.22,.035,.045,0xb5fff2);
     box(0,3.26,-.73,3.1,.83,.46,cream);
-    panel(0,3.27,-.46,1.6,.54,0x5f9cce);
+    box(0,3.27,-.46,1.60,.54,.12,dark);
+    box(0,3.27,-.383,1.42,.40,.055,0x446fba);
+    for(const y of [3.18,3.27,3.36])box(0,y,-.35,1.17,.033,.025,0x99bde2);
     box(0,.64,-1.33,2.68,.54,.12,steel);
     for(let i=0;i<4;i++)box(-.8+i*.53,.64,-1.4,.32,.08,.025,dark);
     text(0,2.68,-.11,'训练任务',2.3,.32,dark);
@@ -157,7 +163,7 @@ cabinBuilders.honors = function(kit) {
     beam([x,.7,-12.1],[x,4.6,-11.65],.22,.3,dark);
   }
   cyl(0,4.02,-11.46,2.58,2.58,.6,dark,{rx:PI/2});
-  cyl(0,4.02,-11.10,2.43,2.43,.17,gold,{rx:PI/2});
+  const badgeRim=cyl(0,4.02,-11.10,2.43,2.43,.17,gold,{rx:PI/2});
   cyl(0,4.02,-10.985,2.13,2.13,.08,0xa17a43,{rx:PI/2});
   torus(0,4.02,-10.91,2.13,.12,0xffdb7c,{glow:.25});
   const star=[];
@@ -165,8 +171,16 @@ cabinBuilders.honors = function(kit) {
     const a=PI/2+i*PI/5,r=i%2?.74:1.7;
     star.push([Math.cos(a)*r,4.02+Math.sin(a)*r,-10.85]);
   }
-  for(let i=0;i<10;i++)beam(star[i],star[i+1],.16,.13,0xffe6a4);
-  cyl(0,4.02,-10.78,.52,.52,.16,gold,{rx:PI/2});
+  const starFace=cabinAsset(cabinAssets.geometries,'honors-medal-relief',()=>{
+    // Ten planes meet at the high boss and catch the light as the visitor moves.
+    const positions=[];
+    for(let i=0;i<10;i++)positions.push(0,4.02,-10.57,...star[i],...star[i+1]);
+    const g=new kit.T.BufferGeometry();
+    g.setAttribute('position',new kit.T.Float32BufferAttribute(positions,3));
+    g.computeVertexNormals();return g;
+  });
+  kit.root.add(new kit.T.Mesh(starFace,badgeRim.material));
+  for(let i=0;i<10;i++)beam(star[i],star[i+1],.09,.09,0xffe6a4);
   for(let i=0;i<12;i++) {
     const a=i*PI/6;
     ball(Math.cos(a)*2.31,4.02+Math.sin(a)*2.31,-10.9,.067,.067,.045,0xffe6aa);
@@ -183,9 +197,10 @@ cabinBuilders.honors = function(kit) {
   box(-15.12,3.75,-6.2,3.6,5.65,.25,white,{rz:-.17});
   ball(-15.1,3.72,-6.01,1.57,2.42,.15,blue);
   const memorialRing=torus(-15.1,3.7,-5.83,1.33,.075,cyan,{glow:.35});memorialRing.scale.y*=1.43;
-  box(-15.1,3.75,-5.79,.65,1.65,.12,white);
-  box(-15.1,3.9,-5.70,1.42,.36,.08,white);
-  text(-15.1,2.32,-5.75,'SEER',2,.38,white);
+  beam([-15.42,3.09,-5.79],[-14.78,4.53,-5.79],.57,.11,white);
+  box(-14.96,4.35,-5.71,.83,.39,.08,white,{rz:-.27});
+  box(-15.18,2.83,-5.79,1.45,.08,.08,cyan);
+  text(-15.18,2.57,-5.75,'SENIOR',1.80,.32,white);
   box(-16.7,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
   box(-13.8,3.15,-7.95,.38,4.5,.5,dark,{rz:-.17});
   block(-15.3,-6.8,5.7,4.2);
@@ -295,14 +310,16 @@ cabinBuilders.terraceAccess = function(kit) {
   ball(mx,2.67,mz,1.19,1.33,1.19,0x83dced,{opacity:.21,roughness:.2});
   for(let i=0;i<7;i++) {
     const a=i*2.4;
-    ball(mx+Math.cos(a)*.66,2.07+(i%3)*.26,mz+Math.sin(a)*.55,.25,.25,.25,
-      [0xf0bc50,0x40d7e5,0x9b70d5][i%3]);
+    const x=mx+Math.cos(a)*.64,y=2.14+(i%3)*.28,z=mz+Math.sin(a)*.58;
+    ball(x,y,z,.30,.30,.30,[0xf0bc50,0x40d7e5,0x9b70d5][i%3]);
+    torus(x,y,z,.295,.020,pale,{rx:Math.PI/2});
   }
   cyl(mx,3.95,mz,.86,1.02,.28,gold);
   ball(mx,4.19,mz,.32,.32,.32,cyan,{glow:.45});
-  box(mx,.72,mz+1.36,.98,.56,.24,dark);
-  box(mx,.75,mz+1.5,.71,.3,.06,0x0f2637);
-  cyl(mx+.7,1.23,mz+1.2,.18,.18,.14,gold,{rx:Math.PI/2});
+  box(mx,.72,mz+1.36,1.30,.68,.24,dark);
+  box(mx,.73,mz+1.5,1.01,.40,.06,0x0f2637);
+  cyl(mx+.77,1.27,mz+1.19,.24,.24,.21,gold,{rx:Math.PI/2});
+  box(mx+.77,1.27,mz+1.33,.095,.36,.08,pale,{rz:-.35});
   box(mx,1.08,mz-1.37,.8,.83,.16,steel);block(mx,mz,3.6,3.5);
   text(mx,3.36,mz+1.1,'梦幻扭蛋',1.65,.36,0xeffcff);
   for(const x of [-6,6]) {

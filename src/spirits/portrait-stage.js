@@ -7,7 +7,7 @@ function createSpiritStage(T){
     gpu=new T.WebGLRenderer({canvas,alpha:true,antialias:true,powerPreference:'low-power'});
     gpu.outputEncoding=T.sRGBEncoding;gpu.toneMapping=T.ACESFilmicToneMapping;gpu.toneMappingExposure=.90;gpu.setClearColor(0,0);
     scene=new T.Scene();eye=new T.OrthographicCamera(-3,3,1.45,-1.45,.1,30);
-    eye.position.set(0,2.10,6.5);eye.lookAt(0,.77,0);
+    eye.position.set(0,2.17,6.5);eye.lookAt(0,.84,0);
     scene.add(new T.HemisphereLight(0xfff5e6,0x8fadc2,1.08));
     const sun=new T.DirectionalLight(0xffecd0,1.1);sun.position.set(-3,4,4);scene.add(sun);
     const rim=new T.DirectionalLight(0x91e7ff,.65);rim.position.set(4,2,-3);scene.add(rim);
@@ -64,7 +64,7 @@ function createSpiritStage(T){
         const model=createCompanionFigure(T,entry.id);
         if(model){
           const bounds=new T.Box3().setFromObject(model.root),size=bounds.getSize(new T.Vector3()),centre=bounds.getCenter(new T.Vector3());
-          const scale=Math.min(1.60/Math.max(.02,size.y),1.98/Math.max(.02,size.x,size.z));
+          const scale=Math.min(1.77/Math.max(.02,size.y),2.09/Math.max(.02,size.x,size.z));
           const arranged=new T.Group();arranged.scale.setScalar(scale);model.root.position.sub(new T.Vector3(centre.x,bounds.min.y,centre.z));
           arranged.add(model.root);holder.add(arranged);
         }

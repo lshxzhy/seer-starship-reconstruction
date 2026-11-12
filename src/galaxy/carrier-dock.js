@@ -4,13 +4,16 @@
     const home=body.sites.find(s=>s.id==='grassland');
     return body.point(home.lat+.18,home.lon+.05,145000);
   }
+  function carrierOrientation(T,center,surfacePoint){
+    const radial=center.clone().normalize(),back=center.clone().sub(surfacePoint).normalize();
+    const right=radial.clone().cross(back).normalize(),up=back.clone().cross(right).normalize();
+    return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(right,up,back));
+  }
   function createCarrierDock(T,world,body,room,berthId){
     const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
     const home=body.sites.find(s=>s.id==='grassland');
     const center=kloseCarrierStation(body);
-    const radial=center.clone().normalize(),back=center.clone().sub(body.point(home.lat,home.lon)).normalize();
-    const right=radial.clone().cross(back).normalize(),up=back.clone().cross(right).normalize();
-    const orientation=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(right,up,back));
+    const orientation=carrierOrientation(T,center,body.point(home.lat,home.lon));
     const carrier=new T.Group();carrier.name='赛尔号 · 克洛斯星驻留轨道';world.add(carrier);
     carrier.position.copy(center);carrier.quaternion.copy(orientation);
     const hull=new T.Group();hull.scale.copy(ship.scale).multiplyScalar(habitat.metresPerRenderUnit);carrier.add(hull);

@@ -1,3 +1,15 @@
+// Query the cells reached by this animal's own footprint. High foliage only
+// blocks animals whose crown or flight arc can actually reach its underside.
+function kloseClearsCover(cover,x,z,r,height){
+  for(let ix=Math.floor(x-r);ix<=Math.floor(x+r);ix++)for(let iz=Math.floor(z-r);iz<=Math.floor(z+r);iz++){
+    for(const b of cover.get(ix*256+iz)||[]){
+      if(b.underside>height)continue;
+      const dx=Math.max(0,b.left-x,x-b.right),dz=Math.max(0,b.back-z,z-b.front);
+      if(dx*dx+dz*dz<r*r)return false;
+    }
+  }
+  return true;
+}
 // All scenery is authored geometry. Sites share one tangent chart and leave
 // the original map connections open. The historic hunting rooms share a biome.
 function createKloseScenery(T, parent, surface) {
@@ -222,12 +234,14 @@ function createKloseScenery(T, parent, surface) {
       if(s>1.35)obstacle(x,z,s*.71);
     }
     function crystals(x,z,s,amber=false) {
+      s*=KLOSE_ITEM_SCALE;
       const y=yAt(x,z),palette=amber?['#f7b51a','#ffe16a','#c97f19']:['#029a8d','#2aabb1','#157663','#4edfb3'];
       for(let k=0;k<8;k++) {
         const a=tau*k/8,l=(.45+seed()*.7)*s;
         stamp(amber?'crystal':'coreCrystal',x+.32*s*Math.cos(a),y-.12*s,z+.32*s*Math.sin(a),l,l*1.33,l,
           choose(palette),-.42*Math.sin(a),a,.37*Math.cos(a));
       }
+      if(s>.75)obstacle(x,z,.80*s);
     }
     function roughLedge(x,z,s,c,az) {
       const y=yAt(x,z);
@@ -434,10 +448,9 @@ function createKloseScenery(T, parent, surface) {
         if(bounds.max.x<-22||bounds.min.x>22||bounds.max.z<-22||bounds.min.z>22)continue;
         const cx=(bounds.min.x+bounds.max.x)*.5,cz=(bounds.min.z+bounds.max.z)*.5;
         const underside=bounds.min.y-yAt(cx,cz);
-        if(underside>1.80)continue;
         const box={left:bounds.min.x,right:bounds.max.x,back:bounds.min.z,front:bounds.max.z,underside};
-        for(let ix=Math.floor(box.left-1.1);ix<=Math.floor(box.right+1.1);ix++)
-          for(let iz=Math.floor(box.back-1.1);iz<=Math.floor(box.front+1.1);iz++){
+        for(let ix=Math.floor(box.left);ix<=Math.floor(box.right);ix++)
+          for(let iz=Math.floor(box.back);iz<=Math.floor(box.front);iz++){
             const cell=ix*256+iz;
             if(!birdCover.has(cell))birdCover.set(cell,[]);
             birdCover.get(cell).push(box);
@@ -472,7 +485,7 @@ function createKloseScenery(T, parent, surface) {
     if(site.id==='grassland'){
       const perches=[[2,-5],[-2,-8],[3,1],[-4,5],[-10,10]];
       for(const [index,[x,z]] of perches.entries()){
-        const pet={...createKloseSpiritModel(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
+        const pet={...createFieldSpirit(T,10),id:'grassland-pipi-'+(index+1),x,z,homeX:x,homeZ:z,yAt,site,near,cover:birdCover,cooldown:0,
           random:randFrom(15831+pipi.length*931),yaw:0,hop:null,goal:null,idle:0,clock:0,at:null};
         // A scenery edit can shift a bed over a traditional perch. Search
         // outwards on open soil instead of instantiating inside its mesh.
@@ -497,23 +510,18 @@ function createKloseScenery(T, parent, surface) {
   }
   function birdClear(pet,x,z,walker,shuttle){
     // The meadow centre is the published walking-map arrival point.
-    if(Math.hypot(x,z)<1.05)return false;
-    const boxes=pet.cover.get(Math.floor(x)*256+Math.floor(z));
-    if(boxes)for(const b of boxes){
-      if(b.underside>.62)continue;
-      const dx=Math.max(0,b.left-x,x-b.right),dz=Math.max(0,b.back-z,z-b.front);
-      if(dx*dx+dz*dz<.30*.30)return false;
-    }
+    if(Math.hypot(x,z)<1.05+pet.radius)return false;
+    if(!kloseClearsCover(pet.cover,x,z,pet.radius,pet.size+.18))return false;
     function clears(cx,cz,limit){
       const distance=Math.hypot(x-cx,z-cz);
       // A visitor or the descending hull can enter the avoidance margin:
       // allow the bird to move outwards while still inside that margin.
       return distance>=limit || (pet.at&&distance>Math.hypot(pet.x-cx,pet.z-cz)+1e-7);
     }
-    if(walker&&!clears(walker.x,walker.z,.68))return false;
-    if(shuttle&&!clears(shuttle.x,shuttle.z,9.3))return false;
-    return pipi.every(other=>other===pet||other.cooldown||clears(other.x,other.z,.62)) &&
-      wildlife.inhabitants.every(other=>other.site.id!=='grassland'||!other.root.visible||clears(other.x,other.z,other.radius+.30));
+    if(walker&&!clears(walker.x,walker.z,.36+pet.radius))return false;
+    if(shuttle&&!clears(shuttle.x,shuttle.z,9+pet.radius))return false;
+    return pipi.every(other=>other===pet||other.cooldown||clears(other.x,other.z,other.radius+pet.radius+.03)) &&
+      wildlife.inhabitants.every(other=>other.site.id!=='grassland'||!other.root.visible||clears(other.x,other.z,other.radius+pet.radius));
   }
   function clearPath(pet,x,z,walker,shuttle){
     const dx=x-pet.x,dz=z-pet.z,steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.14));
@@ -545,6 +553,7 @@ function createKloseScenery(T, parent, surface) {
     pet.animal.rotation.x=-Math.atan((pet.yAt(pet.x+.12*dx,pet.z+.12*dz)-ground)/.12);
     pet.animal.rotation.z=Math.atan((pet.yAt(pet.x+.12*dz,pet.z-.12*dx)-ground)/.12);
     const breath=.012*Math.sin(pet.clock*3);
+    pet.blink(pet.clock);
     pet.body.scale.set(1-.02*arc,1+breath+.05*arc,1-.02*arc);
     pet.body.rotation.x=h ? .12*Math.sin(h.t*tau) : .025*Math.sin(pet.clock*2);
     for(let i=0;i<2;i++){
@@ -589,7 +598,7 @@ function createKloseScenery(T, parent, surface) {
       pet.goal=null;pet.idle=.18;return;
     }
     pet.hop={x:pet.x,z:pet.z,dx:stepX,dz:stepZ,t:0,
-      lift:.045+.11*stride,duration:.20+.23*stride};
+      lift:.055+.14*stride,duration:.20+.23*stride};
   }
   function update(lat,lon,dt,altitude=0,walking=false,shuttleStatus=null) {
     const {x,z}=chart(lat,lon);
@@ -623,14 +632,14 @@ function createKloseScenery(T, parent, surface) {
         }
     }
     for(const pet of pipi){
-      if(!pet.cooldown&&Math.hypot(x-pet.x,z-pet.z)<footprint+.3)
-        top=Math.max(top,height(pet.at.lat,pet.at.lon)+.48);
+      if(!pet.cooldown&&Math.hypot(x-pet.x,z-pet.z)<footprint+pet.radius)
+        top=Math.max(top,height(pet.at.lat,pet.at.lon)+pet.size+(pet.hop?.lift||0));
     }
     for(const pet of wildlife.inhabitants){
       if(pet.root.visible&&Math.hypot(x-pet.site.x-pet.x,z-pet.site.z-pet.z)<footprint+pet.radius)
-        top=Math.max(top,height(pet.at.lat,pet.at.lon)+pet.size);
+        top=Math.max(top,height(pet.at.lat,pet.at.lon)+(pet.shield?.visible?pet.shieldHeight:pet.size));
     }
-    return Math.max(top,safari.obstacleTop(x,z,footprint));
+    return Math.max(top,wildlife.obstacleTop(x,z,footprint),safari.obstacleTop(x,z,footprint));
   }
   function nearestPipi(lat,lon,id) {
     const observer=chart(lat,lon);let closest=null,distance=Infinity;
@@ -639,8 +648,8 @@ function createKloseScenery(T, parent, surface) {
       const d=Math.hypot(observer.x-pet.x,observer.z-pet.z);
       if(d<distance){closest=pet;distance=d;}
     }
-    return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:.37,visible:true,distance,lat:closest.at.lat,lon:closest.at.lon,
-      focusPoint:closest.animal.localToWorld(v(0,.166,.012))}:null;
+    return closest?{id:closest.id,key:closest.id,speciesId:10,name:'皮皮',siteId:'grassland',kind:'wild',level:1+(pipi.indexOf(closest)%2),size:closest.size,visible:true,distance,lat:closest.at.lat,lon:closest.at.lon,
+      focusPoint:closest.root.localToWorld(v(0,closest.size*.45,.02))}:null;
   }
   function spiritObservation(lat,lon,key){
     const possible=[nearestPipi(lat,lon,key),wildlife.observation(lat,lon,key),safari.observe(lat,lon,key)].filter(Boolean);
@@ -666,7 +675,7 @@ function createKloseScenery(T, parent, surface) {
   function walk(lat,lon,east,north) {
     const start=chart(lat,lon),end=move(lat,lon,east,north),dest=chart(end.lat,end.lon);
     const candidates=batches.filter(part=>Math.hypot(start.x-part.site.x,start.z-part.site.z)<111)
-      .flatMap(part=>part.obstacles).concat(pipi.filter(p=>!p.cooldown).map(p=>({x:p.x,z:p.z,r:.30})),
+      .flatMap(part=>part.obstacles).concat(pipi.filter(p=>!p.cooldown).map(p=>({x:p.x,z:p.z,r:p.radius})),
         wildlife.inhabitants.filter(p=>p.root.visible).map(p=>({x:p.site.x+p.x,z:p.site.z+p.z,r:p.radius})),safari.obstacles())
       .filter(o=>Math.hypot(start.x-o.x,start.z-o.z)<Math.hypot(east,north)+o.r+.55);
     if(!candidates.length)return end;

@@ -91,6 +91,16 @@
       plate(shell,skin,s*(entry/2+wing/2),h/2,-.095,wing,h,.19);
       plate(shell,trim,s*(entry/2+.09),1.73,-.11,.18,3.46,.52);
       plate(shell,accent,s*(entry/2+.13),1.78,-.40,.073,3,.041);
+      // Recessed distribution panels flank the gallery mouth on its ward side.
+      const panelX=s*(entry/2+1.18);
+      plate(shell,trim,panelX,1.40,.061,1.49,1.11,.12);
+      plate(shell,alloy,panelX,1.40,.135,1.35,.95,.05);
+      for(let i=-1;i<=1;i++){
+        const x=panelX+i*.40;
+        plate(shell,dark,x,1.43,.175,.25,.64,.055);
+        plate(shell,amber,x,1.33,.225,.19,.25,.075);
+        plate(shell,lamp,x,1.66,.210,.14,.058,.030);
+      }
     }
     plate(shell,trim,0,(3.55+h)/2,-.095,entry,h-3.55,.19);
     wayfinding(shell,zone.name+'　750 位',0,3.98,-.208,5.6,.60,Math.PI,'#83d2c4');
@@ -134,9 +144,9 @@
         plate(shell,trim,x,1.00,z+.77,1.43,1.98,.37);
         plate(shell,alloy,x,1.06,z+.563,1.24,1.37,.08);
         plate(shell,dark,x,1.11,z+.510,.80,.71,.047);
-        plate(shell,accent,x,.91,z+.477,.55,.050,.030);
-        plate(shell,amber,x-.44,.47,z+.51,.22,.145,.13);
-        plate(shell,amber,x+.44,.47,z+.51,.22,.145,.13);
+        plate(shell,accent,x,.91,z+.477,.65,.078,.030);
+        plate(shell,amber,x-.44,.47,z+.51,.27,.205,.14);
+        plate(shell,amber,x+.44,.47,z+.51,.27,.205,.14);
         plate(shell,lamp,x,1.87,z+.567,.91,.052,.06);
       }
       if(r%5===0){

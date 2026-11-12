@@ -113,6 +113,10 @@
       insetStrip(bridge, mid, sign * .14, sign * .43, mats.cyan, .018, .82);
       insetStrip(bridge, mid, sign * .52, sign * 1.02, mats.blue, .016, .82);
     }
+    // The manual shows two shallow white brows above a dark band. Preserve
+    // a shadowed joint at their edges even when the bridge is lit head-on.
+    platedStack(bridge, [[height+.162,aft-.043,forwardReach+.050,depth*1.030],
+      [height+.192,aft-.054,forwardReach+.071,depth*1.056]],mats.edge);
     platedStack(bridge, [[height + .17, aft - .06, forwardReach + .07, depth * 1.055],
       [height + .25, aft - .06, forwardReach + .08, depth * 1.06],
       [height + .37, aft + .14, forwardReach - .20, depth * .86],

@@ -65,8 +65,10 @@ function createSafariFigure(T,id){
       socket.quaternion.setFromUnitVectors(V(0,0,1),normal);
     }
     socket.rotateZ(s*slant);
-    oval(iris,0,0,0,w,h,.016,socket);
-    oval(white,-w*.23,h*.29,.014,w*.32,h*.31,.007,socket);
+    oval('#323044',0,0,-.003,w*1.08,h*1.06,.016,socket);
+    oval(iris,0,0,.002,w,h,.016,socket);
+    if(iris!==ink)oval('#242638',0,h*.11,.014,w*.62,h*.67,.006,socket);
+    oval(white,-w*.23,h*.30,.021,w*.31,h*.34,.006,socket);
   }
   function joint(x,y,z,axis,amplitude,phase=0){
     const g=new T.Group();g.position.set(x,y,z);body.add(g);moving.push({g,axis,amplitude,phase});return g;
@@ -261,13 +263,17 @@ function createSafariFigure(T,id){
     strand(ice,[[0,.345,.171],[-.027,.258,.181],[0,.144,.155],[.054,.142,.118]],[.041,.030,.018,.003]);
   }
   function blu(){
-    const pearl='#d9eaee',navy='#5277a7';
+    const pearl='#c7dce5',navy='#455c91';
     oval(pearl,0,.371,0,.080,.188,.092);feet(pearl,.064,.207,.047,.073,.058,.072);
     oval(pearl,0,.617,.009,.262,.182,.181);oval(navy,0,.734,-.021,.219,.080,.152);
+    const crown=oval('#6e8ed5',.014,.782,-.031,.156,.033,.108);crown.rotation.z=-.09;
+    oval('#edf7ff',-.045,.81,-.013,.061,.009,.023);
+    oval(pearl,0,.173,.080,.043,.052,.054);
     strand('#405571',[[-.037,.571,.173],[-.005,.558,.181],[.028,.573,.177]],[.002,.006,.002]);
-    pair(s=>{eye(s,.146,.615,.157,.062,.078,'#2a5d88');
+    pair(s=>{eye(s,.146,.615,.157,.052,.073,'#347d9f');
       const ear=joint(s*.242,.605,-.003,'z',.11,s);
-      oval('#c1dbdf',s*.087,-.07,.006,.063,.129,.045,ear).rotation.z=s*.54;
+      oval('#b7dbe7',s*.081,-.066,.006,.050,.131,.038,ear).rotation.z=s*.65;
+      oval('#e0eef0',s*.075,-.052,.024,.035,.110,.021,ear).rotation.z=s*.65;
     });
   }
   function linda(){

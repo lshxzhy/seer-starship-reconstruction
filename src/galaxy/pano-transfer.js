@@ -71,7 +71,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       approach.copy(dock.position);
       approach.addScaledVector(axis.copy(forward).applyQuaternion(dock.quaternion),10000);
     }else{
-      const b=bodies[r.planet];approach.copy(b.frame(r.site.lat,r.site.lon).up).multiplyScalar(b.radius+28000);
+      const b=bodies[r.planet];approach.copy(b.frame(r.site.lat,r.site.lon).up).multiplyScalar(b.radius+Math.min(28000,b.radius*.36));
     }
     return goal.copy(approach).add(destinationCentre);
   }
@@ -85,7 +85,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     for(const id of ['star',...ids]){
       pano.center(id,time,centre);
       const radius=id==='star'?pano.starRadius:bodies[id].radius;
-      const radiusLimit=radius+(id==='star'?50000:14000);
+      const radiusLimit=radius+(id==='star'?50000:Math.min(14000,radius*.12));
       radial.subVectors(centre,globalP);
       const projected=clamp(radial.dot(segment),0,length);
       along.copy(radial).addScaledVector(segment,-projected);
@@ -103,7 +103,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
       if(along.lengthSq()<.01)along.crossVectors(radial,right);
     }
     along.normalize();
-    const reach=Math.max(here,radius+78000),angle=.30;
+    const reach=Math.max(here,radius+Math.min(78000,radius*.85)),angle=.30;
     return waypoint.copy(centre).addScaledVector(radial,reach*Math.cos(angle)).addScaledVector(along,reach*Math.sin(angle));
   }
   function guide(dt){
@@ -142,7 +142,7 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     radial.normalize();
     // Bound closing speed as the distance to the approach shell falls. Both
     // manual boost and guidance must leave enough braking distance to enter local flight.
-    const v=pano.velocity(id,time,orbitalV),floor=id==='star'?14000:8000;
+    const v=pano.velocity(id,time,orbitalV),floor=id==='star'?14000:Math.min(8000,radius*.06);
     const limit=Math.sqrt(2*4000*Math.max(0,altitude-floor))+800;
     const inward=-relativeV.copy(globalV).sub(v).dot(radial);
     if(inward>limit)globalV.addScaledVector(radial,Math.min(inward-limit,dt*9800));
@@ -166,7 +166,10 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     if(route&&route.planet===reference){
       const d=globalP.distanceTo(approachPoint(route));
       if(d<9000&&velocity.length()<2100)resumeLocal(reference);
-    }else if(!route&&position.length()-bodies[reference].radius<26000&&velocity.length()<4400)resumeLocal(reference);
+    }else if(!route&&velocity.length()<4400){
+      const r=bodies[reference].radius;
+      if(position.length()-r<Math.min(26000,r*.30)||(reference==='klose'&&position.distanceTo(dock.position)<2800))resumeLocal(reference);
+    }
   }
   function tick(dt,input={}){
     if(!Number.isFinite(dt)||!(dt>0))return;
@@ -174,8 +177,9 @@ function createPanoFlight(T,bodies,dock,pano,saved){
     if(!transit){
       local.tick(dt,input);
       const s=local.status();time+=dt*(s.timeScale||1);syncLocal();
-      const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>1850;
-      if(s.phase==='flying'&&outsideDock&&s.clearance>=(route?33000:65000)&&(route||!s.auto))enterTransfer();
+      const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>(route?1850:3200);
+      const orbitalBoundary=route?Math.min(33000,bodies[reference].radius*.54):Math.min(65000,bodies[reference].radius);
+      if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer();
       return;
     }
     scale=route?8:1;
@@ -207,12 +211,13 @@ function createPanoFlight(T,bodies,dock,pano,saved){
   function snapshot(){
     const record=transit?{phase:'flying',auto:route?.destination||null,p:position.toArray(),v:velocity.toArray(),
       q:quaternion.toArray(),heading:localHeading.copy(forward).applyQuaternion(quaternion).toArray()}:local.snapshot();
-    return {...record,version:2,planetId:reference,orbitTime:time,inTransit:transit,route:route?{...route,site:route.site?
+    return {...record,version:3,planetId:reference,orbitTime:time,inTransit:transit,route:route?{...route,site:route.site?
       {id:route.site.id,name:route.site.name,lat:route.site.lat,lon:route.site.lon}:null}:null};
   }
   function restore(rec){
-    if(!rec||![1,2].includes(rec.version))return false;
-    const id=rec.version===2&&available(rec.planetId)?rec.planetId:'klose';
+    rec=compactVehicleRecord(rec,dock);
+    if(rec?.version!==3)return false;
+    const id=available(rec.planetId)?rec.planetId:'klose';
     const validTime=Number.isFinite(rec.orbitTime)&&rec.orbitTime>=0;
     if(rec.inTransit&&(!tuple(rec.p,3)||!tuple(rec.v,3)||!tuple(rec.q,4)||!validTime))return false;
     if(!rec.inTransit&&(!tuple(rec.p,3)||!tuple(rec.v,3)||!tuple(rec.q,4)||!tuple(rec.heading,3)))return false;

@@ -2,8 +2,8 @@ function createKloseBird(T,speciesId) {
     const shiny=speciesId===164;
     const color=hex=>new T.Color(hex).convertSRGBToLinear();
     const v=(x,y,z)=>new T.Vector3(x,y,z),tau=2*Math.PI;
-    const round=new T.SphereGeometry(1,18,14);
-    const animal=new T.Group(),body=new T.Group(),ears=[],feet=[];
+    const round=new T.SphereGeometry(1,28,18);
+    const animal=new T.Group(),body=new T.Group(),ears=[],feet=[],eyes=[];
     animal.add(body);animal.rotation.order='YXZ';
     const pink=shiny?'#faf9ef':'#f5b2ca',light=shiny?'#fffdeb':'#ffd3e1',tip=shiny?'#ebbc41':'#381b2a',cheek=shiny?'#e9929e':'#ff778f';
     const materials=new Map();
@@ -16,25 +16,30 @@ function createKloseBird(T,speciesId) {
     }
     oval(0,.102,0,.104,.078,.073,pink);
     oval(0,.067,-.083,.044,.043,.047,light);
-    const span=12,steps=32;
+    const span=18,steps=42;
     for (const side of [-1,1]) {
       const foot=oval(side*.063,.035,.031,.050,.035,.048,pink);foot.rotation.z=side*.17;
       animal.add(foot);feet.push(foot);
-      oval(side*.079,.088,.047,.026,.018,.014,cheek);
-      oval(side*.035,.117,.064,.012,.017,.008,'#291f2a');
-      oval(side*.035-.002,.123,.072,.0044,.005,.003,'#fff8fc');
+      const blush=oval(side*.080,.087,.044,.031,.021,.013,cheek);blush.rotation.y=side*.56;
+      const eye=new T.Group();eye.position.set(side*.034,.119,.065);eye.rotation.y=side*.23;body.add(eye);eyes.push(eye);
+      eye.add(oval(0,0,0,.0115,.020,.008,'#2a202b'));
+      eye.add(oval(-.002,.007,.007,.0048,.008,.0028,'#fff8fc'));
+      eye.add(oval(.003,-.008,.007,.0026,.0028,.0017,'#bfabb5'));
       const ear=new T.Group();ear.position.set(side*.055,.149,0);body.add(ear);ears.push(ear);
       const curve=new T.CubicBezierCurve3(v(0,0,0),v(side*.028,.277,-.006),v(side*.16,.294,-.012),v(side*.175,-.024,.012));
-      const p=[],rgb=[],idx=[],base=color(pink),end=color(tip);
+      const p=[],rgb=[],idx=[],base=color(pink),end=color(tip),glow=color(light),tone=new T.Color();
       for(let j=0;j<=steps;j++) {
         const t=j/steps,center=curve.getPoint(t),tangent=curve.getTangent(t);
         const lateral=v(-tangent.y,tangent.x,0).normalize();
-        const rad=.016+.012*Math.sin(Math.PI*t)+.015*Math.exp(-((t-.88)**2)/.009);
+        const rad=.017+.015*Math.sin(Math.PI*t)+.021*Math.exp(-((t-.87)**2)/.012);
         const taper=t>.91?Math.sqrt(Math.max(0,1-((t-.91)/.09)**2)):1;
         for(let k=0;k<span;k++) {
           const a=tau*k/span,offset=lateral.clone().multiplyScalar(rad*taper*Math.cos(a));
           p.push(center.x+offset.x,center.y+offset.y,center.z+.72*rad*taper*Math.sin(a));
-          const c=t>.76+.016*Math.cos(a)?end:base;rgb.push(c.r,c.g,c.b);
+          const darkTip=t>.74+.026*Math.cos(a);
+          const ridge=Math.max(0,Math.cos(a-side*.42))**5;
+          tone.copy(darkTip?end:base).lerp(glow,ridge*(darkTip?.075:.28));
+          rgb.push(tone.r,tone.g,tone.b);
           if(j) {const l=(j-1)*span+k,r=(j-1)*span+(k+1)%span;idx.push(l,r,l+span,r,r+span,l+span);}
         }
       }
@@ -42,12 +47,13 @@ function createKloseBird(T,speciesId) {
       geo.setAttribute('color',new T.Float32BufferAttribute(rgb,3));geo.setIndex(idx);geo.computeVertexNormals();
       ear.add(new T.Mesh(geo,new T.MeshStandardMaterial({vertexColors:true,side:T.DoubleSide,roughness:.66})));
     }
-    const bill = new T.Mesh(new T.ConeGeometry(1,1,4),paint(shiny?'#f29798':'#43ade6'));
-    bill.position.set(0,.089,.077);bill.rotation.x=Math.PI*.47;bill.rotation.y=Math.PI*.25;bill.scale.set(.018,.027,.012);body.add(bill);
+    oval(0,.083,.078,.014,.008,.013,shiny?'#b86976':'#3177a3');
+    const bill=oval(0,.091,.082,.019,.009,.015,shiny?'#f29798':'#63c8ee');bill.rotation.x=.14;
     animal.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
     animal.name=shiny?'164 · 闪光皮皮':'010 · 皮皮';
     let time=0;
-    return {animal,root:animal,body,ears,feet,update(dt){time+=dt;body.scale.y=1+.015*Math.sin(3*time);ears.forEach((ear,i)=>{ear.rotation.z=(i?1:-1)*.045*Math.sin(time*3+i*.25);});},dispose(){disposeKloseModel(animal);}};
+    function blink(t){const aperture=.10+.90*Math.min(1,Math.abs((t%4.1)-3.3)/.096);for(const eye of eyes)eye.scale.y=aperture;}
+    return {animal,root:animal,body,ears,feet,blink,update(dt){time+=dt;blink(time);body.scale.y=1+.015*Math.sin(3*time);ears.forEach((ear,i)=>{ear.rotation.z=(i?1:-1)*.045*Math.sin(time*3+i*.25);});},dispose(){disposeKloseModel(animal);}};
 }
 
 const KLOSE_SPECIMENS={
@@ -127,6 +133,7 @@ function createKloseSpiritModel(T,id){
     for(const side of [-1,1]){
       const arm=joint(side*.13,.34,.12,.10,'x',side);
       strand(green,[[0,0,0],[side*.095,-.07,.03],[side*.04,-.10,.12],[-side*.05,-.10,.14]],[.060,.071,.063,.025],arm);
+      for(let k=0;k<2;k++)spike('#efcb57',[-side*.035,-.097+.031*k,.125],[-side*(.084+.015*k),-.09+.035*k,.133],.016,arm);
       oval(green,side*.060,.155,0,.065,.15,.060);
       eye(side*.085,.53,.171,.70);
     }
@@ -141,14 +148,17 @@ function createKloseSpiritModel(T,id){
       if(z>.10&&Math.abs(x)<.155)continue;
       spike('#f2cd58',[x,y,z],[x*1.38,y+.065,z*1.40],.030);
     }
-    for(let j=0;j<3;j++)spike(gold,[-.12+.032*j,.34,.02],[-.16+.06*j,.42+.025*(j%2),.018],.020,brow);
+    for(let j=0;j<3;j++)spike(gold,[-.12+.032*j,.37,.015],[-.17+.068*j,.48+.034*(j%2),.018],.026,brow);
+    strand('#87a832',[[.08,.82,-.02],[.22,.75,.0],[.25,.58,.01],[.20,.38,.07]],[.072,.101,.082,.043]);
+    strand(shade,[[.10,.86,.035],[.235,.76,.068],[.275,.57,.052],[.214,.39,.096]],[.005,.009,.007,.002]);
   }
   function sprout(){
     const yellow='#e5bb23';
     oval(yellow,0,.40,0,.225,.29,.165);oval('#fff9df',0,.34,.106,.185,.214,.075);
     feet(yellow,.110,.035);
     for(const s of [-1,1]){
-      eye(s*.092,.445,.152,.95,body,'#30264e');
+      oval('#7971b2',s*.092,.443,.149,.047,.071,.029);
+      eye(s*.092,.445,.164,.88,body,'#30264e');
       const g=joint(s*.174,.45,.01,.14,'z',s);
       const blade=oval('#a7b73e',s*.064,-.109,0,.083,.187,.035,g);blade.rotation.z=s*.38;
       strand('#73842e',[[0,.015,0],[s*.065,-.09,.032],[s*.095,-.21,.024],[s*.114,-.27,.002]],[.009,.009,.005,.001],g);
@@ -406,7 +416,7 @@ function createKloseWildlife(T,surface,meadowBirds){
   let coreStep=0;
   const shieldWindowMs=6500;
   function resetShield(p){
-    p.hits=0;p.shieldDeadline=0;p.shield.visible=true;p.radius=1.1;
+    p.hits=0;p.shieldDeadline=0;p.shield.visible=true;p.radius=p.shieldRadius;
     p.shield.material.uniforms.heat.value=0;p.shield.material.uniforms.flash.value=0;
   }
   function shieldVisual(p,now){
@@ -418,13 +428,10 @@ function createKloseWildlife(T,surface,meadowBirds){
     u.phase.value=p.clock%100;
   }
   function clear(p,x,z,walker,boat){
-    if(Math.hypot(x,z)<1.05 || Math.hypot(x-p.homeX,z-p.homeZ)>7.6)return false;
+    if(Math.hypot(x,z)<1.05+p.radius || Math.hypot(x-p.homeX,z-p.homeZ)>7.6)return false;
     const radius=p.radius,dx=p.site.x+x,dz=p.site.z+z;
-    const boxes=p.cover.get(Math.floor(x)*256+Math.floor(z));
-    if(boxes)for(const b of boxes){
-      if(b.underside>p.size+.12)continue;
-      if(Math.hypot(Math.max(0,b.left-x,x-b.right),Math.max(0,b.back-z,z-b.front))<radius)return false;
-    }
+    const height=p.shieldRadius&&p.radius===p.shieldRadius?p.shieldHeight:p.size;
+    if(!kloseClearsCover(p.cover,x,z,radius,height+.12))return false;
     if(p.hazards.some(b=>Math.hypot(dx-b.x,dz-b.z)<b.r+radius))return false;
     if(pools.some(w=>Math.hypot((dx-w.x)/(w.rx+radius),(dz-w.z)/(w.rz+radius))<1.04))return false;
     const away=(cx,cz,r)=>{
@@ -433,8 +440,8 @@ function createKloseWildlife(T,surface,meadowBirds){
     };
     if(walker&&!away(walker.x,walker.z,radius+.35))return false;
     if(boat&&!away(boat.x,boat.z,radius+9))return false;
-    if(p.site.id==='grassland'&&meadowBirds.some(b=>!b.cooldown&&!away(b.x,b.z,radius+.30)))return false;
-    return inhabitants.every(other=>other===p||other.site!==p.site||!other.root.visible||
+    if(p.site.id==='grassland'&&meadowBirds.some(b=>!b.cooldown&&!away(b.x,b.z,radius+b.radius)))return false;
+    return inhabitants.every(other=>other===p||other.site!==p.site||p.at&&!other.root.visible||
       away(other.site.x+other.x,other.site.z+other.z,other.radius+radius));
   }
   function pose(p,bounce=0){
@@ -443,12 +450,17 @@ function createKloseWildlife(T,surface,meadowBirds){
     p.root.rotation.y=p.yaw;
   }
   function install(site,near,yAt,hazards,cover){
+    if(site.id==='core')installCore(site,near,yAt,hazards);
     for(const [index,row] of (KLOSE_TERRITORIES[site.id]||[]).entries()){
-      const [speciesId,homeX,homeZ,level,kind]=row,size=KLOSE_SPECIMENS[speciesId][1];
+      const [speciesId,homeX,homeZ,level,kind]=row,model=createFieldSpirit(T,speciesId);
       const seed=(speciesId*37+index*19)%97;
-      const p={...createKloseSpiritModel(T,speciesId),key:site.id+'-'+speciesId+'-'+(index+1),speciesId,size,level,kind,
-        site,near,yAt,hazards,cover,homeX,homeZ,x:homeX,z:homeZ,radius:Math.max(.12,size*.33),
+      const p={...model,key:site.id+'-'+speciesId+'-'+(index+1),speciesId,level,kind,
+        site,near,yAt,hazards,cover,homeX,homeZ,x:homeX,z:homeZ,bodyRadius:model.radius,
         clock:0,yaw:-.3+seed*.031,distance:0,wait:.3+seed*.02,cooldown:0,path:null,walker:null,hits:0};
+      if(speciesId===47){
+        p.shieldRadius=Math.max(1.1*FIELD_SPIRIT_SCALE,model.radius*1.30);
+        p.radius=p.shieldRadius;p.shieldHeight=p.size*1.21;
+      }
       let placed=false;
       for(let ring=0;ring<=12&&!placed;ring++){
         const n=1+ring*7;
@@ -482,37 +494,61 @@ function createKloseWildlife(T,surface,meadowBirds){
               #include <tonemapping_fragment>
               #include <encodings_fragment>
             }`}));
-        shield.scale.set(1.1,1.04,1.1);shield.position.y=.59;p.root.add(shield);p.shield=shield;resetShield(p);
+        shield.scale.set(p.shieldRadius,p.size*.77,p.shieldRadius);shield.position.y=p.shieldHeight-shield.scale.y;
+        p.root.add(shield);p.shield=shield;resetShield(p);
       }
       if(speciesId===83||speciesId===442){
         // The animal retracts into the dark mouth below its body, not through
         // a stretch of unbroken soil. The marker stays when the animal is shy.
         const mouth=new T.Mesh(new T.CylinderGeometry(.23,.19,.026,24),
           new T.MeshStandardMaterial({color:0x352c24,roughness:1}));
-        mouth.scale.z=.72;mouth.position.set(p.x,yAt(p.x,p.z)+.023,p.z);near.add(mouth);
+        mouth.scale.set(FIELD_SPIRIT_SCALE,1,.72*FIELD_SPIRIT_SCALE);mouth.position.set(p.x,yAt(p.x,p.z)+.023,p.z);near.add(mouth);
       }
     }
-    if(site.id==='core'){
+  }
+  function installCore(site,near,yAt,hazards){
       // The vine, upper mineral, violet bud and resonant seam are also
       // recognisable at a distance. Only the last seam comes alive.
       const spots=[[-6,-2,'卷叶鳄兰'],[4,-8,'高处矿石'],[-5,3,'紫花苞'],[3,-5,'共鸣矿石']];
       for(const [index,[x,z,name]] of spots.entries()){
-        const device=new T.Group();device.position.set(x,yAt(x,z),z);near.add(device);
+        const device=new T.Group();device.position.set(x,yAt(x,z),z);device.scale.setScalar(KLOSE_ITEM_SCALE);near.add(device);
         const jewel=index===1||index===3,mat=new T.MeshStandardMaterial({color:[0x788847,0x57bda9,0xa24d90,0x667d73][index],
           roughness:jewel?.32:.66,emissive:0x132a22,emissiveIntensity:jewel?.42:.1});
         const base=new T.Mesh(new T.DodecahedronGeometry(1),new T.MeshStandardMaterial({color:0x665c48,roughness:.95}));
         base.scale.set(.74,index===1?.87:.18,.59);base.position.y=index===1?.69:.08;device.add(base);
-        for(let k=0;k<5;k++){
-          const a=k*Math.PI*2/5;
-          const leaf=new T.Mesh(jewel?new T.OctahedronGeometry(1):new T.SphereGeometry(1,16,9),mat);
-          leaf.scale.set(jewel?.20:.14,jewel?.42:.38,jewel?.19:.22);
-          leaf.position.set(.20*Math.sin(a),index===1?1.42:.43,.20*Math.cos(a));
-          leaf.rotation.set(.38,a,0,'YXZ');device.add(leaf);
+        let top=.18;
+        if(jewel){
+          const prism=new T.LatheGeometry([[.05,0],[.95,.08],[1,.66],[.70,.82],[0,1]].map(([r,h])=>new T.Vector2(r,h)),6);
+          for(let k=0;k<6;k++){
+            const a=k*Math.PI*.4,h=k===5?.87:.39+.26*(k%3)/2,offset=k===5?0:.27,stem=index===1?1.31:.15;
+            const shard=new T.Mesh(prism,mat);
+            shard.position.set(offset*Math.sin(a),stem,offset*Math.cos(a));
+            shard.scale.set(.13+.026*(k%2),h,.15);shard.rotation.set(k===5?0:.32,a,0,'YXZ');device.add(shard);
+            top=Math.max(top,stem+h);
+          }
+        }else if(index===0){
+          const path=new T.CatmullRomCurve3([[0,.14,0],[-.12,.43,0],[-.16,.85,.02],[.07,1.04,.04],
+            [.32,.95,.06],[.35,.70,.08],[.17,.61,.10],[.10,.74,.11]].map(p=>new T.Vector3(...p)));
+          device.add(new T.Mesh(new T.TubeGeometry(path,36,.070,9,false),mat));
+          for(const side of [-1,1]){
+            const blade=new T.Mesh(new T.SphereGeometry(1,20,12),mat);blade.scale.set(.12,.33,.055);
+            blade.position.set(side*.19,.43,.05);blade.rotation.z=-side*.63;device.add(blade);
+          }
+          top=1.15;
+        }else{
+          const bud=new T.SphereGeometry(1,26,16);
+          const sepals=new T.MeshStandardMaterial({color:0x828b42,roughness:.68});
+          for(let k=0;k<6;k++){
+            const a=k*Math.PI/3,c=Math.cos(a),s=Math.sin(a),petal=new T.Mesh(bud,mat),sepal=new T.Mesh(bud,sepals);
+            petal.scale.set(.14,.36,.105);petal.position.set(.15*s,.54,.15*c);petal.rotation.set(-.20,a,0,'YXZ');
+            sepal.scale.set(.072,.21,.054);sepal.position.set(.17*s,.32,.17*c);sepal.rotation.set(.37,a,0,'YXZ');
+            device.add(petal,sepal);
+          }
+          top=.91;
         }
-        switches.push({site,near,x,z,index,name,root:device,mat});
-        hazards.push({x:site.x+x,z:site.z+z,r:.65});
+        switches.push({site,near,x,z,index,name,root:device,mat,top:top*KLOSE_ITEM_SCALE});
+        hazards.push({x:site.x+x,z:site.z+z,r:.74*KLOSE_ITEM_SCALE});
       }
-    }
   }
   function exposed(p,visitor){
     const id=p.speciesId,t=p.clock;
@@ -641,7 +677,7 @@ function createKloseWildlife(T,surface,meadowBirds){
       if(p.shield){
         if(!flameTool)return '先去赛尔号实验室领取并装备火焰喷射器';
         const now=performance.now();shieldVisual(p,now);p.hits++;
-        if(p.hits>=3){p.shield.visible=false;p.radius=p.size*.33;return '护膜消散 · 可以挑战蘑菇怪了';}
+        if(p.hits>=3){p.shield.visible=false;p.radius=p.bodyRadius;return '护膜消散 · 可以挑战蘑菇怪了';}
         p.shieldDeadline=now+shieldWindowMs;shieldVisual(p,now);
         return '护膜'+(p.hits===1?'开始变暗':'已变黑')+' · 连续照射 '+p.hits+' / 3';
       }
@@ -655,5 +691,13 @@ function createKloseWildlife(T,surface,meadowBirds){
     if(seam){seam.mat.emissive.setHex(coreStep>=3?0x36dacf:0x132a22);seam.mat.emissiveIntensity=coreStep>=3?.78:.42;}
     return coreStep===4?'共鸣矿石亮起 · 石晶晶出现了':'晶脉传来回响 · 接下来'+prompts[coreStep];
   }
-  return {install,update,observation,withdraw,interact,hint,inhabitants};
+  function obstacleTop(x,z,footprint){
+    let top=-Infinity;
+    for(const sw of switches)if(Math.hypot(x-sw.site.x-sw.x,z-sw.site.z-sw.z)<footprint+.74*KLOSE_ITEM_SCALE){
+      const at=move(sw.site.lat,sw.site.lon,sw.x,-sw.z);
+      top=Math.max(top,surface.height(at.lat,at.lon)+sw.top);
+    }
+    return top;
+  }
+  return {install,update,observation,withdraw,interact,hint,inhabitants,obstacleTop};
 }

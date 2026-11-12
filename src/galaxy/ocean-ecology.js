@@ -103,6 +103,8 @@ function createOceanShark(T,id){
       oval(0x474952,0,0,0,.115,.147,.036,eye);oval(0xf7fbf6,0,0,.021,.103,.134,.031,eye);
       oval(0x5b9eb5,0,0,.041,.075,.100,.025,eye);oval(0x1f3136,0,.005,.060,.039,.065,.019,eye);
       oval(0xffffff,-.019,.043,.080,.016,.021,.009,eye);
+      // The light dash follows the turning forehead on the original portrait.
+      stroke(0xa2a29e,[[s*sideAt(.198,.34),.198,.34],[s*sideAt(.210,.302),.210,.302],[s*sideAt(.218,.268),.218,.268]],.008);
     }
     stroke(0x373640,[[-.073,.031,.424],[-.046,.014,.431],[0,.001,.438],[.046,.011,.432],[.073,.035,.424]],.009);
     tail.position.set(0,-.034,-.411);
@@ -118,10 +120,12 @@ function createOceanShark(T,id){
       const eye=new T.Group();eye.position.set(s*sideAt(.09,.437),.09,.437);eye.rotation.y=s*1.17;body.add(eye);
       oval(0x42484c,0,0,0,.115,.083,.025,eye);oval(0xe7f7f4,0,0,.014,.104,.074,.023,eye);
       oval(0x5c8091,0,.016,.029,.051,.050,.015,eye);oval(0x17242b,0,.021,.040,.032,.037,.012,eye);
+      oval(0xfcffff,-.009,.035,.051,.010,.013,.005,eye);
       const cheekLine=(color,points,r)=>stroke(color,points.map(([y,z])=>[s*(sideAt(y,z)+.004),y,z]),r);
       cheekLine(dark,[[.092,.551],[.135,.486],[.155,.42],[.151,.34]],.016);
       cheekLine(0xac6970,[[-.023,.698],[-.034,.651],[-.061,.585],[-.100,.478]],.009);
       for(let i=0;i<3;i++)cheekLine(0x934c58,[[.023,.19-i*.048],[-.031,.171-i*.048],[-.083,.127-i*.048]],.006);
+      fin([[s*.36,-.175,-.154],[s*.57,-.260,-.345],[s*.53,-.250,-.327],[s*.40,-.194,-.182]],0xbac1c3,.004,f);
     }
     tail.position.set(0,.026,-.88);
     fin([[0,.01,.12],[0,.18,-.02],[0,.41,-.24],[0,.40,-.30],[0,.13,-.27],[0,.02,-.15],[0,-.16,-.28],[0,-.23,-.21],[0,-.12,-.04]],dark,.035,tail);
@@ -144,12 +148,20 @@ function createOceanEcology(T,parent,definition,surface){
     ['ocean-shallows',108,16,6.1,5.8],['ocean-depths',108,16,-7.5,3.4],['ocean-floor',108,16,6.8,3.9]
   ];
   const names={30:'贝尔',33:'利牙鱼',34:'钢牙鲨',108:'布鲁'};
-  const tall={30:.29,33:.46,34:.64,108:.40};
   const nodes=schools.map(([siteId,id,level,x,z],i)=>{
-    const site=definition.sites.find(s=>s.id===siteId),model=createCompanionFigure(T,id);
+    const site=definition.sites.find(s=>s.id===siteId),model=createFieldSpirit(T,id);
     const anchor=new T.Group(),turn=new T.Group();anchor.add(turn);turn.add(model.root);parent.add(anchor);
     const key=siteId+'-'+id+'-'+i;anchor.userData.oceanSpirit=key;anchor.visible=false;
-    const at=surface.move(site.lat,site.lon,x,-z);
+    // Reserve a real footprint for the first pose as well as its patrol.
+    let at=surface.move(site.lat,site.lon,x,-z);
+    if(!surface.canSwim(at.lat,at.lon,model.radius)){
+      let found=false;
+      for(let ring=1;ring<=10&&!found;ring++)for(let k=0;k<ring*8;k++){
+        const a=k*Math.PI*2/(ring*8),ix=x+ring*.50*Math.cos(a),iz=z+ring*.50*Math.sin(a);
+        const candidate=surface.move(site.lat,site.lon,ix,-iz);
+        if(surface.canSwim(candidate.lat,candidate.lon,model.radius)){x=ix;z=iz;at=candidate;found=true;break;}
+      }
+    }
     return {site,model,anchor,turn,key,id,level,x,z,ix:x,iz:z,at,yaw:.5*i,t:1.69*i,rest:0};
   });
   const sites=Object.keys(OCEAN_HABITATS),interval=75,rareWindow=45;
@@ -167,7 +179,12 @@ function createOceanEcology(T,parent,definition,surface){
       const nextX=p.x+radius*Math.sin(p.t),nextZ=p.z+radius*.65*Math.cos(p.t);
       const candidate=surface.move(p.site.lat,p.site.lon,nextX,-nextZ);
       const oldDistance=wetDistance(lastVisitor,p.at),newDistance=wetDistance(lastVisitor,candidate);
-      if((newDistance>.83||newDistance>=oldDistance)&&(!surface.canSwim||surface.canSwim(candidate.lat,candidate.lon,.40))){
+      const schoolClear=nodes.every(other=>{
+        if(other===p||!other.anchor.visible||other.site!==p.site)return true;
+        const distance=wetDistance(other.at,candidate);
+        return distance>=p.model.radius+other.model.radius||distance>wetDistance(other.at,p.at);
+      });
+      if(schoolClear&&(newDistance>.36+p.model.radius||newDistance>=oldDistance)&&surface.canSwim(candidate.lat,candidate.lon,p.model.radius)){
         const dx=nextX-p.ix,dz=nextZ-p.iz,heading=Math.atan2(dx,dz);
         if(dx*dx+dz*dz>.0000001){
           const d=Math.atan2(Math.sin(heading-p.yaw),Math.cos(heading-p.yaw));
@@ -183,10 +200,10 @@ function createOceanEcology(T,parent,definition,surface){
     }
   }
   function record(p,lat,lon){
-    return {id:p.key,key:p.key,speciesId:p.id,name:names[p.id],size:tall[p.id],siteId:p.site.id,level:p.level,
+    return {id:p.key,key:p.key,speciesId:p.id,name:names[p.id],size:p.model.size,siteId:p.site.id,level:p.level,
       kind:p.id===34?'boss':p.id===108?'rare':'wild',visible:true,fieldLock:'',
       portraitBearing:p.id===34?Math.PI-p.yaw+.9:undefined,
-      lat:p.at.lat,lon:p.at.lon,distance:wetDistance({lat,lon},p.at),focusPoint:p.anchor.localToWorld(new T.Vector3(0,tall[p.id]*.52,0))};
+      lat:p.at.lat,lon:p.at.lon,distance:wetDistance({lat,lon},p.at),focusPoint:p.anchor.localToWorld(new T.Vector3(0,p.model.size*.52,0))};
   }
   function spiritObservation(lat,lon,key){
     let closest=null;
@@ -211,6 +228,17 @@ function createOceanEcology(T,parent,definition,surface){
     const blu=nodes.find(p=>p.id===108&&p.anchor.visible&&wetDistance(p.at,{lat,lon})<30);
     return blu?'稀有信号 · 布鲁正在附近游动':'';
   }
-  return {update,spiritObservation,nearbySpirit:(lat,lon)=>spiritObservation(lat,lon),pickSpirit,withdrawSpirit,hint,
+  function clearWalker(point,radius){
+    for(const p of nodes){
+      if(!p.anchor.visible)continue;
+      const centre=surface.chart(p.at.lat,p.at.lon),dx=point.x-centre.x,dz=point.z-centre.z;
+      const d=Math.hypot(dx,dz),separation=p.model.radius+radius;
+      if(d<separation){
+        point.x=centre.x+separation*(d?dx/d:1);
+        point.z=centre.z+separation*(d?dz/d:0);
+      }
+    }
+  }
+  return {update,clearWalker,spiritObservation,nearbySpirit:(lat,lon)=>spiritObservation(lat,lon),pickSpirit,withdrawSpirit,hint,
     dispose(){for(const p of nodes){parent.remove(p.anchor);p.model.dispose();}}};
 }

@@ -56,12 +56,17 @@
       const shaft=mount(root,axle,materials.red,sign*.70,-.068,0);
       shaft.rotation.z=-sign*Math.PI/2;
       const motor=new T.Group();motor.name='金壳钻机';motor.position.set(sign*.93,-.030,0);
-      motor.rotation.x=.60;root.add(motor);motors.push(motor);
+      motor.rotation.x=.60;motor.scale.setScalar(1.23);root.add(motor);motors.push(motor);
       mount(motor,casing,materials.brass);
       mount(motor,rearCap,materials.steel,0,.168,0);
       const gauge=new T.Group();gauge.position.set(0,.049,-.211);gauge.rotation.x=-1.06;motor.add(gauge);
       mount(gauge,gaugeBezel,materials.dark);mount(gauge,gaugeLens,materials.gauge,0,.023,0);
       mount(gauge,indexMark,materials.dark,0,.044,-.022).rotation.y=sign*.49;
+      for(let i=-2;i<=2;i++){
+        const angle=i*.54;
+        const tick=mount(gauge,indexMark,materials.dark,.068*Math.sin(angle),.036,-.068*Math.cos(angle));
+        tick.rotation.y=-angle;tick.scale.set(.72,1,.2);
+      }
       mount(motor,darkCollar,materials.dark,0,-.138,0);
       const bit=new T.Group();bit.name='螺旋切削刃';bit.position.y=-.157;motor.add(bit);heads.push(bit);
       mount(bit,core,materials.steel);mount(bit,flight,materials.blade);

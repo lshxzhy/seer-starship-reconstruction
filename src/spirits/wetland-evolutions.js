@@ -11,7 +11,8 @@ function createWetlandEvolution(T,id){
   };
   if(!kinds[id])return null;
   const root=new T.Group(),body=new T.Group();root.add(body);root.name='图鉴 '+id;
-  const globe=new T.SphereGeometry(1,20,14),pointed=new T.ConeGeometry(1,1,10);
+  const globe=new T.SphereGeometry(1,28,18),pointed=new T.ConeGeometry(1,1,12);
+  const extraGeometry=[];
   const palette=new Map(),wingParts=[],extras=[];
   const white=0xf5f3e5,dark=0x263148,gold=0xf8c934,green=0x69a664,cream=0xf5dfa0;
   function mat(c){
@@ -29,7 +30,11 @@ function createWetlandEvolution(T,id){
   }
   const tip=(a,b,r,c,flat)=>segment(a,b,r,c,true,flat);
   function eyes(y,z,x=.17,r=.08,colour=dark){
-    for(const k of [-1,1]){oval(k*x,y,z,r*.78,r,r*.37,colour,k*.08);oval(k*x-r*.14,y+r*.32,z+r*.34,r*.22,r*.23,r*.12,white);}
+    for(const k of [-1,1]){
+      oval(k*x,y,z,r*.78,r,r*.37,colour,k*.08);
+      if(colour!==dark)oval(k*x,y+.09*r,z+r*.27,r*.49,r*.69,r*.17,dark,k*.08);
+      oval(k*x-r*.14,y+r*.32,z+r*.40,r*.22,r*.27,r*.12,white);
+    }
   }
   function biped(c,h=.56){
     oval(0,h,0,.28,.34,.24,c);
@@ -67,12 +72,35 @@ function createWetlandEvolution(T,id){
     oval(0,.53,.29,.30,.26,.27,0xb4a650);oval(0,.59,.47,.24,.195,.17,0x71532e);eyes(.60,.595,.146,.066);
     tip([0,.70,.49],[0,.86,.67],.094,cream);
   }else if(shape==='axolotl'){
-    const base=0xd1dfed;biped(base);oval(0,.92,.025,.39,.265,.27,base);eyes(.937,.266,.177,.071,0x305782);
-    oval(0,1.10,.056,.21,.074,.18,0x405d96);
+    const base=0xc7dbe4,adult=id===110,head=adult?1.10:.87;
+    oval(0,adult?.56:.44,.006,adult?.17:.13,adult?.43:.29,.15,base);
+    oval(0,adult?.63:.47,.11,.099,adult?.31:.21,.062,white);
+    oval(0,head,.025,.36,.28,.26,base);eyes(head+.002,.244,.162,.065,0x367b9d);
+    const cap=oval(0,head+.185,.053,adult?.268:.22,adult?.142:.094,.178,0x415682);
+    cap.rotation.x=adult?.46:.27;
+    oval(-.026,head+(adult?.29:.265),.047,.137,.038,.088,0x6a8bd2);
     for(const k of [-1,1]){
-      if(id===109)for(let j=0;j<3;j++)segment([k*.27,.92,0],[k*(.55-j*.02),1.05-j*.16,-.05],.075,0x9ccfe1,false,.46);
-      else{tip([k*.26,.98,0],[k*.55,1.12,-.06],.16,0x8fcbe5,.45);segment([k*.20,.78,.03],[k*.31,.38,.16],.09,base);}
+      segment([k*.10,head-.27,.02],[k*(adult?.34:.21),head-(adult?.66:.44),.05],adult?.075:.05,base,false,.55);
+      segment([k*.065,.25,0],[k*.22,.11,.05],.083,base);
+      oval(k*.208,.082,.09,.112,.074,.091,base,-k*.19);
+      const fan=new T.Group();fan.position.set(k*.25,head+.02,0);fan.userData.motionSign=k;body.add(fan);wingParts.push(fan);
+      // Each pale rib meets the translucent blue web along its whole edge.
+      const tips=adult?[[.43,.27,-.060],[.26,-.46,-.03],[.068,-.51,.10]]:
+        [[.32,.19,-.045],[.32,-.124,-.02],[.15,-.228,.015]];
+      for(let j=0;j<tips.length;j++){
+        const tip=tips[j],end=new T.Vector3(k*tip[0],tip[1],tip[2]),start=new T.Vector3(0,.055-.065*j,0);
+        const arch=start.clone().lerp(end,.54);arch.y+=.045;
+        const rib=new T.TubeGeometry(new T.QuadraticBezierCurve3(start,arch,end),16,adult?.022:.025,8,false);
+        extraGeometry.push(rib);fan.add(new T.Mesh(rib,mat(0xe1eceb)));
+        if(j===0)continue;
+        const prev=tips[j-1],corners=[start,new T.Vector3(k*prev[0],prev[1],prev[2]),end];
+        const bulge=corners[1].clone().lerp(end,.52);bulge.x-=k*.044;bulge.z+=.038;
+        const g=new T.BufferGeometry().setFromPoints([...corners,bulge]);
+        g.setIndex([0,1,3,0,3,2]);g.computeVertexNormals();extraGeometry.push(g);
+        const web=mat(0xa3e2f0);web.side=T.DoubleSide;fan.add(new T.Mesh(g,web));
+      }
     }
+    oval(0,.071,.146,.072,.063,.086,base);
   }else if(shape==='bee'){
     biped(gold);oval(0,.99,.06,.30,.24,.27,gold);eyes(.99,.291,.17,.081);
     for(const k of [-1,1])for(let j=0;j<(id===154?2:3);j++){
@@ -191,6 +219,6 @@ function createWetlandEvolution(T,id){
   for(const w of wingParts)extras.push([w,w.rotation.z]);
   let clock=0;
   return {root,update(dt){clock+=dt;body.position.y=.019*(1+Math.sin(clock*2.8));
-      for(const [w,angle] of extras)w.rotation.z=angle+.042*Math.sin(clock*3.7);},
-    dispose(){globe.dispose();pointed.dispose();for(const m of palette.values())m.dispose();}};
+      for(const [w,angle] of extras)w.rotation.z=angle+(w.userData.motionSign||1)*.042*Math.sin(clock*3.7);},
+    dispose(){globe.dispose();pointed.dispose();for(const g of extraGeometry)g.dispose();for(const m of palette.values())m.dispose();}};
 }

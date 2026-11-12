@@ -1,7 +1,7 @@
 // Latitude and longitude are radians. One scene unit is one metre. East, up,
 // south form a right-handed local frame everywhere, including at the poles.
 const KLOSE_WORLD = (() => {
-  const radius = 480000, latitude = .32, longitude = .54;
+  const radius = 48000, latitude = .32, longitude = .54;
   const locations = [
     ['grassland','克洛斯星草原',0,0,'黄晶矿露头、花草和野生皮皮'],
     ['swamp','克洛斯星沼泽',-174,12,'沿泥潭之间的陆桥穿过仙人球栖地'],
@@ -25,8 +25,8 @@ const KLOSE_WORLD = (() => {
     ['forest','林间南缘',-305,-40],['vineway','藤蔓通道外沿',-242,124],
     ['wetland','湿地东岸',47,-173],['flame','烈焰丛林东缘',179,-109],
     ['sanctuary','神宠高地东坪',177,68],
-    ['ridge','蓝脊山鞍部',14400,-7400],['delta','金河口高岸',-13600,-14700],
-    ['grove','绯叶林台',22500,9900]
+    ['ridge','蓝脊山鞍部',2880,-1480],['delta','金河口高岸',-2720,-2940],
+    ['grove','绯叶林台',4500,1980]
   ].map(([id,name,x,z])=>({id,name,x,z,lat:latitude-z/radius,lon:longitude+x/(radius*Math.cos(latitude))}));
   return {id:'klose',name:'克洛斯星',radius,sites,routes,rings,landingSites};
 })();
@@ -120,27 +120,30 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
   // One continuous field describes its drainage, forest cover and relief at
   // every scale. The broad colour belts remain visible from deep space.
   function landform(lat,lon,x,z,out){
-    const d=Math.hypot(x,z),globalWeight=smooth(33000,76000,d);
+    const d=Math.hypot(x,z),globalWeight=smooth(6600,15200,d);
     let h=120,water=0,rock=0,forest=0;
     if(d>350 && globalWeight<1){
-      const hills=fractal(x*.00032,18,z*.00032),grain=noise(x*.0015,5,z*.0015);
-      const crest=x-(12500+z*.14+2600*Math.sin(z/7800)+950*Math.sin(z/2300));
+      // The survey watershed and its three landing shelves share a 1:5 map
+      // scale. The connected classic clearings still have metre-scale actors.
+      const sx=x*5,sz=z*5;
+      const hills=fractal(sx*.00032,18,sz*.00032),grain=noise(sx*.0015,5,sz*.0015);
+      const crest=sx-(12500+sz*.14+2600*Math.sin(sz/7800)+950*Math.sin(sz/2300));
       const ridge=Math.exp(-((crest/3400)**2));
       const shoulders=Math.exp(-((crest/7200)**2));
-      const bank=x-(-8100+.33*z+1320*Math.sin(z/3700)+430*Math.sin(z/1900));
+      const bank=sx-(-8100+.33*sz+1320*Math.sin(sz/3700)+430*Math.sin(sz/1900));
       const flood=1-smooth(110,820,Math.abs(bank));
-      const lake=Math.hypot((x+10300)/4150,(z+15100)/2050)+hills*.13;
+      const lake=Math.hypot((sx+10300)/4150,(sz+15100)/2050)+hills*.13;
       const valley=lake<1.38?Math.max(flood,1-smooth(.97,1.38,lake)):flood;
-      const shelf=smooth(-.43,.18,hills)*smooth(3500,13000,z)*smooth(12000,22000,x);
+      const shelf=smooth(-.43,.18,hills)*smooth(3500,13000,sz)*smooth(12000,22000,sx);
       rock=clamp(ridge*(.67+.33*grain)+shoulders*.17);
       forest=clamp((.45+.68*hills+.19*grain+shelf*.53)*(1-rock)*(1-valley));
       const drainage=Math.min(Math.abs(bank)-135-(hills+1)*62,(lake-1)*1670);
       water=1-smooth(-7,8,drainage);
-      const ridgeline=540+930*(.52+.30*Math.sin(z/4650)+.18*Math.cos(z/1300));
-      const upland=158+138*hills+25*grain+ridge*ridgeline+265*shoulders+shelf*295;
-      const channel=39+Math.max(0,drainage)*.22;
+      const ridgeline=260+420*(.52+.30*Math.sin(sz/4650)+.18*Math.cos(sz/1300));
+      const upland=138+70*hills+15*grain+ridge*ridgeline+130*shoulders+shelf*145;
+      const channel=56+Math.max(0,drainage)*.09;
       h=T.MathUtils.lerp(upland,channel,valley);
-      const inner=smooth(350,1250,d);
+      const inner=smooth(350,820,d);
       h=120+(h-120)*inner;forest*=inner;rock*=inner;water*=inner;
     }
     if(globalWeight>0){
@@ -148,7 +151,7 @@ function createKloseTerrain(T, definition = KLOSE_WORLD) {
       const plate=bedrock(sx,sy,sz),wide=fractal(46*sx,46*sy,46*sz);
       const ridge=1-Math.min(1,Math.abs(fractal(31*sx,31*sy,31*sz))*3.2);
       const mountains=smooth(.14,.72,plate)*ridge*ridge;
-      const continents=Math.max(0,plate+.18)*720+mountains*(470+640*(.5+.5*wide));
+      const continents=Math.max(0,plate+.18)*360+mountains*(235+320*(.5+.5*wide));
       h=T.MathUtils.lerp(h,39+continents,globalWeight);
       water=T.MathUtils.lerp(water,1-smooth(-.186,-.173,plate),globalWeight);
       rock=T.MathUtils.lerp(rock,mountains,globalWeight);
@@ -344,7 +347,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     groundColor.copy(plains).lerp(beltColor,.28);
     groundColor.lerp(forestColor,clamp(land.forest*1.4));
     groundColor.lerp(stoneColor,.86*land.rock);
-    groundColor.lerp(d<65000?goldWater:deepWater,land.water);
+    groundColor.lerp(d<13000?goldWater:deepWater,land.water);
     if(d>660)return groundColor.lerp(beltColor,1-detail);
     const variation=smooth(-.66,.66,noise(x*.066,8,z*.066));
     const trailCoverage=1-smooth(1.2,4.4,trail(x,z));
@@ -374,6 +377,83 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     const tex=new T.CanvasTexture(canvas);tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.anisotropy=4;
     tex.encoding=T.sRGBEncoding;return tex;
   }
+  // Hand-drawn colour breaks from the eight map paintings. The sheet uses
+  // chart metres so the banks and mineral seams stay fixed as the ground LOD moves.
+  function clearingPaint() {
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1024;
+    const ctx=canvas.getContext('2d'),scale=canvas.width/640;
+    let seed=170710;
+    function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
+    function patch(x,z,rx,rz,tint){
+      const corners=[];
+      for(let i=0;i<9;i++){
+        const angle=i*tau/9,edge=.72+.30*rand();
+        corners.push([x+rx*Math.cos(angle)*edge,z+rz*Math.sin(angle)*edge]);
+      }
+      const prev=corners[8],first=corners[0];
+      ctx.beginPath();ctx.moveTo((prev[0]+first[0])*.5,(prev[1]+first[1])*.5);
+      for(const [i,p] of corners.entries()){
+        const next=corners[(i+1)%9];
+        ctx.quadraticCurveTo(p[0],p[1],(p[0]+next[0])*.5,(p[1]+next[1])*.5);
+      }
+      ctx.fillStyle=tint;ctx.fill();
+    }
+    function arc(x,z,rx,rz,turn,a,b,tint,line){
+      ctx.strokeStyle=tint;ctx.lineWidth=line;ctx.beginPath();ctx.ellipse(x,z,rx,rz,turn,a,b);ctx.stroke();
+    }
+    for(const site of sites){
+      ctx.setTransform(scale,0,0,scale,(392+site.x)*scale,(296+site.z)*scale);
+      ctx.globalAlpha=.89;ctx.lineCap='round';
+      if(site.id==='grassland'){
+        for(const [x,z,rx,rz] of [[-5,3,5,1.6],[8,8,3,2],[-9,-10,4.1,2],[10,-6,5.4,2.6],[-2,13,4.2,2.3]]){
+          patch(x,z,rx,rz,'#faae66');
+          for(let j=0;j<4;j++)patch(x+(rand()-.5)*rx,z+(rand()-.5)*rz,.52+rand(),.38,'#e58851');
+        }
+        for(let j=0;j<15;j++){
+          const x=rand()*30-14,z=rand()*28-10;
+          ctx.beginPath();ctx.moveTo(x,z);ctx.lineTo(x+1,z-.8);ctx.lineTo(x+2.3,z-.65);
+          ctx.strokeStyle='#b25248';ctx.lineWidth=.27;ctx.stroke();
+        }
+      }else if(site.id==='swamp'||site.id==='wetland'||site.id==='core'){
+        const tones={swamp:['#a68147','#d9ae65','#735d36'],wetland:['#896e91','#afb2bf','#345c98'],core:['#a65b9e','#d086ac','#703d78']}[site.id];
+        for(const p of pools.filter(p=>p.id===site.id)){
+          arc(p.dx,p.dz,p.rx*1.11,p.rz*1.12,0,0,tau,tones[0],1.55);
+          for(let j=0;j<8;j++){
+            const a=j*tau/8+rand()*.2;
+            arc(p.dx,p.dz,p.rx*1.15,p.rz*1.22,0,a,a+.27+rand()*.23,tones[1],.46);
+            patch(p.dx+Math.cos(a)*p.rx*1.24,p.dz+Math.sin(a)*p.rz*1.29,1+rand(),.6,tones[2]);
+          }
+        }
+      }else if(site.id==='forest'){
+        for(let j=0;j<34;j++){
+          const x=(rand()-.5)*48,z=(rand()-.5)*38;
+          patch(x,z,1.8+rand()*2,.8+rand(),j%3?'#a99b58':'#878946');
+          arc(x,z,.8,.48,.36,.1,2.0,'#d0bc73',.33);
+        }
+      }else if(site.id==='vineway'){
+        for(let j=0;j<8;j++){
+          const x=(j-3.5)*5,z=-11+6*rand();
+          ctx.beginPath();ctx.moveTo(x,z);ctx.bezierCurveTo(x+7,z+8,x-9,z+10,x-4,z+22);
+          ctx.strokeStyle='#514b48';ctx.lineWidth=1.5;ctx.stroke();
+          ctx.strokeStyle='#a48c62';ctx.lineWidth=.56;ctx.stroke();
+        }
+      }else if(site.id==='flame'){
+        for(let j=0;j<20;j++){
+          const x=(rand()-.5)*45,z=(rand()-.5)*36,rx=2+rand()*4;
+          patch(x,z,rx,rx*.53,'#a35040');patch(x+.2,z-.22,rx*.73,rx*.25,'#c57846');
+        }
+      }else if(site.id==='sanctuary'){
+        for(let j=0;j<18;j++){
+          const angle=j*tau/18,rx=8.2+rand()*2;
+          const x=Math.cos(angle)*rx,z=-14+Math.sin(angle)*rx;
+          patch(x,z,1.25,.9,j%3?'#e8a36b':'#ca827e');
+          if(j%3===0)patch(x,z,.55,.38,'#f1bdd1');
+        }
+        arc(0,-14,12.4,10.8,0,.22,2.77,'#d5a066',.67);
+      }
+    }
+    const texture=new T.CanvasTexture(canvas);texture.anisotropy=4;return texture;
+  }
   // Geodetic vegetation cells keep their physical size at high latitudes.
   // Collision and drawing request the same deterministic cell contents even
   // when the destination is outside the camera's loaded neighbourhood.
@@ -399,7 +479,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
       const reach=size*(tree?.75:1.1),h=size*(tree?1.85:.76);
       const c=Math.cos(lat),up=new T.Vector3(c*Math.cos(lon),Math.sin(lat),-c*Math.sin(lon));
       const at=up.clone().multiplyScalar(radius+land.height);
-      const yaw=random()*tau,paint=tree?(z>3500&&x>12500?0x975879:0x477c89):(land.rock>.4?0x816276:0xc18e70);
+      const yaw=random()*tau,paint=tree?(z>700&&x>2500?0x975879:0x477c89):(land.rock>.4?0x816276:0xc18e70);
       items.push({lat,lon,up,at,size,h,reach,yaw,paint,tree,top:land.height+h});
     }
     if(cache.size>=192)cache.delete(cache.keys().next().value);
@@ -473,7 +553,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   const groundGroup=new T.Group(); local.add(groundGroup);
   let lastFocus=null,terrain=null,details=null,groundTime=0,safariState=null;
-  const diskRadius=120000;
+  const diskRadius=radius*.57;
   const groundInverse=new T.Quaternion(),groundQuery=new T.Vector3();
   // A 37 cm animal can visibly sink between samples of a coarser terrain
   // ring. Interpolate the rendered triangle directly beneath its feet.
@@ -514,7 +594,8 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   function buildGround() {
     if (terrain) return;
-    const radii=[0,.8,1.7,2.8,4,5.5,7.2,9.2,12,15,19,24,30,37,45,55,67,81,99,120,146,180,220,270,335,415,520,660,835,1050,1350,1750,2250,3000,4200,5700,8000,11500,16500,24000,35000,48000,65000,85000,103000,diskRadius];
+    const radii=[0,.8,1.7,2.8,4,5.5,7.2,9.2,12,15,19,24,30,37,45,55,67,81,99,120,146,180,220,270,335,415,520,660,835,1050,1350,1750,2250,3000,4200,5700,8000,11500,16500,24000].filter(r=>r<diskRadius);
+    radii.push(diskRadius);
     const sectors=96, coords=[[0,0,0]],indices=[];
     for (let ring=1;ring<radii.length;ring++) {
       for (let i=0;i<sectors;i++) {
@@ -527,18 +608,26 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     const geo=new T.BufferGeometry();
     for (const [attr,stride] of [['position',3],['color',3],['uv',2]]) geo.setAttribute(attr,new T.BufferAttribute(new Float32Array(coords.length*stride),stride));
     geo.setIndex(indices);
-    const mesh=new T.Mesh(geo,new T.MeshStandardMaterial({map:soilMap(),vertexColors:true,roughness:.98}));
-    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii,sectors};
+    const material=new T.MeshStandardMaterial({map:soilMap(),vertexColors:true,roughness:.98}),paint=clearingPaint();
+    material.onBeforeCompile=shader=>{
+      shader.uniforms.clearingPaint={value:paint};
+      shader.vertexShader='varying vec2 clearingUV;\n'+shader.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nclearingUV=(uv*2.4+vec2(392.,296.))/640.;clearingUV.y=1.-clearingUV.y;');
+      shader.fragmentShader='uniform sampler2D clearingPaint;varying vec2 clearingUV;\n'+shader.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\nvec4 motif=texture2D(clearingPaint,clearingUV);diffuseColor.rgb=mix(diffuseColor.rgb,pow(motif.rgb,vec3(2.2)),.8*motif.a);');
+    };
+    const mesh=new T.Mesh(geo,material);
+    mesh.receiveShadow=true;mesh.frustumCulled=false;groundGroup.add(mesh);terrain={coords,geo,radii,sectors,paint};
     ensureScenery();
   }
   function placeGround(lat,lon,altitude) {
     const {coords,geo,radii}=terrain,anchor=point(lat,lon),f=frame(lat,lon);
     const pos=geo.attributes.position,col=geo.attributes.color,uv=geo.attributes.uv;
     groundGroup.position.copy(anchor);groundGroup.quaternion.copy(f.quaternion);
-    const profile=1-.39*smooth(50,13000,altitude),fine=1-smooth(3800,39000,altitude);
+    const profile=1-.39*smooth(50,3400,altitude),fine=1-smooth(1000,7800,altitude);
     const sections=radii.map(r=>{
       const range=diskRadius*Math.pow(r/diskRadius,profile);
-      return {sin:Math.sin(range/radius),cos:Math.cos(range/radius),detail:fine*(1-smooth(28000,90000,range))};
+      return {sin:Math.sin(range/radius),cos:Math.cos(range/radius),detail:fine*(1-smooth(diskRadius*.23,diskRadius*.8,range))};
     });
     const land={},anchorRadius=anchor.length(),dir=new T.Vector3();
     for (let i=0;i<coords.length;i++) {
@@ -566,8 +655,8 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   function update(lat,lon,dt=0,altitude=0,shuttleStatus=null) {
     if(mode!=='surface'&&mode!=='flight')return;
     altitude=mode==='surface'?0:Math.max(0,altitude);
-    if(atmosphereRim)atmosphereRim.visible=altitude>12000;
-    local.visible=altitude<42000;
+    if(atmosphereRim)atmosphereRim.visible=altitude>radius*.05;
+    local.visible=altitude<radius*.19;
     if(!local.visible){shellCut.value=2;lastFocus=null;return;}
     buildGround();groundTime+=dt;
     const moved=lastFocus?Math.hypot((lat-lastFocus.lat)*radius,unwrap(lon-lastFocus.lon)*radius*Math.cos(lat)):Infinity;
@@ -576,7 +665,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
     if((moved>tolerance||rising)&&(mode==='surface'||groundTime>.09||moved>Math.max(250,tolerance*3))){
       placeGround(lat,lon,altitude);groundTime=0;
     }
-    shellCut.value=mode==='flight'?Math.cos((diskRadius-6800)/radius):2;
+    shellCut.value=mode==='flight'?Math.cos(.95*diskRadius/radius):2;
     details.update(lat,lon,dt,altitude,mode==='surface',shuttleStatus);updateGroves(lat,lon,altitude);
   }
   // The flight solver samples the entire footprint before setting the gear
@@ -639,6 +728,7 @@ function createKloseSurface(T, world, definition = KLOSE_WORLD, ground = createK
   }
   function dispose() {
     const geometry=new Set(),materials=new Set(),textures=new Set();
+    if(terrain)textures.add(terrain.paint);
     root.traverse(o=>{if(o.geometry)geometry.add(o.geometry);
       if(o.material)for(const mat of [].concat(o.material)) {materials.add(mat);if(mat.map)textures.add(mat.map);}
       if(o.isInstancedMesh && o.dispose)o.dispose();});

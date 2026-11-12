@@ -320,16 +320,16 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     // The scaled inlet occupies its existing footprint; the separate horned
     // controller farther forward is not the resource exchange.
     const intakeStart=root.children.length;
-    box(0,1.05,.65,1.72,.48,.74,P.trim,{...F.metal,name:'中央矿物接收口'});
-    box(0,1.02,1.032,1.44,.27,.045,P.black,F.grip);
-    for(const x of [-.79,.79]){
-      box(x,1.07,1.18,.10,.33,.50,P.cream);
-      box(x,1.24,1.19,.056,.035,.28,P.cyan,{glow:.25});
+    box(0,1.11,.65,2.18,.57,.74,P.trim,{...F.metal,name:'中央矿物接收口'});
+    box(0,1.085,1.032,1.92,.34,.045,P.black,F.grip);
+    for(const x of [-1.03,1.03]){
+      box(x,1.09,1.32,.13,.39,.81,P.cream);
+      box(x,1.30,1.32,.074,.035,.55,P.cyan,{glow:.25});
     }
     for(const zz of [1.13,1.29,1.45,1.61,1.77])
-      cyl(0,.91,zz,.056,.056,1.49,C.steel,{rz:Math.PI/2,segments:18});
-    box(0,1.42,.51,1.69,.32,.16,P.black,F.grip);
-    text(0,1.42,.60,'资源兑换',1.26,.22,P.cream);
+      cyl(0,.93,zz,.071,.071,1.93,C.steel,{rz:Math.PI/2,segments:18});
+    box(0,1.56,.51,2.13,.34,.16,P.black,F.grip);
+    text(0,1.56,.60,'资源兑换',1.68,.25,P.cream);
     box(0,.52,2.235,1.25,.24,.10,P.brown);
     text(0,.53,2.293,'矿物投入口',1.03,.16,P.cream);
     for(const part of root.children.slice(intakeStart))part.userData.oreIntake=true;
@@ -555,7 +555,8 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
       const z=rackZ+(i-1)*.91;
       box(rackX,.808,z,.79,.052,.78,C.dark);
       const sample=new kit.T.Group();sample.name='黄晶矿训练样品 '+(i+1);
-      sample.position.set(rackX,.833,z);sample.rotation.y=i*.77-.22;root.add(sample);
+      sample.position.set(rackX,.833,z);sample.rotation.y=i*.77-.22;
+      sample.scale.set(1.30,1.52,1.30);root.add(sample);
       root.userData.trainingSamples.push(sample);
       // The three differently oriented prismatic tips grow from a rough bed.
       cyl(0,.069,0,.26,.29,.14,0x736147,{segments:7,parent:sample});
@@ -568,6 +569,8 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     }
     cabinet(-10.8,-12.45,4.1,3.9,'备件');
     cabinet(-5.4,-12.45,4.1,3.9,'工具');
+    box(-5.4,4.13,-11.88,3.55,.51,.11,C.dark);
+    text(-5.4,4.13,-11.815,'机械师  茜茜',2.9,.35,C.ivory);
     screen(.45,3.2,-13.05,3.5,2.0,'检修记录');
     // A replacement component is ready on a proper wheeled carrier.
     const cx=-10.8,cz=6.9;
@@ -625,7 +628,15 @@ const powerExchangePoint=Object.freeze({x:0,z:3.95});
     cyl(0,7.3,pz,1.06,1.06,1.5,C.steel);
     cyl(0,6.3,pz,1.36,.98,.65,C.blue);
     cyl(0,5.05,pz,1.32,.36,2.1,C.steel);
-    cyl(0,3.49,pz,.4,.055,1.05,C.edge);
+    cyl(0,3.49,pz,.48,.065,1.05,C.edge);
+    for(const [yy,rad] of [[3.36,.28],[3.61,.38],[3.86,.47]])
+      ring(0,yy,pz,rad,.057,C.dark);
+    // Recessed centering jaws stand under the suspended tool on its existing bed.
+    for(let i=0;i<3;i++){
+      const a=i*Math.PI*2/3;
+      box(.77*Math.sin(a),.965,pz+.77*Math.cos(a),.39,.15,.53,C.steel,{ry:a});
+      box(.57*Math.sin(a),1.06,pz+.57*Math.cos(a),.27,.07,.16,C.edge,{ry:a});
+    }
     for(const y of [5.8,6.75,7.8])ring(0,y,pz,y===5.8?1.1:1.18,.13,C.edge);
     for(let i=0;i<4;i++) {
       const a=Math.PI/4+i*Math.PI/2,sx=Math.sin(a),sz=Math.cos(a);

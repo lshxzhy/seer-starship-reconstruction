@@ -24,16 +24,16 @@
       panel.addColorStop(1,'#080b10');
       ctx.fillStyle=panel;
       ctx.fillRect(0,0,256,256);
-      const white=ctx.createLinearGradient(0,-82,0,82);
-      white.addColorStop(0,'#fffdf6');
-      white.addColorStop(.65,'#f7f7f2');
-      white.addColorStop(1,'#c1c8ca');
       const half=frame==='half' || frame==='halfSmile';
       const opening=frame==='closed'?.055:half?.53:1;
       for (const sign of [-1,1]) {
         ctx.save();
         ctx.translate(128+sign*51,131);
         ctx.scale(1,opening);
+        // Create the gradient in eye coordinates so the lower rim remains shaded.
+        const white=ctx.createRadialGradient(-12,-32,9,0,2,81);
+        white.addColorStop(0,'#fffefa');white.addColorStop(.78,'#f6f6ed');
+        white.addColorStop(1,'#bec8ca');
         ctx.fillStyle=white;
         ctx.beginPath();ctx.ellipse(0,0,48,82,0,0,TAU);ctx.fill();
         if (frame!=='closed') {
@@ -163,7 +163,7 @@
         const a=i*TAU/8, x=Math.sin(a), z=-Math.cos(a);
         // Place the local +Y axis of each stud radially outwards.
         cast('core',rivet,x*.561,-.325,z*.561,1,1,1,graphite,null,-PI/2,0,-a);
-        if (!simple) cast('core',studCap,x*.591,-.325,z*.591,1,1,1,0x82868a,'machined',-PI/2,0,-a);
+        if (!simple) cast('core',studCap,x*.591,-.325,z*.591,1,1,1,0x44484b,'machined',-PI/2,0,-a);
       }
 
       // Short plug with a flat, broad button on the crown.
@@ -184,18 +184,17 @@
 
       // The side-on assembly frame shows a round gold service cover. The rear
       // follows the existing shell contour because a rear reference is missing.
-      const sideCover = profile([[0,-.037],[.181,-.037],[.211,-.013],[.216,.006],
-        [.205,.023],[.173,.036],[0,.036]]);
+      const sideCover = profile([[0,-.064],[.244,-.064],[.284,-.027],[.292,-.001],
+        [.284,.016],[.257,.033],[0,.033]]);
+      const brassRim=profile([[.225,0],[.257,0],[.274,.007],[.274,.014],
+        [.265,.024],[.236,.024],[.225,.018],[.225,0]]);
       for (const sign of [-1,1]) {
-        coreShape(sideCover,sign*.510,-.068,.003,graphite,0,0,-sign*PI/2);
-        cast('core',drum,sign*.548,-.068,.003,.169,.022,.169,gold,null,0,0,PI/2);
-        cast('core',cube,sign*.56,-.060,0,.009,.182,.034,bronze,null,-.53,0,0);
-        if (!simple) {
-          const coverSeat=profile([[.157,0],[.171,0],[.175,.002],[.173,.006],[.168,.007],[.158,.006]]);
-          coreShape(coverSeat,sign*.557,-.068,.003,bronze,0,0,-sign*PI/2);
-          cast('core',cube,sign*.56,-.060,.071,.010,.066,.029,bronze,null,-.53,0,0);
-          cast('core',cube,sign*.56,-.113,.033,.010,.065,.029,bronze,null,-.53,0,0);
-        }
+        coreShape(sideCover,sign*.499,-.005,.031,graphite,0,0,-sign*PI/2);
+        coreShape(brassRim,sign*.533,-.005,.031,gold,0,0,-sign*PI/2);
+        cast('core',drum,sign*.546,-.005,.031,.228,.026,.228,0xe4ab43,null,0,0,PI/2);
+        // The three stamped marks are distinct in the side-on assembly frame.
+        for(const [dy,dz,height] of [[.010,-.018,.221],[.066,.062,.075],[-.071,.007,.070]])
+          cast('core',cube,sign*.563,dy,.031+sign*dz,.007,height,.029,graphite,null,-sign*.55);
       }
 
       const faceY = faceAxisY;
@@ -216,7 +215,7 @@
         for (let i=0;i<8;i++) {
           const a=TAU*(i+.5)/8;
           const x=.384*Math.cos(a), y=faceY+.384*Math.sin(a);
-          cast('core',fastener,x,y,-.573,1,1,1,0x777c7f,'machined',-PI/2);
+          cast('core',fastener,x,y,-.573,1.22,1,1.22,0x393d42,'machined',-PI/2);
           cast('core',hexSocket,x,y,-.5743,1,1,1,dark,'gasket',-PI/2);
         }
         // Only the front hemisphere is drawn. The eye graphics stay below the glass.

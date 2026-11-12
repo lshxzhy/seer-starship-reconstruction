@@ -2,6 +2,21 @@
 function createCompanionFigure(T,id){
   return createOceanShark(T,id)||createKloseSpiritModel(T,id)||createPartnerFigure(T,id)||createWetlandEvolution(T,id);
 }
+// World presentation uses catalogue height once, regardless of the sculpt's native units.
+// Keep the attachment at unit scale: encounter focus points and shadows are in metres.
+const FIELD_SPIRIT_SCALE=1.65, KLOSE_ITEM_SCALE=1.40;
+function createFieldSpirit(T,id){
+  const model=createCompanionFigure(T,id);if(!model)return null;
+  const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
+  const centimetres=SEER_SPIRIT_DATA.index.find(row=>row[0]===id)?.[3];
+  const size=FIELD_SPIRIT_SCALE*(centimetres>0?centimetres/100:extent.y);
+  const factor=size/Math.max(.01,extent.y),root=new T.Group();
+  root.name=model.root.name;root.rotation.order='YXZ';
+  model.root.scale.multiplyScalar(factor);model.root.position.y-=factor*bounds.min.y;
+  root.add(model.root);
+  const radius=factor*Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z));
+  return {...model,root,animal:root,size,radius};
+}
 function createPartnerFigure(T,id){
   const root=new T.Group(),body=new T.Group();
   root.add(body);
@@ -51,14 +66,39 @@ function createPartnerFigure(T,id){
     oval(0,.73,.22,.24,tall?.29:.25,.16,0xffe3a1);face(.76,.368,.108,.059);
     for(const s of [-1,1]){
       oval(s*.17,.18,.02,.105,.215,.12,pale,-s*.16);
-      if(!tall)petals(s*.36,.56,.01,bulb?.13:.20,pink,0xffdd7c);
+      if(bulb){
+        const start=[s*.25,.54,.04],end=[s*.54,.67,.08];
+        limb(start,end,.081,0xe68aaf);
+        const axis=new T.Vector3(...end).sub(new T.Vector3(...start)).normalize();
+        const tangent=new T.Vector3(0,0,1).cross(axis).normalize(),binormal=axis.clone().cross(tangent);
+        const thread=[];
+        for(let i=0;i<=42;i++){
+          const t=i/42,phase=t*Math.PI*5,rad=.065*Math.sin(Math.PI*(.08+.84*t))**.68;
+          thread.push(new T.Vector3(...start).lerp(new T.Vector3(...end),t)
+            .addScaledVector(tangent,rad*Math.cos(phase)).addScaledVector(binormal,rad*Math.sin(phase)));
+        }
+        const g=new T.TubeGeometry(new T.CatmullRomCurve3(thread),44,.009,7,false);
+        geometries.add(g);body.add(new T.Mesh(g,material(0xae557b)));
+      }
+      else if(!tall)petals(s*.36,.56,.01,.20,pink,0xffdd7c);
       else leaf(s*.18,.25,-.04,.13,.53,.09,green,-s*.45);
     }
     if(bulb){
-      oval(0,1.08,-.02,.44,.32,.36,0xbbd479);
-      for(const s of [-1,1])oval(s*.22,1.01,.18,.27,.119,.20,0x86a34e,s*.44);
-      oval(.13,1.19,.07,.27,.19,.26,0xe6e6a2,-.45);
-      petals(.26,1.33,0,.092,pink,0xffcd80);
+      const bud=oval(0,1.08,-.02,.43,.34,.36,0xffffff,-.16);
+      const g=sphere.clone(),pos=g.getAttribute('position'),colour=[];
+      const base=new T.Color(0xafc854).convertSRGBToLinear(),rose=new T.Color(0xf0a4bf).convertSRGBToLinear();
+      const c=new T.Color();
+      for(let i=0;i<pos.count;i++){
+        const y=pos.getY(i),angle=Math.atan2(pos.getX(i),pos.getZ(i));
+        const lobe=(1-y*y)*(.028*Math.cos(5*angle)+.012*Math.cos(3*angle+.7));
+        pos.setXYZ(i,pos.getX(i)*(1+lobe),y,pos.getZ(i)*(1+lobe));
+        c.copy(base).lerp(rose,T.MathUtils.smoothstep(y+.18*pos.getX(i),.04,.96));
+        colour.push(c.r,c.g,c.b);
+      }
+      g.setAttribute('color',new T.Float32BufferAttribute(colour,3));g.computeVertexNormals();
+      const m=material(0xffffff).clone();m.vertexColors=true;geometries.add(g);mats.set('seed-cap',m);bud.geometry=g;bud.material=m;
+      for(const s of [-1,1])oval(s*.20,1.004,.18,.27,.113,.19,0xa4c26d,s*.44);
+      petals(.24,1.35,0,.095,pink,0xf4bdd0);
     }else{
       const top=tall?1.24:1.19;
       for(let i=0;i<5;i++){

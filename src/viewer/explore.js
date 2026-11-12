@@ -56,7 +56,7 @@
   function travelToPlanet(id,approachMushroom=false,planetId='klose'){
     const current=expedition.active?expedition.snapshot():null;
     const origin=current?.origin||{roomId:'teleport',...parkedLanding?.origin,board:liveBoard?boarding.snapshot():null};
-    stagedExpedition={format:2,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,door:1};
+    stagedExpedition={format:3,phase:'surface',planetId,mapDestination:id,approachMushroom,origin,vehicle:current?.vehicle||parkedLanding?.vehicle||dockedVehicle,door:1};
     parkedLanding=null;
     Object.assign(state,{mode:'planet',located:'',rotate:false,wire:false});
     syncScene();canvas.focus({preventScroll:true});save();
@@ -243,6 +243,11 @@
     spiritArchive=saved.spiritArchive||null;
     parkedLanding=saved.mode!=='planet'&&saved.parkedLanding?.vehicle?.phase==='landed'&&saved.parkedLanding.origin
       ?saved.parkedLanding:null;
+    if(parkedLanding&&parkedLanding.vehicle.version<3){
+      const definition=parkedLanding.vehicle.planetId==='ocean'?OCEAN_WORLD:KLOSE_WORLD;
+      parkedLanding={...parkedLanding,vehicle:compactVehicleRecord(parkedLanding.vehicle),ramp:compactSurfacePoint(parkedLanding.ramp,definition)};
+      if(!parkedLanding.vehicle)parkedLanding=null;
+    }
     state.mode=saved.mode;
     state.located=habitat.byId.has(saved.located)?saved.located:'';
     state.deck=Number.isInteger(saved.deck)&&regions[saved.deck]?saved.deck:1;

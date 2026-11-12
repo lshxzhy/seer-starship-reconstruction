@@ -221,7 +221,10 @@
       const frame=new T.Group();frame.position.set(x,y,z);
       frame.rotation.set(opts.rx||0,opts.ry||0,opts.rz||0);(opts.parent||root).add(frame);
       const ratio=w/h,aspect=ratio<.88?.75:ratio<1.65?1.25:ratio<3.25?2:4;
-      const tint=cssHex(color??0x65d4da), key='display/'+aspect+'/'+tint;
+      const nav=['captain','observation','teleport'].includes(spec.id);
+      const records=['archives','instructor','honors'].includes(spec.id);
+      const profile=nav?'bearing':records?'index':'cycle';
+      const tint=cssHex(color??0x65d4da), key='display/'+profile+'/'+aspect+'/'+tint;
       const map=texture(key,()=>canvasMap(aspect>=2?512:256,aspect===4?128:256,(ctx,pw,ph)=>{
         // Logical coordinates follow the housing so a dial on a narrow
         // handheld unit remains round. External room labels carry its purpose.
@@ -239,13 +242,30 @@
         const cx=wide?dw*.78:dw*.5,cy=wide?99:87,r=wide?48:43;
         const sweep=Math.PI*1.5,start=Math.PI*.75;
         ctx.strokeStyle=tint;ctx.lineWidth=1.8;
-        ctx.beginPath();ctx.arc(cx,cy,r,start,start+sweep);ctx.stroke();
-        for(let j=0;j<=24;j++){
-          const a=start+j*sweep/24,l=j%4===0?8:3;
-          line(cx+(r-l)*Math.cos(a),cy+(r-l)*Math.sin(a),cx+r*Math.cos(a),cy+r*Math.sin(a));
+        if(nav){
+          for(const radius of [r*.38,r*.71,r]){
+            ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
+          }
+          line(cx-r-5,cy,cx+r+5,cy);line(cx,cy-r-5,cx,cy+r+5);
+          line(cx,cy,cx+r*.70,cy-r*.70);
+          for(const [dx,dy] of [[-.42,.18],[.20,-.54],[.61,-.31]])
+            ctx.fillRect(cx+r*dx-2,cy+r*dy-2,4,4);
+        }else if(records){
+          for(let j=0;j<5;j++){
+            const y=cy-r+j*r*.43;
+            ctx.strokeRect(cx-r,y,9,9);
+            line(cx-r+18,y+3,cx+r*(j%2?.55:.89),y+3);
+            line(cx-r+18,y+7,cx-r*.17,y+7);
+          }
+        }else{
+          ctx.beginPath();ctx.arc(cx,cy,r,start,start+sweep);ctx.stroke();
+          for(let j=0;j<=24;j++){
+            const a=start+j*sweep/24,l=j%4===0?8:3;
+            line(cx+(r-l)*Math.cos(a),cy+(r-l)*Math.sin(a),cx+r*Math.cos(a),cy+r*Math.sin(a));
+          }
+          ctx.beginPath();ctx.arc(cx,cy,3.5,0,2*Math.PI);ctx.fill();
+          line(cx,cy,cx+r*.62,cy-r*.44);
         }
-        ctx.fillStyle=tint;ctx.beginPath();ctx.arc(cx,cy,3.5,0,2*Math.PI);ctx.fill();
-        line(cx,cy,cx+r*.62,cy-r*.44);
         if(wide){
           const traceW=dw*.52;
           ctx.lineWidth=2.3;ctx.beginPath();

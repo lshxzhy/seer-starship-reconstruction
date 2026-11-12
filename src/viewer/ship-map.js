@@ -203,7 +203,7 @@
           panel.querySelector('.sm-target').textContent=regions[systemDestination]?.definition.name||'';
           chart.setAttribute('aria-label','帕诺星系轨道及两颗行星的位置');
           drawSystemChart(chart,systemDestination,id=>{if(id==='dock'){selectArea('ship');return;}if(regions[id]){sitePicker.value=id;refresh();}});
-          text.textContent='在登陆艇驾驶席打开航线，可沿星际航线飞往所选行星。';
+          text.textContent='球体半径 '+(regions[systemDestination].definition.radius/1000)+' 公里。在登陆艇驾驶席打开航线可飞往这颗行星。';
           travel.textContent='查看地表地图';travel.hidden=false;return;
         }
         const region=regions[area],ramp=rampOnPlanet(parkedRamp(),area);

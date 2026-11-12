@@ -123,7 +123,8 @@
       const points=[],g=new T.BufferGeometry();
       for(let i=0;i<1100;i++){
         const u=(i+.5)/1100,y=1-2*u,a=i*2.39996323,s=Math.sqrt(1-y*y);
-        points.push(Math.cos(a)*s*radius*5.5,y*radius*5.5,Math.sin(a)*s*radius*5.5);
+        const shell=pano.far*.8;
+        points.push(Math.cos(a)*s*shell,y*shell,Math.sin(a)*s*shell);
       }
       g.setAttribute('position',new T.Float32BufferAttribute(points,3));
       stars=new T.Points(g,new T.PointsMaterial({color:0xd8e7f5,size:1.5,sizeAttenuation:false,fog:false,toneMapped:false}));
@@ -233,7 +234,7 @@
       buildWorld();origin=saved.origin;configureDock();
       flight=createPanoFlight(T,bodies,dock,pano,saved.vehicle);
       usePlanet(saved.phase==='surface'&&regions[saved.planetId]?saved.planetId:flight.planetId);
-      const current=saved.format===2;
+      const current=saved.format===2||saved.format===3;
       phase=current&&['transfer','cabin','helm','surface'].includes(saved.phase)?saved.phase:'transfer';
       yaw=Number.isFinite(saved.yaw)?saved.yaw:0;pitch=clamp(Number(saved.pitch)||0,-1.1,1.12);
       facing=Number.isFinite(saved.facing)?saved.facing:yaw;eye=!!saved.eye;external=current&&!!saved.external;
@@ -244,12 +245,14 @@
       transferSign=saved.transferSign===-1?-1:1;
       dock.setTravel(current&&Number.isFinite(saved.transfer)?saved.transfer:0);
       position=validPosition(saved.position)?{...saved.position}:{lat:home.lat,lon:home.lon};
+      if(saved.format===2&&phase==='surface')position=compactSurfacePoint(position,definition);
       if(!current&&saved.phase==='surface'){
         // The previous radius was 780 km. Keep the visitor's distances from the meadow.
-        const oldLat=position.lat,oldLon=position.lon;
-        position=body.move(home.lat,home.lon,(oldLon-home.lon)*780000*Math.cos(home.lat),(oldLat-home.lat)*780000);
+        position=compactSurfacePoint(position,definition,780000);
         flight.placeOnSurface('grassland');phase='surface';dock.setTravel(dock.total);
       }
+      if(saved.format!==3&&phase==='surface'&&!saved.mapDestination)
+        position=body.resolveArrival(position.lat,position.lon);
       pending=current&&['launch','auto'].includes(saved.pending)&&phase==='helm'?saved.pending:null;
       arrival='';observedBird=null;arrivedOnDeck=!!saved.arrivedOnDeck;approachRamp=false;feedback='';
       plotRoute(saved.locating?'shuttle-ramp':saved.targetId);
@@ -268,7 +271,7 @@
       delete stage.dataset.domain;delete stage.dataset.planet;delete stage.dataset.helm;delete stage.dataset.consoleOpen;
     }
     function snapshot(){
-      return {format:2,origin,phase,planetId:definition.id,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
+      return {format:3,origin,phase,planetId:definition.id,position:{...position},vehicle:flight.snapshot(),feet:feet.toArray(),
         door,transfer:dock.travel,transferSign,external,navTarget,pending,arrivedOnDeck,yaw,pitch,eye,facing,targetId};
     }
     function say(text){feedback=text;feedbackUntil=performance.now()+3200;updateUI();}
@@ -558,6 +561,7 @@
       }else attachCamera(base,helm?vec(...craft.layout.eye):foot.add(vec(0,seerRobots.eyeHeight,0)),yaw,pitch+(helm?-.065:0));
     }
     function drawWorld(agl,walking){
+      stars.position.copy(view.position);
       const above=agl>1800&&!walking,curve=renderer.toneMapping,clear=renderer.autoClear;
       const back=world.background,visibleLocal=local.visible,visibleSky=sky.visible,visibleStars=stars.visible;
       const nearDock=definition.id==='klose'&&localVehicle()&&flight.position.distanceTo(dock.position)<1800;
@@ -659,7 +663,7 @@
       const carrier=dock?.position||kloseCarrierStation(kloseTerrain);
       const restored=phase==='hidden'?storedVehicle:null;
       drawPanoChart(svg,{time,current,selected,onSelect,carrier,
-        vehicle:restored?.p?vec(...restored.p):flight?.position||carrier,vehiclePlanet:restored?.planetId||flight?.planetId||'klose'});
+        vehicle:restored?.phase==='docked'?carrier:restored?.p?vec(...restored.p):flight?.position||carrier,vehiclePlanet:restored?.planetId||flight?.planetId||'klose'});
     }
     function showSelection(){
       const id=select.value;
@@ -669,7 +673,8 @@
       }
       else{
         const dest=flightTarget(id),name=flights.get(id);
-        summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':regions[name.planetId].definition.name+' · '+name.name)+
+        const planet=regions[name.planetId].definition;
+        summary.textContent=(id==='dock'?'克洛斯星驻留轨道 · 原泊位':planet.name+' · 半径 '+(planet.radius/1000)+' 公里 · '+name.name)+
           '　／　直距 '+distanceText(dest.distanceTo(flight.position));
       }
       paintChart();

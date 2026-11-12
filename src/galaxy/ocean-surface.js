@@ -1,7 +1,7 @@
 // Taomei's map table connects 20 → 21 → 22 and, in a later chapter, 22 → 737.
 // The floating L-01 berth is expedition equipment. All natural ground is submerged.
 const OCEAN_WORLD=(()=>{
-  const radius=410000,lat=.24,lon=-.43;
+  const radius=41000,lat=.24,lon=-.43;
   const at=(id,name,x,z,description,mapId)=>({id,name,x,z,description,mapId,
     lat:lat-z/radius,lon:lon+x/(radius*Math.cos(lat))});
   const sites=[
@@ -193,14 +193,19 @@ function createOceanSurface(T,world){
     if(w>1.35)blockers.push({x,z,r:Math.min(w,d)*.64,top:groundY(x,z)+h*1.42});
   }
   function sponge(x,z,s,shade){
+    s*=1.38;
+    if(corridorGap(x,z)<s*.9+2.3)return;
     const base=groundY(x,z)-.08;
     for(let j=0;j<8;j++){
       const a=j*2.4,l=s*(.45+random()*.71);
       const dx=s*Math.sin(a)*.56,dz=s*Math.cos(a)*.56,r=.12*s+.10*l;
       stamp('tube',x+dx,base,z+dz,r,l,r,shade,Math.cos(a)*.14,0,-Math.sin(a)*.15);
     }
+    if(s>=1.8)blockers.push({x,z,r:s*.76,top:base+1.2*s});
   }
   function fan(x,z,s,tint){
+    s*=1.4;
+    if(corridorGap(x,z)<s*.65+2.3)return;
     const base=groundY(x,z),tilt=random()*tau,c=Math.cos(tilt),d=Math.sin(tilt);
     const lattice=[[],[],[]];
     function branch(u,h,angle,length,thick,n){
@@ -217,26 +222,48 @@ function createOceanSurface(T,world){
         rod(x+c*u,base+h,z+d*u,x+c*uu,base+hh,z+d*uu,s*(.010+level*.004),tint);
       }
     }
+    if(s>=2.8)blockers.push({x,z,r:.41*s,top:base+s});
   }
   function shell(x,z,s){
+    s*=1.56;
+    if(s>1.6&&corridorGap(x,z)<2.4)return;
     stamp('shell',x,groundY(x,z)-.025*s,z,1.24*s,.87*s,1.4*s,0xd6bb8a,0,Math.sin(x-z)*.85);
+    if(s>1.6)blockers.push({x,z,r:s*.53,top:groundY(x,z)+s*.7});
   }
   function careStation(x,z,s){
+    // The 2009 mission screen shows blue sloping armour, a green top lamp,
+    // a vertical row of diodes and two vented side units on short feet.
     const base=groundY(x,z);
-    stamp('disk',x,base+.16*s,z,1.45*s,.29*s,1.15*s,0x384756);
-    stamp('disk',x,base+.30*s,z,1.40*s,.11*s,1.12*s,0x8fa3aa);
-    stamp('box',x,base+.69*s,z,1.78*s,.75*s,1.14*s,0x456478);
-    stamp('lobe',x,base+1.18*s,z,1.04*s,.54*s,.70*s,0x406d86);
-    stamp('box',x,base+1.21*s,z+.61*s,1.22*s,.47*s,.085*s,0x263e4d,-.17);
-    stamp('box',x,base+1.23*s,z+.67*s,.92*s,.26*s,.045*s,0x8ce3cd,-.17);
+    const part=(id,dx,y,dz,w,h,d,tint,rx=0,ry=0,rz=0)=>stamp(id,x+dx*s,base+y*s,z+dz*s,w*s,h*s,d*s,tint,rx,ry,rz);
+    part('box',0,.32,0,2.0,.23,1.12,0x16435a);
+    part('lobe',0,.85,-.05,1.09,.68,.63,0x298ab1);
     for(const side of [-1,1]){
-      stamp('box',x+side*.93*s,base+.82*s,z,.17*s,.8*s,.94*s,0xd0aa51);
-      for(let k=0;k<3;k++)stamp('box',x+side*.76*s,base+(1.18+k*.12)*s,z+.49*s,.15*s,.04*s,.09*s,0x153c52);
+      part('box',side*.92,.64,.30,.56,.65,1.04,0x154f78,.22,0,-side*.18);
+      part('box',side*.93,.71,.80,.39,.39,.08,0x388aaf,.22,0,-side*.18);
+      for(let k=0;k<3;k++)part('box',side*.93,.60+k*.10,.86,.29,.039,.055,0x173948,.22);
+      for(const end of [-1,1])part('lobe',side*.77,.20,end*.42,.17,.17,.18,0xdaa853);
     }
-    stamp('lobe',x-.85*s,base+1.05*s,z,.21*s,.21*s,.21*s,0xc2b978);
-    rod(x-.85*s,base+1.05*s,z,x-1.42*s,base+1.75*s,z+.3*s,.095*s,0xaebfc0);
-    stamp('tube',x-1.42*s,base+1.7*s,z+.3*s,.23*s,.32*s,.23*s,0xf2e1bf);
-    blockers.push({x,z,r:1.2*s,top:base+2.4*s});
+    part('box',0,1.04,.52,.94,.86,.18,0x273944,-.19);
+    part('box',.13,1.08,.64,.54,.54,.065,0xadae94,-.19);
+    for(let k=0;k<5;k++)part('box',-.27,.74+.14*k,.68-.025*k,.095,.072,.055,k<3?0x85db48:0x287443);
+    for(let k=0;k<3;k++)part('box',.14,.92+k*.12,.70-k*.024,.40,.025,.026,0x596b67,-.19);
+    part('disk',0,1.58,-.14,.39,.14,.36,0x215368);
+    part('lobe',0,1.72,-.14,.27,.26,.27,0x80d743);
+    part('lobe',-.10,1.84,.035,.073,.059,.036,0xd9ff8a);
+    blockers.push({x,z,r:1.30*s,top:base+2*s});
+  }
+  function etchedFishStone(x,z,s){
+    // Relief fish spines appear on the pale shelves in maps 20, 21 and 22.
+    const base=groundY(x,z),tint=0x535461;
+    stamp('rock',x,base+.97*s,z,1.38*s,1.17*s,.60*s,0xb6b8af,0,0,-.11);
+    stamp('rock',x,base+1.02*s,z+.54*s,1.09*s,.64*s,.10*s,0xb8b7ae);
+    const line=(a,b,c,d)=>rod(x+a*s,base+b*s,z+.64*s,x+c*s,base+d*s,z+.64*s,.045*s,tint);
+    line(-.78,.83,.43,1.33);line(.43,1.33,.79,1.35);line(.79,1.35,.52,1.06);line(.52,1.06,.43,1.33);
+    line(-.78,.83,-.95,1.01);line(-.78,.83,-.84,.61);
+    for(let k=0;k<3;k++){
+      const a=-.46+k*.24,b=.96+k*.095;line(a,b,a-.18,b+.23);line(a,b,a-.11,b-.26);
+    }
+    blockers.push({x,z,r:1.10*s,top:base+2.04*s});
   }
   function grotto(x,z,scale,dark,open=false){
     const base=groundY(x,z);
@@ -278,18 +305,20 @@ function createOceanSurface(T,world){
     }
   }
   // Place the immediately recognisable landmarks in the visitor's forward field.
-  sponge(-6,-10,2.25,0xdb87b5);sponge(-9,-12,1.55,0xb66f9d);fan(9,-12,3.7,0xc1587f);
-  boulder(-14,-20,6,4.3,4.7,0x818caf);boulder(17,-19,4,3.4,4.8,0xc6bfbc);
-  const creviceY=groundY(17,-19);
-  stamp('lobe',17,creviceY+1.52,-15.9,1.52,.91,.45,0x454156);
+  sponge(-6,-10,2.25,0xdb87b5);sponge(-9,-12,1.55,0xb66f9d);fan(14,-8,3.7,0xc1587f);
+  const outcropX=22,outcropZ=-8,creviceY=groundY(outcropX,outcropZ);
+  boulder(-14,-20,6,4.3,4.7,0x818caf);boulder(outcropX,outcropZ,4,3.4,4.8,0xc6bfbc);
+  stamp('lobe',outcropX,creviceY+1.52,outcropZ+3.1,1.52,.91,.45,0x454156);
   for(let i=0;i<6;i++){
     const t=i/6,u=(i+1)/6;
-    rod(17+.73*Math.sin(t*4),creviceY+1.45-.76*t,-15.52+1.6*t,
-      17+.73*Math.sin(u*4),creviceY+1.45-.76*u,-15.52+1.6*u,.23-.13*t,0xca899c);
+    rod(outcropX+.73*Math.sin(t*4),creviceY+1.45-.76*t,outcropZ+3.48+1.6*t,
+      outcropX+.73*Math.sin(u*4),creviceY+1.45-.76*u,outcropZ+3.48+1.6*u,.23-.13*t,0xca899c);
   }
-  for(let i=0;i<8;i++)stamp('tube',12+Math.sin(i*2.4)*2.1,groundY(12,4)-.17,4+Math.cos(i*2.4)*1.8,.38,.63,.41,0x6fb99e);
+  for(let i=0;i<8;i++)stamp('tube',12+Math.sin(i*2.4)*2.1,groundY(12,4)-.17,4+Math.cos(i*2.4)*1.8,.58,1.18,.65,i%3?0x83c78d:0xb0de88);
+  etchedFishStone(-9,7,1.45);
   const depths=sites[1],floor=sites[2],end=sites[3];
-  careStation(depths.x+8,depths.z-11,1.35);
+  careStation(depths.x+8,depths.z-11,2.0);
+  etchedFishStone(depths.x+13,depths.z-17,1.80);
   // The map 21 skyline alternates pale overhangs and narrow teal fissures.
   // The taller limestone stays at the sides of the navigation and fish passages.
   for(const [i,[dx,dz,w,h]] of [[-19,-14,3.8,8.0],[-22,-26,4.2,11.8],[-8,-27,2.9,9.2],
@@ -319,10 +348,12 @@ function createOceanSurface(T,world){
     blockers.push({x,z,r:w*.83,top:base+1.42*h});
   }
   for(let i=0;i<13;i++){
-    const x=depths.x-10+(i%4)*.51,z=depths.z-8+Math.floor(i/4)*.58,h=1.2+random()*1.1;
-    stamp('crystal',x,groundY(x,z)+h*.45,z,.31,h,.41,i%3?0xe8ba48:0xffdf7c,.10,.13,i*.09-.48);
+    const x=depths.x-10+(i%4)*.67,z=depths.z-8+Math.floor(i/4)*.74,h=1.75+random()*1.45;
+    stamp('crystal',x,groundY(x,z)+h*.45,z,.49,h,.58,i%3?0xe8ba48:0xffdf7c,.10,.13,i*.09-.48);
   }
+  blockers.push({x:depths.x-9,z:depths.z-7,r:1.65,top:groundY(depths.x-9,depths.z-7)+4.4});
   grotto(floor.x,floor.z-16,1,0x525269);
+  etchedFishStone(floor.x-10,floor.z-5,1.62);
   for(const side of [-1,1]){
     const x=floor.x+side*6.4,z=floor.z-15.8,y=groundY(x,z);
     stamp('rock',x,y+.12,z,2.2,.54,2.40,0x4f7078,0,.6*side);
@@ -332,7 +363,14 @@ function createOceanSurface(T,world){
   grotto(end.x-26,end.z-7,1.29,0x264c69,true);grotto(end.x+17,end.z-23,1.16,0x2b526b,true);
   for(let j=0;j<4;j++){
     const x=end.x+10,z=end.z-10,y=groundY(x,z);
-    stamp('rock',x,y+1.25+j*1.47,z,2-j*.18,1.35,1.64-j*.12,j%2?0x58b7bc:0x77daca,.02,j*.39);
+    stamp('rock',x,y+1.25+j*1.47,z,2-j*.18,1.35,1.64-j*.12,j%2?0x286578:0x437c8b,.02,j*.39);
+    stamp('rock',x+.06*j,y+1.15+j*1.47,z+1.06-j*.055,1.27-j*.13,.89,.48,0x75d7c5,.04,j*.21);
+  }
+  blockers.push({x:end.x+10,z:end.z-10,r:2.05,top:groundY(end.x+10,end.z-10)+7});
+  for(const sign of [-1,1]){
+    const x=end.x+sign*10,z=end.z+7;
+    sponge(x,z,2.10,sign<0?0xb96f83:0x7999a7);
+    for(let j=0;j<4;j++)stamp('tube',x+sign*(2.7+j*.38),groundY(x,z),z+j*.30,.32,.78+j*.23,.34,j%2?0x8ed568:0xa8e28e);
   }
   // An over-water platform, landing stripe and descending access ramp share the support function.
   const pierY=pierLevel-(pad.x*pad.x+pad.z*pad.z)/(2*radius);
@@ -372,20 +410,24 @@ function createOceanSurface(T,world){
     district.add(batch);
   }
   entries.clear();
-  const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),rise=[];
+  const lights=new T.BufferGeometry(),bubbleCount=196,bubbles=new Float32Array(bubbleCount*3),springFlags=new Float32Array(bubbleCount),rise=[];
   for(let i=0;i<bubbleCount;i++){
     const s=sites[i%4],spring=i%4===0&&i%3===0;
     const x=spring?12+random()*3-1.5:s.x+(random()-.5)*66,z=spring?4+random()*3-1.5:s.z+(random()-.5)*65;
     const y=groundY(x,z);
+    springFlags[i]=spring?1:0;
     rise.push({x,z,y,h:Math.max(4,-y-.3),phase:random(),speed:.22+random()*.38});
   }
   const bubblesAttr=new T.BufferAttribute(bubbles,3);lights.setAttribute('position',bubblesAttr);
+  lights.setAttribute('spring',new T.BufferAttribute(springFlags,1));
   const bubbleShade=new T.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},
-    vertexShader:'varying float d;void main(){vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;gl_Position=projectionMatrix*p;gl_PointSize=clamp(65./max(1.,d),1.,6.);}',
-    fragmentShader:'varying float d;void main(){float z=length(gl_PointCoord-.5);if(z>.49)discard;float a=(.14+.62*smoothstep(.27,.46,z))*(1.-smoothstep(18.,85.,d));gl_FragColor=vec4(.47,.89,.95,a);}'});
+    vertexShader:'attribute float spring;varying float d;varying float vent;void main(){vec4 p=modelViewMatrix*vec4(position,1.);d=-p.z;vent=spring;gl_Position=projectionMatrix*p;gl_PointSize=clamp((65.+300.*vent)/max(1.,d),1.,6.+16.*vent);}',
+    fragmentShader:'varying float d;varying float vent;void main(){float z=length(gl_PointCoord-.5);if(z>.49)discard;float gleam=1.-smoothstep(.04,.13,length(gl_PointCoord-vec2(.36,.32)));float a=(.14+.62*smoothstep(.27,.46,z)+.28*gleam)*(1.-smoothstep(18.,85.,d));gl_FragColor=vec4(mix(vec3(.47,.89,.95),vec3(.64,.97,.55),vent)+.22*gleam,a);}'});
   const particulate=new T.Points(lights,bubbleShade);particulate.frustumCulled=false;district.add(particulate);
   // A camera-centred spherical patch resolves metre-scale walking and joins the orbital shell.
-  const radii=[0,1.4,3,5,7,10,14,19,26,34,46,62,86,120,174,260,420,720,1400,3500,8500,20000,47000,95000];
+  const patchReach=radius*.57;
+  const radii=[0,1.4,3,5,7,10,14,19,26,34,46,62,86,120,174,260,420,720,1400,3500,5800,8500,12400,17800].filter(r=>r<patchReach);
+  radii.push(patchReach);
   const sectors=96,coords=[[0,0,0]],indices=[];
   for(let j=1;j<radii.length;j++)for(let i=0;i<sectors;i++){
     const a=tau*i/sectors,n=coords.length,next=1+(j-1)*sectors+(i+1)%sectors;
@@ -437,7 +479,7 @@ function createOceanSurface(T,world){
       tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
     }
     for(const attr of [gp,wp,chartUV,gc])attr.needsUpdate=true;
-    groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(90000/radius);
+    groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(.95*patchReach/radius);
   }
   function canSwim(lat,lon,margin=.4){
     const {x,z}=chart(lat,lon);
@@ -455,6 +497,7 @@ function createOceanSurface(T,world){
       const dx=p.x-b.x,dz=p.z-b.z,d=Math.hypot(dx,dz),r=b.r+.28;
       if(d<r){p.x=b.x+(d?dx/d:1)*r;p.z=b.z+(d?dz/d:0)*r;}
     }
+    ecology.clearWalker(p,.28);
     return fromXZ(p.x,p.z);
   }
   function landingInfo(lat,lon,footprint=12){
@@ -498,7 +541,7 @@ function createOceanSurface(T,world){
   }
   function update(lat,lon,dt=0,altitude=0,shuttleStatus=null){
     if(mode==='hidden')return;
-    const near=mode==='surface'||(mode==='flight'&&altitude<53000);
+    const near=mode==='surface'||(mode==='flight'&&altitude<radius*.19);
     terrain.visible=near;fauna.visible=near&&mode==='surface';
     const c=chart(lat,lon);district.visible=near&&altitude<1250&&Math.hypot(c.x+80,c.z-60)<2700;
     if(!near){last=null;cut.value=2;return;}
