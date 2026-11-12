@@ -52,7 +52,9 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
   const sphere=new T.SphereGeometry(1,18,12),cube=new T.BoxGeometry(1,1,1);
   const rod=new T.CylinderGeometry(1,1,1,16),disc=new T.CylinderGeometry(1,1,1,52);
   const hoop=new T.TorusGeometry(1,.045,8,64);
-  const stone=material(0xffffff,{vertexColors:true,roughness:.87}),skin=material(0xffffff,{vertexColors:true,roughness:.67});
+  const stone=material(0xffffff,{vertexColors:true,roughness:.87});
+  const skin=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.67}),'cuticle');
+  const thermalMineral=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.48}),'crystal');
   fieldSurfaceFinish(stone,'stone');
   const fungusBark=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.86}),'stem');
   const scales=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.58}),'nacre');
@@ -216,7 +218,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
         const scale=r*(.11+.05*layer);stamp(springFern,foliage,x,ground(x,z)-.06,z,scale*3.3,scale*2.65,scale*2.9,0,mid,0);
         if(k%2===0)for(let j=0;j<3;j++){
           const xx=x+Math.cos(j*2.2)*scale*.62,zz=z+Math.sin(j*2.2)*scale*.58;
-          stamp(crystal,skin,xx,ground(xx,zz)-.025,zz,scale*.49,scale*(1.2+.35*j),scale*.57,0,mid+j,(j-1)*.23);
+          stamp(crystal,thermalMineral,xx,ground(xx,zz)-.025,zz,scale*.49,scale*(1.2+.35*j),scale*.57,0,mid+j,(j-1)*.23);
         }
       }
     }
@@ -309,12 +311,13 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     const y=ground(x,z),s=.35+(i%4)*.11;
     stamp(cap,skin,x,y+s*.52,z,s*1.2,s,s*1.05,0,a,0);stamp(sphere,ivory,x,y+s*.26,z,s*.24,s*.38,s*.22);
     if(i%4===0){
-      for(let j=0;j<4;j++)stamp(crystal,skin,x+.48*j,y,z+.3*Math.sin(j),s*.53,s*(1.2+.3*j),s*.50,0,a,-.13+j*.06);
+      for(let j=0;j<4;j++)stamp(crystal,thermalMineral,x+.48*j,y,z+.3*Math.sin(j),s*.53,s*(1.2+.3*j),s*.50,0,a,-.13+j*.06);
     }
   }
   // Exposed jointed slabs and violet root bundles border the road to the tower.
   const roots=curve([[0,0,0],[.16,.16,.06],[.42,-.02,.12],[.71,.14,.03],[1,.04,0]],.065);
   const pear=material(0xf4c449,{roughness:.49}),fruitBud=material(0xf7dd68);
+  fieldSurfaceFinish(pear,'cuticle');fieldSurfaceFinish(fruitBud,'cuticle');
   for(let i=0;i<60;i++){
     const side=i%2?-1:1,n=Math.floor(i/2),x=46+n*1.75+side*(10.4+(n*7)%20),z=-76-n*2.1;
     if(Math.hypot(x-65,z+103)<5.5)continue;
@@ -446,7 +449,8 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     [.61,.94,0xaaa39d],[.60,1,0xccc1b0],[.02,1,0x89929b]],44,a=>.82+.16*Math.cos(a*2),a=>.012*Math.cos(12*a));
   const towerFinish=fieldSurfaceFinish(material(0xffffff,{vertexColors:true,roughness:.49,metalness:.38}),'metal');
   stamp(tower,towerFinish,towerX,base,towerZ,9.8,48,9.8);block(towerX,towerZ,9.55,48);
-  const panel=material(0x626b6e,{roughness:.54,metalness:.39}),edgeMetal=material(0xafaa9e,{metalness:.48});
+  const panel=fieldSurfaceFinish(material(0x626b6e,{roughness:.54,metalness:.39}),'coating');
+  const edgeMetal=fieldSurfaceFinish(material(0xafaa9e,{metalness:.48}),'metal');
   for(let band=0;band<3;band++)for(let i=0;i<18;i++){
     const a=tau*(i+(band%2)*.5)/18,c=Math.cos(a),s=Math.sin(a),r=band===0?8.7:band===1?7.8:6.5;
     const h=band===0?7.4:band===1?21.5:39.2,rot=Math.PI/2-a;
@@ -479,7 +483,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     const x=towerX+side*11.4,z=towerZ+9,y=ground(x,z);
     stamp(disc,purple,x,y+2,z,2.52,4,2.52);
     stamp(disc,metal,x,y+4.13,z,2.82,.50,2.82);
-    stamp(crystal,stone,x,y+4.3,z,1.45,2.1,1.48);block(x,z,2.56,6.4);
+    stamp(crystal,thermalMineral,x,y+4.3,z,1.45,2.1,1.48);block(x,z,2.56,6.4);
     link(rod,metal,V(x,y+3,z),V(towerX+side*6,base+9,towerZ+2),.84);
     const deckX=towerX+side*9,deckZ=towerZ+14.8,deckY=ground(deckX,deckZ);
     stamp(cube,slate,deckX,deckY+.03,deckZ,8.5,.13,5.3,0,.13*side,0);

@@ -440,7 +440,8 @@
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
     spiritTerminal.dispose();expedition.dispose();cockpit.dispose();boarding.dispose();
     window.removeEventListener('openai:set_globals',loadHostState);
-    const geometries=new Set(),materials=new Set(),textures=new Set(manufacturedTiles.values());
+    const geometries=new Set(),materials=new Set(),textures=new Set();
+    for(const tile of manufacturedTiles.values()){textures.add(tile.normal);textures.add(tile.roughness);}
     const collectMaterial=m=>{
       if(Array.isArray(m))m.forEach(collectMaterial);
       else if(m)materials.add(m);

@@ -2,6 +2,8 @@
 // Pixel derivatives suppress detail below one pixel in the orbital view.
 function fieldSurfaceFinish(material,kind){
   const surfaces={
+    coating:`float enamelGrain=sin(39.*p.x+13.*p.y+7.*p.z)*cos(34.*p.z-17.*p.y+.5*sin(8.*p.x));
+      relief=.11*enamelGrain;polish=-.035+.10*enamelGrain;`,
     metal:`float grain=sin(71.*p.x+9.*p.y+7.*p.z)*cos(19.*p.z+4.*p.y);
       float mottling=sin(7.1*p.x+5.6*p.z+.7*sin(4.*p.y))*cos(4.3*p.y-.73*p.x);
       float pit=smoothstep(.76,.94,mottling+.11*grain);
@@ -29,6 +31,10 @@ function fieldSurfaceFinish(material,kind){
       relief=.59*curl+.23*sin(36.*p.x-17.*p.z);
       polish=.16*max(0.,relief);
       pigment=mix(vec3(.85,.90,.94),vec3(1.11,1.08,1.04),.5+.45*relief);`,
+    cuticle:`float wax=sin(8.*p.y+2.*p.x+.65*sin(6.*p.z))*cos(9.*p.z-3.*p.y);
+      float pore=smoothstep(.80,.97,sin(45.*p.x-11.*p.y)*cos(37.*p.z+14.*p.y));
+      relief=.18*wax-.23*pore;polish=-.14+.065*wax+.14*pore;
+      pigment=vec3(1.+.024*wax-.045*pore);`,
     crystal:`float plane=p.y*14.+1.1*p.x-.83*p.z+.18*sin(4.*p.z+3.*p.x);
       relief=.53*cos(6.28*plane)+.30*cos(12.56*plane);
       polish=.14*smoothstep(.33,.9,relief)-.095;
