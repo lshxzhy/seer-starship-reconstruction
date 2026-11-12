@@ -5,22 +5,31 @@
 // events: the original encounter conditions/rewards are deliberately separate.
 const TWIN_HABITATS={
   'alpha-springs':{name:'双子阿尔法星 · 温泉群',animals:[89,90,91]},
-  'alpha-rock':{name:'阿尔法星岩地',animals:[88]},
+  'alpha-rock':{name:'阿尔法星岩地',animals:[88,188,189]},
   'alpha-station':{name:'海盗能源站',animals:[97,98]},
   'beta-plain':{name:'双子贝塔星',animals:[119,120]},
+  'beta-ruins':{name:'海盗要塞废墟',animals:[184,185]},
   'beta-waste':{name:'贝塔星荒原',animals:[105,106,113]}
 };
 function createTwinEcology(T,parent,definition,surface){
+  // Metres to the right of the arrival view, then metres in front of it.
+  // Keep the first inhabitants beside the forward approach, visible together
+  // with the landmark instead of behind the visitor's default camera.
   const layout=definition.id==='alpha'?[
-    ['alpha-springs',91,7,5],['alpha-springs',91,-9,7],
-    ['alpha-springs',89,-14,12],['alpha-springs',90,15,12],['alpha-rock',88,10,8],
-    ['alpha-station',97,-8,6],['alpha-station',98,8,8]
+    ['alpha-springs',91,-2.8,4.8],['alpha-springs',91,3.1,6.5],
+    ['alpha-springs',89,-4.8,9],['alpha-springs',90,5.8,12],
+    ['alpha-rock',88,7,15],['alpha-rock',188,-3,4.5],['alpha-rock',189,3.7,6.5],
+    ['alpha-station',97,-3.6,5.5],['alpha-station',98,4.3,8]
   ]:[
-    ['beta-plain',119,-7,8],['beta-plain',119,8,4],['beta-plain',120,13,11],
-    ['beta-waste',105,-8,8],['beta-waste',105,6,5],['beta-waste',106,-13,13],['beta-waste',113,13,11]
+    ['beta-plain',119,-3,5],['beta-plain',119,3.8,7],['beta-plain',120,-6,11],
+    ['beta-ruins',184,-3,5],['beta-ruins',185,4.1,8],
+    ['beta-waste',105,-3,4.8],['beta-waste',105,3.5,6.5],['beta-waste',106,-5.5,9],['beta-waste',113,7,13]
   ];
-  const nodes=layout.map(([siteId,id,x,z],index)=>{
+  const nodes=layout.map(([siteId,id,side,ahead],index)=>{
     const site=definition.sites.find(s=>s.id===siteId);if(!site)return null;
+    const look=site.lookAt||[site.x,site.z-1],dx=look[0]-site.x,dz=look[1]-site.z,length=Math.hypot(dx,dz);
+    const fx=length?dx/length:0,fz=length?dz/length:-1;
+    const x=-fz*side+fx*ahead,z=fx*side+fz*ahead;
     const boss=id===88||id===113,model=createFieldSpirit(T,id,{boss});if(!model)return null;
     const anchor=new T.Group(),turn=new T.Group();anchor.add(turn);turn.add(model.root);parent.add(anchor);
     const key=siteId+'-'+id+'-'+index;anchor.userData.twinSpirit=key;anchor.visible=false;

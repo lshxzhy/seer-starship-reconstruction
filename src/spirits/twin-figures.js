@@ -4,7 +4,7 @@
 // wiki.biligame.com/seer/精灵:{id}; unseen backs and joint motion are 3D adaptations.
 // This adds presentation only: no species stats, capture rules or boss rewards.
 function createTwinSpiritFigure(T,id){
-  if(![88,89,90,91,97,98,105,106,113,119,120].includes(id))return null;
+  if(![88,89,90,91,97,98,105,106,113,119,120,184,185,188,189].includes(id))return null;
   const root=new T.Group(),body=new T.Group();root.add(body);
   root.name='twin-spirit-'+id;
   const sphere=new T.SphereGeometry(1,32,22),geometries=new Set([sphere]),materials=new Map(),joints=[],discharges=[];
@@ -89,7 +89,133 @@ function createTwinSpiritFigure(T,id){
     }
     return strand(c,points,.026,parent,metal);
   }
-  if(id===91){
+  function fleece(c,x,y,z,rx,ry,rz,parent=body){
+    const g=sphere.clone(),p=g.attributes.position;
+    for(let i=0;i<p.count;i++){
+      const px=p.getX(i),py=p.getY(i),pz=p.getZ(i),a=Math.atan2(px,pz),b=Math.acos(T.MathUtils.clamp(py,-1,1));
+      const r=1+.027*Math.sin(b*18+2*Math.sin(a*9))+.017*Math.cos(a*20+b*7)*Math.sin(b);
+      p.setXYZ(i,px*r,py*r,pz*r);
+    }
+    g.computeVertexNormals();const m=mesh(g,c,parent);m.position.set(x,y,z);m.scale.set(rx,ry,rz);
+    return finishSpiritPart(m,'velvet',materials);
+  }
+  if(id===184||id===185){
+    const adult=id===185,blue=0x4baebc,light=0x83d5da,ochre=0xba7a12,gold=0xdca523;
+    const hy=adult?.85:.52,hw=adult?.39:.30;
+    fleece(ochre,0,adult?.40:.28,-.035,adult?.28:.31,adult?.29:.20,adult?.235:.245);
+    if(adult)fleece(gold,0,hy,0,hw,.325,.267);
+    else{
+      oval(blue,0,hy,.012,hw,.275,.225);
+      const collar=[];for(let k=0;k<=60;k++){const a=k*tau/60;collar.push([.29*Math.sin(a),.30+.016*Math.sin(15*a),-.025+.23*Math.cos(a)]);}
+      strand(gold,collar,.034);
+      for(const s of [-1,1])taper(blue,[[s*.21,.71,0],[s*.245,.79,.012],[s*.25,.84,.01]],[.061,.036,.001]);
+      taper(0xd69112,[[0,.76,0],[-.023,.88,-.01],[.024,1.025,.015]],[.085,.076,.002]);
+      taper(0xedb92d,[[-.03,.80,.06],[-.044,.90,.052],[.006,.99,.035]],[.031,.038,.001]);
+    }
+    const spread=adult?.168:.139,eyeY=hy+.01,r=adult?.148:.125;
+    for(const s of [-1,1]){
+      if(adult){
+        oval(0x337a83,s*spread,eyeY,.225,r*1.32,r*1.47,.040);
+        oval(blue,s*spread,eyeY,.255,r*1.23,r*1.38,.029);
+      }
+      oval(0x835310,s*spread,eyeY,.249,r*1.03,r*1.20,.040);
+      oval(0xf0c150,s*spread,eyeY,.277,r*.93,r*1.09,.032);
+      finishSpiritPart(oval(0xad731c,s*spread,eyeY-.006,.301,r*.76,r*.91,.022),'iris',materials);
+      oval(0x171719,s*spread,eyeY+.012,.322,r*.55,r*.70,.014);
+      oval(0xffffff,s*spread-r*.25,eyeY+r*.38,.337,r*.22,r*.24,.008);
+      oval(0xffffff,s*spread-r*.34,eyeY+r*.03,.338,r*.095,r*.13,.007);
+      const leg=joint(s*(adult?.13:.12),adult?.18:.12,-.012,'x',.070,s);
+      rod(blue,[0,0,0],[s*.014,-.055,.022],adult?.033:.021,leg);
+      for(let j=-1;j<=1;j++)taper(blue,[[s*.014,-.055,.022],[s*.014+j*.030,-.089,.09],[s*.014+j*.058,-.10,.155]],
+        adult?[.022,.020,.002]:[.018,.015,.002],leg);
+      if(adult){
+        const arm=joint(s*.25,.54,.005,'z',.065,s);
+        taper(blue,[[0,0,0],[s*.05,-.105,.025],[s*.12,-.18,.10]],[.029,.023,.029],arm);
+        for(let j=-1;j<=1;j++)taper(blue,[[s*.12,-.18,.10],[s*(.14+j*.047),-.22,.14],[s*(.13+j*.06),-.31,.15]],
+          [.026,.018,.002],arm);
+        const horn=joint(s*.24,1.09,-.035,'z',.025,s);
+        taper(blue,[[0,0,0],[s*.032,.08,0],[s*.055,.15,-.015]],[.027,.023,.025],horn);
+        const normal=v(s*.60,.77,.10).normalize(),rim=ring(light,s*.055,.15,-.015,.074,.013,horn);
+        rim.quaternion.setFromUnitVectors(v(0,0,1),normal);
+        const hole=mesh(new T.CircleGeometry(.061,28),0x25585b,horn);hole.position.copy(rim.position).addScaledVector(normal,-.004);hole.quaternion.copy(rim.quaternion);hole.material.side=T.DoubleSide;
+      }
+    }
+    oval(0xa86e62,0,hy-.025,.339,.076,.068,.033);
+    oval(0xf1adb7,0,hy-.021,.361,.067,.058,.029);
+    strand(0x81565c,[[-.040,hy-.025,.384],[-.035,hy-.046,.389],[-.013,hy-.048,.393],[0,hy-.026,.396],[.013,hy-.048,.393],[.035,hy-.046,.389],[.040,hy-.025,.384]],.006);
+    oval(0xffe9e4,-.015,hy+.006,.390,.019,.012,.006);
+    if(adult){
+      const chest=new T.Shape();chest.moveTo(0,.66);chest.bezierCurveTo(-.09,.61,-.21,.46,-.15,.39);
+      chest.bezierCurveTo(-.10,.34,-.025,.36,0,.41);chest.bezierCurveTo(.025,.36,.10,.34,.15,.39);
+      chest.bezierCurveTo(.21,.46,.09,.61,0,.66);
+      const mark=mesh(new T.ExtrudeGeometry(chest,{depth:.007,bevelEnabled:true,bevelSize:.006,bevelThickness:.004,bevelSegments:2,curveSegments:16}),blue);
+      mark.position.z=.205;
+    }
+  }else if(id===188||id===189){
+    const adult=id===189,blue=0x619fc6,green=0x66bc75,cream=0xf4e6c9,dark=0x304f62;
+    const base=adult?.34:.025,top=adult?1.0:.80,rx=adult?.265:.238;
+    const profile=[[0,base],[.045,base+.04],[.12,base+.19],[rx*.82,top-.18],[rx,top-.035],[rx*.82,top+.04],[0,top+.04]];
+    const hull=mesh(new T.LatheGeometry(profile.map(([r,y])=>new T.Vector2(r,y)),40),cream);hull.scale.z=.86;
+    for(const y of [base+.24,base+.45]){
+      const scale=(y-base)/(top-base),w=rx*(.49+.39*scale),z=rx*.79;
+      strand(dark,[[-w,y+.067,z*.58],[-w*.50,y+.09,z*.91],[w*.10,y+.004,z],[w*.70,y-.054,z*.80],[w,y-.042,z*.54]],.008);
+    }
+    if(adult){
+      cylinder(blue,0,.34,0,.10,.10,.07);
+      for(let k=0;k<7;k++){
+        const r=.077*(1-k/7),yy=.30-k*.040;
+        cylinder(k%2?0x566b7a:0x8c9eaa,0,yy,0,r,r*.64,.045,body,true,24);
+      }
+    }
+    const headY=adult?1.06:.80;
+    const helmet=oval(blue,0,headY,-.015,rx*1.15,adult?.225:.235,rx*1.03);
+    finishSpiritPart(helmet,'scute',materials);
+    for(const s of [-1,1]){
+      const streak=[];for(let k=0;k<=24;k++){const t=k/24*.9;streak.push([s*rx*(.10+.83*Math.sin(t)),headY+.222*Math.cos(t),-.015+rx*.55*Math.sin(t)]);}
+      strand(green,streak,adult?.017:.012);
+      const jewel=oval(0xb53e8a,s*(adult?.17:.16),headY+(adult?.095:.13),adult?.18:.17,adult?.038:.019,adult?.051:.023,.018);
+      finishSpiritPart(jewel,'gem',materials);oval(0xffd0eb,s*(adult?.17:.16)-.008,headY+(adult?.115:.14),adult?.199:.188,.009,.014,.004);
+      if(adult)oval(0xe476b7,s*.245,headY-.002,.139,.022,.026,.013);
+      const antenna=[[s*.064,headY+.21,-.01],[s*.10,headY+.36,-.025],[s*.17,headY+.56,.015]];
+      taper(0xc89b31,antenna,adult?[.014,.013,.008]:[.009,.008,.001]);
+      if(adult)for(let k=0;k<8;k++){
+        const t=(k+1)/10,x=s*(.064+.106*t),y=headY+.21+.35*t;
+        const band=ring(0x8b6922,x,y,-.01,.012,.0025);band.rotation.x=Math.PI/2;band.rotation.z=-s*.24;
+      }
+      const arm=joint(s*(adult?.265:.26),adult?.99:.79,0,'x',adult?.055:.10,s);
+      const fistX=s*(adult?.33:.06),fistY=adult?-.34:0;
+      if(adult){
+        rod(dark,[0,0,0],[s*.16,-.12,.07],.058,arm);rod(blue,[s*.025,-.015,.01],[s*.13,-.10,.06],.076,arm);
+        rod(green,[s*.025,-.015,.01],[s*.05,-.035,.023],.082,arm);
+        rod(dark,[s*.16,-.12,.07],[s*.30,-.32,.11],.057,arm);rod(blue,[s*.18,-.145,.078],[s*.28,-.29,.10],.076,arm);
+        rod(green,[s*.18,-.145,.078],[s*.20,-.175,.085],.083,arm);
+      }
+      const fist=joint(fistX,fistY,adult?.12:.035,'z',.045,s,arm),r=adult?.145:.143;
+      finishSpiritPart(oval(blue,0,0,0,r,r,r,fist),'scute',materials);
+      for(let k=0;k<7;k++){
+        const a=k*2.39996,b=-.75+(k%4)*.46,normal=v(Math.sin(a)*Math.cos(b),Math.sin(b),Math.cos(a)*Math.cos(b));
+        if(adult){
+          const spike=mesh(new T.ConeGeometry(.025,.048,8),cream,fist);spike.position.copy(normal).multiplyScalar(r+.013);spike.quaternion.setFromUnitVectors(v(0,1,0),normal);
+        }else{
+          const spot=oval(cream,normal.x*r*.98,normal.y*r*.98,normal.z*r*.98,.039,.044,.007,fist);spot.quaternion.setFromUnitVectors(v(0,0,1),normal);
+        }
+      }
+    }
+    if(adult){
+      oval(0x12212a,0,headY-.103,.199,.179,.073,.035);
+      for(const s of [-1,1]){
+        oval(0xfffdf0,s*.068,headY-.098,.226,.040,.047,.014);
+        oval(0x182b33,s*.065,headY-.081,.239,.025,.030,.007);
+      }
+      for(let k=0;k<4;k++){
+        const spine=mesh(new T.ConeGeometry(.035,.086,8),green);spine.position.set(0,headY+.17-k*.065,-.17-k*.035);spine.rotation.x=-.65;
+      }
+    }else for(const s of [-1,1]){
+      oval(dark,s*.109,.80,.185,.106,.139,.035);oval(0xfffdf3,s*.109,.80,.209,.093,.126,.028);
+      finishSpiritPart(oval(0x87356e,s*.109,.815,.231,.069,.095,.020),'iris',materials);
+      oval(0x151c24,s*.096,.831,.246,.048,.072,.012);oval(0xffffff,s*.105-.021,.865,.259,.025,.031,.007);
+    }
+  }else if(id===91){
     // A white floating teardrop, two long tipped antennae, large olive-black eyes.
     const head=joint(0,.62,0,'z',.045);
     finishSpiritPart(oval(0xf4f5ef,0,0,0,.305,.30,.255,head),'velvet',materials);
@@ -376,7 +502,7 @@ function createTwinSpiritFigure(T,id){
     time+=Math.min(dt,.12);const motion=1+Math.min(1,effort);
     for(const j of joints)j.g.rotation[j.axis]=Math.sin(time*(id===113?1.4:1.8)*motion+j.phase)*j.amount;
     for(const [i,m] of discharges.entries())m.opacity=.28+.22*(.5+.5*Math.sin(time*2.4+i*.45));
-    body.position.y=id===91?.025*Math.sin(time*2.4):id===105?.014*Math.sin(time*2):0;
+    body.position.y=id===91?.025*Math.sin(time*2.4):[105,106,188,189].includes(id)?.014*Math.sin(time*2):0;
     if(id===105)body.rotation.y=.065*Math.sin(time*.9);
   },dispose(){for(const g of geometries)g.dispose();for(const m of materials.values())m.dispose();}};
 }
