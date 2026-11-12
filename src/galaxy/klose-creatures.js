@@ -15,7 +15,7 @@ function createKloseBird(T,speciesId) {
       const m=new T.Mesh(round,paint(hex));m.position.set(x,y,z);m.scale.set(sx,sy,sz);body.add(m);return m;
     }
     finishSpiritPart(oval(0,.098,0,.102,.076,.080,pink),'velvet',materials);
-    const tail=oval(0,.098,-.096,.048,.043,.052,light);tail.rotation.x=.42;
+    const tail=finishSpiritPart(oval(0,.098,-.096,.048,.043,.052,light),'velvet',materials);tail.rotation.x=.42;
     // Face paint sits on the round head; cheeks must keep its contour in profile.
     function cheekPatch(side){
       const p=[],ix=[],rings=5,n=32;
@@ -71,7 +71,7 @@ function createKloseBird(T,speciesId) {
       bp.setXYZ(i,bp.getX(i)*(.68+.32*y),y+.16*(1-y*y),bp.getZ(i)*(1+.17*y));
     }
     bill.computeVertexNormals();
-    const lip=new T.Mesh(bill,paint(shiny?'#f29798':'#399ce6'));lip.position.set(0,.084,.081);
+    const lip=new T.Mesh(bill,spiritCoating(paint(shiny?'#f29798':'#399ce6'),'horn',materials));lip.position.set(0,.084,.081);
     lip.scale.set(.031,.012,.013);body.add(lip);
     oval(0,.089,.087,.019,.004,.007,shiny?'#ffc7ce':'#7bd9ff');
     animal.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});
@@ -154,7 +154,7 @@ function createKloseSpiritModel(T,id){
   }
   function cactus(){
     const green='#779d2a',shade='#527626';
-    oval(green,0,.57,0,.245,.35,.19);
+    finishSpiritPart(oval(green,0,.57,0,.245,.35,.19),'cuticle',colors);
     for(const side of [-1,1]){
       const arm=joint(side*.13,.34,.12,.10,'x',side);
       strand(green,[[0,0,0],[side*.095,-.07,.03],[side*.04,-.10,.12],[-side*.05,-.10,.14]],[.060,.071,.063,.025],arm);
@@ -195,14 +195,14 @@ function createKloseSpiritModel(T,id){
       oval('#7971b2',s*.092,.443,.149,.047,.071,.029);
       eye(s*.092,.445,.164,.88,body,'#30264e');
       const g=joint(s*.174,.45,.01,.14,'z',s);
-      const blade=oval('#a7b73e',s*.064,-.109,0,.083,.187,.035,g);blade.rotation.z=s*.38;
+      const blade=finishSpiritPart(oval('#a7b73e',s*.064,-.109,0,.083,.187,.035,g),'petal',colors);blade.rotation.z=s*.38;
       strand('#73842e',[[0,.015,0],[s*.065,-.09,.032],[s*.095,-.21,.024],[s*.114,-.27,.002]],[.009,.009,.005,.001],g);
       for(let k=0;k<3;k++)strand('#919c33',[[s*.047,-.056-k*.055,.031],[s*.096,-.055-k*.055,.031],[s*.145,-.081-k*.055,.019]],[.005,.005,.001],g);
     }
     strand(dark,[[-.047,.381,.184],[-.013,.369,.188],[.012,.387,.188],[.035,.367,.182],[.062,.379,.173]],[.006,.009,.009,.006,.003]);
     const head=joint(0,.63,0,.045,'z');
     for(let k=0;k<8;k++){const a=k*tau/8;
-      const p=oval('#c7f6f2',.092*Math.sin(a),-.014,.083*Math.cos(a),.069,.064,.130,head);
+      const p=finishSpiritPart(oval('#c7f6f2',.092*Math.sin(a),-.014,.083*Math.cos(a),.069,.064,.130,head),'petal',colors);
       p.rotation.set(.18,a,0,'YXZ');}
     strand('#518827',[[0,.025,0],[.08,.146,-.02],[.22,.185,-.04],[.28,.10,-.04],[.26,-.16,-.05],[.32,-.20,-.04],[.345,-.155,-.015],[.305,-.145,0]],
       [.038,.028,.025,.023,.020,.014,.009,.001],head);
@@ -273,7 +273,7 @@ function createKloseSpiritModel(T,id){
         pts.push(s.x,s.y,s.z);
         if(j){const l=(j-1)*steps+k,r=(j-1)*steps+(k+1)%steps;indices.push(l,r,l+steps,r,r+steps,l+steps);}
       }
-      skin(pts,indices,ivory,hood).material.side=T.DoubleSide;
+      finishSpiritPart(skin(pts,indices,ivory,hood),'cap',colors).material.side=T.DoubleSide;
     }
     if(!young){
       // A thick, folded band wraps across the front of #047. Its ends curl
@@ -397,8 +397,9 @@ function createKloseSpiritModel(T,id){
   }
   function fox(){
     const coat='#c88455',fire='#ed5934';
-    oval(coat,0,.32,-.07,.157,.176,.288);oval('#eed4a0',0,.44,.13,.14,.16,.14);
-    const head=joint(0,.595,.202,.060,'y');oval(coat,0,0,0,.189,.166,.166,head);
+    finishSpiritPart(oval(coat,0,.32,-.07,.157,.176,.288),'velvet',colors);
+    finishSpiritPart(oval('#eed4a0',0,.44,.13,.14,.16,.14),'velvet',colors);
+    const head=joint(0,.595,.202,.060,'y');finishSpiritPart(oval(coat,0,0,0,.189,.166,.166,head),'velvet',colors);
     oval('#f4dbab',0,-.055,.145,.12,.067,.115,head);oval('#49323b',0,-.029,.231,.045,.028,.029,head);
     for(const s of [-1,1]){
       spike(fire,[s*.112,.075,-.04],[s*.205,.265,-.092],.083,head);

@@ -178,6 +178,11 @@
     };
     const lacquer = new T.MeshPhysicalMaterial({vertexColors:true, roughness:.36, metalness:.19,
       clearcoat:.67, clearcoatRoughness:.19, envMapIntensity:.85});
+    applyManufacturedFinish(skinMaterials.paint,'paint');
+    applyManufacturedFinish(skinMaterials.alloy,'metal');
+    applyManufacturedFinish(skinMaterials.machined,'metal');
+    applyManufacturedFinish(skinMaterials.gasket,'rubber');
+    applyManufacturedFinish(lacquer,'paint');
     const suitColors = new Map(), suitMaterials = new Map();
     function suitColor(value) {
       if (!suitColors.has(value)) suitColors.set(value,hex(value));
@@ -223,7 +228,7 @@
           else if (color===rubber || color===dark) family='gasket';
         }
         const key = bone + '/' + family;
-        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],col:[],ix:[]});
+        if (!parts.has(key)) parts.set(key,{bone,family,pos:[],norm:[],uv:[],col:[],ix:[]});
         const dest = parts.get(key), offset = dest.pos.length/3;
         const tint = color === paint ? new T.Color(1,1,1) : hex(color);
         pose.position.set(x,y,z);
@@ -232,12 +237,13 @@
         pose.updateMatrix();
         normalMatrix.getNormalMatrix(pose.matrix);
         const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal');
-        const colors=geometry.getAttribute('color');
+        const colors=geometry.getAttribute('color'),texcoords=geometry.getAttribute('uv');
         for (let i=0;i<positions.count;i++) {
           point.fromBufferAttribute(positions,i).applyMatrix4(pose.matrix);
           normal.fromBufferAttribute(normals,i).applyNormalMatrix(normalMatrix);
           dest.pos.push(point.x,point.y,point.z);
           dest.norm.push(normal.x,normal.y,normal.z);
+          dest.uv.push(texcoords.getX(i),texcoords.getY(i));
           if (colors) dest.col.push(tint.r*colors.getX(i),tint.g*colors.getY(i),tint.b*colors.getZ(i));
           else dest.col.push(tint.r,tint.g,tint.b);
         }
@@ -402,18 +408,20 @@
         g.computeVertexNormals();
       }
       function toeRail(sign){
-        const pts=[],ix=[],count=simple?10:22;
+        const pts=[],coords=[],ix=[],count=simple?10:22;
         for(let i=0;i<=count;i++){
           const t=i/count,a=-sign*.25+(t-.5)*1.43;
           const h=.035+.075*Math.sin(Math.PI*t)**.46;
-          for(const [rise,r] of [[.034,1],[h-.009,1.01],[h,.976],[h-.022,.913]]){
+          for(const [j,[rise,r]] of [[.034,1],[h-.009,1.01],[h,.976],[h-.022,.913]].entries()){
             pts.push(.225*r*Math.sin(a),rise,-.051-.259*r*Math.cos(a));
+            coords.push(t,j/3);
           }
           if(i)for(let j=0;j<3;j++){
             const v=i*4+j;ix.push(v-4,v-3,v,v,v-3,v+1);
           }
         }
         const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(pts,3));
+        g.setAttribute('uv',new T.Float32BufferAttribute(coords,2));
         g.setIndex(ix);g.computeVertexNormals();primitives.push(g);return g;
       }
       const legProfile=[[.060,-restLegLength],[.073,-restLegLength+.012]];
@@ -447,6 +455,7 @@
         const geometry=new T.BufferGeometry();
         geometry.setAttribute('position',new T.Float32BufferAttribute(entry.pos,3));
         geometry.setAttribute('normal',new T.Float32BufferAttribute(entry.norm,3));
+        geometry.setAttribute('uv',new T.Float32BufferAttribute(entry.uv,2));
         geometry.setAttribute('color',new T.Float32BufferAttribute(entry.col,3));
         geometry.setIndex(entry.ix);
         geometry.computeBoundingSphere();

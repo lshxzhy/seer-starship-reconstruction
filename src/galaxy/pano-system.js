@@ -105,9 +105,14 @@ function createPanoSystem(T,world){
   }
   const sun=new T.Mesh(new T.SphereGeometry(starRadius,48,28),new T.ShaderMaterial({
     fog:false,
-    vertexShader:'varying vec3 n;void main(){n=normalize(normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader:`varying vec3 n;void main(){vec3 d=normalize(n);float w=sin(52.*d.x+5.*sin(21.*d.y))*sin(45.*d.z-6.*d.x);
-      gl_FragColor=vec4(mix(vec3(1.,.62,.28),vec3(1.,.94,.67),.73+.15*w),1.);}`
+    vertexShader:`varying vec3 n;varying float limb;
+      void main(){vec4 p=modelViewMatrix*vec4(position,1.);n=normal;
+        limb=max(0.,dot(normalize(normalMatrix*normal),normalize(-p.xyz)));gl_Position=projectionMatrix*p;}`,
+    fragmentShader:`varying vec3 n;varying float limb;
+      void main(){vec3 d=normalize(n);
+        float cells=sin(43.*d.x+3.*sin(17.*d.z))*cos(39.*d.y+5.*d.x);
+        vec3 disk=mix(vec3(1.,.64,.34),vec3(1.,.93,.66),.70+.16*cells);
+        gl_FragColor=vec4(disk*mix(vec3(.91,.72,.56),vec3(1.),sqrt(limb)),1.);}`
   }));sun.name='帕诺中心光源';root.add(sun);
   const glow=new T.Sprite(new T.SpriteMaterial({map:makeGlow(),transparent:true,depthWrite:false,blending:T.AdditiveBlending,fog:false}));
   glow.scale.setScalar(starRadius*4.2);sun.add(glow);
@@ -119,24 +124,32 @@ function createPanoSystem(T,world){
   }
   function remoteSphere(id,radius){
     const m=new T.ShaderMaterial({uniforms:{sunDir:{value:new T.Vector3()},pole:{value:new T.Vector3(...KLOSE_WORLD.rings.normal).normalize()},ocean:{value:id==='ocean'?1:0}},
-      vertexShader:'varying vec3 n;void main(){n=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader:`varying vec3 n;uniform vec3 sunDir,pole;uniform float ocean;
+      vertexShader:`varying vec3 n;varying vec3 eye;
+        void main(){n=normal;vec4 mv=modelViewMatrix*vec4(position,1.);eye=-mv.xyz;gl_Position=projectionMatrix*mv;}`,
+      fragmentShader:`varying vec3 n,eye;uniform vec3 sunDir,pole;uniform float ocean;
       float ring(vec3 p,vec3 center,float r){float d=distance(p,normalize(center))/r;
         return smoothstep(.66,.78,d)*(1.-smoothstep(.87,1.,d));}
       void main(){vec3 d=normalize(n);float light=max(0.,dot(d,sunDir));vec3 colour;
+        vec3 nv=mat3(viewMatrix)*d, viewRay=normalize(eye);
+        float rim=1.-clamp(dot(nv,viewRay),0.,1.),glint=0.;
         if(ocean>.5){
           float water=sin(d.y*19.+sin(d.x*7.)*2.+d.z*3.)*.5+.5;
           colour=mix(vec3(.13,.23,.36),vec3(.36,.57,.68),water*.52+.24);
           float rims=ring(d,vec3(.89,.45,.13),.27)+ring(d,vec3(.03,.85,.66),.20)+ring(d,vec3(-.46,.15,.92),.29)
             +ring(d,vec3(.95,-.29,.18),.15)+ring(d,vec3(.26,-.38,.9),.19)+ring(d,vec3(-.83,.48,-.08),.20)+ring(d,vec3(-.18,-.59,-.83),.22);
           colour=mix(colour,vec3(.79,.86,.94),min(rims,1.)*.90);
+          vec3 reflected=reflect(-(mat3(viewMatrix)*sunDir),nv);
+          glint=pow(max(0.,dot(reflected,viewRay)),34.)*light*(1.-min(rims,1.));
         }else{
           float b=dot(d,pole)+.018*sin(d.x*7.+d.z*2.);
           colour=mix(vec3(.737,.588,.604),vec3(.435,.486,.569),smoothstep(-.382,-.338,b));
           colour=mix(colour,vec3(.667,.616,.710),smoothstep(-.152,-.108,b));
           colour=mix(colour,vec3(.600,.600,.400),smoothstep(.338,.382,b));
           colour=mix(colour,vec3(.604,.722,.694),smoothstep(.738,.782,b));
-        }gl_FragColor=vec4(colour*(.23+.77*sqrt(light)),1.);}`});
+        }
+        vec3 sky=ocean>.5?vec3(.21,.42,.52):vec3(.28,.34,.32);
+        vec3 lit=colour*(.23+.77*sqrt(light))+sky*pow(rim,3.)*(.12+.48*light);
+        gl_FragColor=vec4(lit+glint*vec3(.32,.36,.37),1.);}`});
     const sphere=new T.Mesh(new T.SphereGeometry(radius,64,40),m);
     sphere.name=PANO_ORBITS[id].name;sphere.frustumCulled=false;root.add(sphere);return sphere;
   }

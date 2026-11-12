@@ -10,6 +10,8 @@
     const source=part.material;
     if(!source.isShaderMaterial && !sectionMats.has(source)){
       const cut=source.clone();
+      cut.onBeforeCompile=source.onBeforeCompile;
+      cut.customProgramCacheKey=source.customProgramCacheKey;
       cut.clippingPlanes=[cutPlane];
       cut.clipShadows=true;
       cut.side=T.DoubleSide;
@@ -438,11 +440,16 @@
     disposed=true;cancelAnimationFrame(frame);clearTimeout(wheelTimer);observer.disconnect();
     spiritTerminal.dispose();expedition.dispose();cockpit.dispose();boarding.dispose();
     window.removeEventListener('openai:set_globals',loadHostState);
-    const geometries=new Set(),materials=new Set([...sectionMats.keys(),...sectionMats.values()]),textures=new Set();
-    scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);if(p.material)materials.add(p.material);});
+    const geometries=new Set(),materials=new Set(),textures=new Set(manufacturedTiles.values());
+    const collectMaterial=m=>{
+      if(Array.isArray(m))m.forEach(collectMaterial);
+      else if(m)materials.add(m);
+    };
+    sectionMats.forEach((cut,original)=>{collectMaterial(original);collectMaterial(cut);});
+    scene.traverse(p=>{if(p.geometry)geometries.add(p.geometry);collectMaterial(p.material);});
     geometries.forEach(g=>g.dispose());
     materials.forEach(m=>{for(const value of Object.values(m))if(value?.isTexture)textures.add(value);m.dispose();});
-    textures.forEach(t=>t.dispose());
+    textures.forEach(t=>t.dispose());manufacturedTiles.clear();
     finishing.dispose();reflections.dispose();renderer.dispose();
   },{once:true});
   syncScene();resize();

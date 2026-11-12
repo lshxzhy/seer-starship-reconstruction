@@ -2,19 +2,21 @@
 // These relief fields follow the mesh in its own coordinates. The geometry
 // determines the species silhouette; each tissue keeps its own highlights.
 const SPIRIT_SURFACES={
-  iris:[.17,'float r=length(p.xy),a=atan(p.y,p.x+.00001);detail=(.5+.5*cos(32.*a+3.*sin(a*7.)+r*6.))*smoothstep(.16,.5,r)*(1.-smoothstep(.82,1.,r));'],
-  velvet:[.83,'float f=34.*p.x+6.*sin(4.*p.y)+7.*p.z;detail=.57*cos(f)*cos(21.*p.y-8.*p.z)+.28*sin(53.*p.z+3.*p.y);'],
-  feather:[.66,'float spine=exp(-abs(p.x+p.z*.21)*19.);detail=spine+.38*cos(31.*p.y-19.*abs(p.x)-6.*p.z);'],
-  fin:[.36,'float ray=atan(p.y+.09,p.z-.14+.00001);detail=pow(.5+.5*cos(33.*ray+6.*p.x),6.)-.25;'],
-  petal:[.54,'float v=abs(p.x)+.25*abs(p.z);detail=exp(-v*18.)+.48*pow(.5+.5*cos(27.*p.y-28.*v),7.)-.18;'],
-  scute:[.43,'vec2 q=vec2(p.x*8.+p.z*13.,p.y*12.+.24*sin(14.*p.z));detail=.55*cos(q.y*2.)+.36*cos(q.x*2.6+.8*sin(q.y*1.8));'],
-  cap:[.69,'detail=.42*sin(48.*p.x+13.*p.y)*cos(38.*p.z-9.*p.y)+.38*sin(14.*p.x+9.*p.z);'],
-  gem:[.22,'detail=.47*sin(18.*p.y+7.*p.z+.8*sin(5.*p.x));']
+  iris:[.17,.0004,'float r=length(p.xy),a=atan(p.y,p.x+.00001);detail=(.5+.5*cos(32.*a+3.*sin(a*7.)+r*6.))*smoothstep(.16,.5,r)*(1.-smoothstep(.82,1.,r));'],
+  velvet:[.83,.002,'float f=34.*p.x+6.*sin(4.*p.y)+7.*p.z;detail=.57*cos(f)*cos(21.*p.y-8.*p.z)+.28*sin(53.*p.z+3.*p.y);'],
+  feather:[.66,.004,'float spine=exp(-abs(p.x+p.z*.21)*19.);detail=spine+.38*cos(31.*p.y-19.*abs(p.x)-6.*p.z);'],
+  fin:[.36,.002,'float ray=atan(p.y+.09,p.z-.14+.00001);detail=pow(.5+.5*cos(33.*ray+6.*p.x),6.)-.25;'],
+  petal:[.54,.004,'float v=abs(p.x)+.25*abs(p.z);detail=exp(-v*18.)+.48*pow(.5+.5*cos(27.*p.y-28.*v),7.)-.18;'],
+  scute:[.43,.005,'vec2 q=vec2(p.x*8.+p.z*13.,p.y*12.+.24*sin(14.*p.z));detail=.55*cos(q.y*2.)+.36*cos(q.x*2.6+.8*sin(q.y*1.8));'],
+  cap:[.69,.003,'detail=.42*sin(48.*p.x+13.*p.y)*cos(38.*p.z-9.*p.y)+.38*sin(14.*p.x+9.*p.z);'],
+  gem:[.22,.001,'detail=.47*sin(18.*p.y+7.*p.z+.8*sin(5.*p.x));'],
+  cuticle:[.46,.002,'vec3 q=p*31.;detail=.32*cos(q.x+q.y)*sin(q.z-q.y)+.21*cos(q.y+2.*sin(q.x));'],
+  horn:[.32,.0015,'detail=.43*cos(p.y*36.+p.z*5.+2.*sin(3.*p.x))+.14*sin(p.x*42.+p.y*2.);']
 };
 function spiritCoating(material,kind,palette){
   const key=material.uuid+kind;
   if(palette.has(key))return palette.get(key);
-  const coat=material.clone(),[roughness,relief]=SPIRIT_SURFACES[kind];
+  const coat=material.clone(),[roughness,depth,relief]=SPIRIT_SURFACES[kind];
   coat.roughness=roughness;
   coat.customProgramCacheKey=()=>'spirit-tissue-'+kind;
   coat.onBeforeCompile=shader=>{
@@ -26,7 +28,24 @@ function spiritCoating(material,kind,palette){
        float tissueLod=1.-smoothstep(.012,.085,length(fwidth(p)));
        diffuseColor.rgb*=1.+.11*tissueLod*detail;`)
       .replace('#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor=clamp(roughnessFactor-.11*tissueLod*detail,.08,.98);');
+        '#include <roughnessmap_fragment>\nroughnessFactor=clamp(roughnessFactor-.11*tissueLod*detail,.08,.98);')
+      .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+        vec3 dx=-dFdx(vViewPosition),dy=-dFdy(vViewPosition);
+        // Work in pixel footprints so field and portrait scales share a relief.
+        float viewFootprint=max(length(dx)+length(dy),.0001);
+        dx/=viewFootprint;dy/=viewFootprint;
+        vec3 gx=cross(dy,normal),gy=cross(normal,dx);
+        float det=dot(dx,gx)*faceDirection;
+        float tissueFootprint=max(length(dFdx(p))+length(dFdy(p)),.0001);
+        vec3 slope=(dFdx(detail)*gx+dFdy(detail)*gy)*(${depth}/tissueFootprint)*sign(det)/max(abs(det),.0001);
+        normal=normalize(normal-tissueLod*slope/max(1.,5.*length(slope)));`);
+    if(kind==='velvet'||kind==='feather'){
+      // Fine fibres catch grazing light; keep their tint and the scene's shadows.
+      shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+        float grazing=1.-clamp(dot(geometry.normal,geometry.viewDir),0.,1.);
+        gl_FragColor.rgb+=(reflectedLight.indirectDiffuse+reflectedLight.directDiffuse)*(.16*grazing*grazing*grazing);
+        #include <tonemapping_fragment>`);
+    }
   };
   palette.set(key,coat);return coat;
 }
@@ -231,8 +250,9 @@ function createPartnerFigure(T,id){
   }
   function bird(final,shiny){
     const pink=shiny?0xf6f1f8:final?0xffeded:0xed9ebb,blue=shiny?0xc9608c:0x2378ac,brown=shiny?0xecc759:0x764456;
-    oval(0,.68,0,.31,.44,.28,pink);oval(0,1.02,.12,.29,.30,.255,pink);
-    oval(0,1.02,.37,.107,.095,final?.24:.30,blue);face(1.09,.34,.143,.068);
+    finishSpiritPart(oval(0,.68,0,.31,.44,.28,pink),'velvet',mats);
+    finishSpiritPart(oval(0,1.02,.12,.29,.30,.255,pink),'velvet',mats);
+    finishSpiritPart(oval(0,1.02,.37,.107,.095,final?.24:.30,blue),'horn',mats);face(1.09,.34,.143,.068);
     for(const s of [-1,1]){
       oval(s*.27,.67,0,.15,.32,.16,pink,-s*.28);
       leaf(s*.12,1.2,0,.095,.26,.06,final?pink:brown,-s*.39,-.31);
@@ -244,7 +264,7 @@ function createPartnerFigure(T,id){
   }
   function cactus(final){
     const green=0x77972f;
-    oval(0,.71,0,.39,final?.59:.47,.32,green);
+    finishSpiritPart(oval(0,.71,0,.39,final?.59:.47,.32,green),'cuticle',mats);
     oval(0,.77,.238,.26,.25,.114,0xdbbc77);face(.82,.336,.127,.048);
     for(const s of [-1,1]){
       limb([s*.29,.67,.01],[s*.45,.74,.04],.11,green);

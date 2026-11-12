@@ -51,19 +51,26 @@ function createYunasFigure(T,id,options={}){
           float r=length(p),a=atan(p.y,p.x+.00001);
           float twist=a+(4.35+.48*sin(2.*a+.9*r))*r+.22*sin(3.*a-4.7*r+age*.15)*r-age*.132;
           vec2 field=vec2(cos(twist),sin(twist))*(r+.36);
+          float footprint=max(length(dFdx(field)),length(dFdy(field)));
+          float strandDetail=1.-smoothstep(.012,.055,footprint);
           float cloud=.55*noise2(field*5.7+.026*age)+.30*noise2(field*12.3)+.15*noise2(field*25.7);
           float wave=.5+.5*cos(3.*twist+2.3*cloud+.55*sin(twist+7.*r));
           float split=.5+.5*cos(2.*twist-4.*r-.9);
           float lanes=pow(wave,3.1)*(.21+.79*split)*(.39+.84*cloud);
-          float fibre=pow(.5+.5*cos(9.*twist+4.1*cloud+4.1*r),12.)*.085;
+          float fibre=pow(.5+.5*cos(9.*twist+4.1*cloud+4.1*r),12.)*.085*strandDetail;
           float orbit=1.-smoothstep(.40,1.18,r);
           vec3 cool=mix(vec3(.035,.019,.090),vec3(.41,.23,.62),1.-smoothstep(.02,.77,r));
           vec3 hot=mix(vec3(.84,.042,.13),vec3(2.45,.54,.22),1.-smoothstep(.06,.49,r));
           vec3 trace=mix(cool,hot,mainWell*(1.-smoothstep(.24,.71,r)));
           float filament=.5+.5*cos(22.*twist+12.*cloud+noise2(field*42.)*2.);
-          float fineDust=noise2(field*56.+vec2(cloud,0.))*.7+noise2(field*117.)*.3;
+          float fineDust=.5+(noise2(field*56.+vec2(cloud,0.))-.5)*.7*(1.-smoothstep(.006,.023,footprint))
+                          +(noise2(field*117.)-.5)*.3*(1.-smoothstep(.002,.010,footprint));
           vec3 well=vec3(.006,.003,.016)+trace*(lanes*(.73+.67*fineDust)+fibre+.018)*orbit;
-          well+=trace*pow(filament,8.)*smoothstep(.32,.82,wave)*(.09+.22*cloud)*orbit;
+          well+=trace*pow(filament,8.)*smoothstep(.32,.82,wave)*(.09+.22*cloud)*orbit*strandDetail;
+          // Foreground dust attenuates one edge of the bright lanes. Keep the white throat visible.
+          float shadowLane=smoothstep(.46,.86,cloud)*smoothstep(.18,.4,r)*
+            (1.-smoothstep(.08,.65,abs(wave-.46)))*orbit;
+          well*=vec3(1.)-shadowLane*vec3(.46,.36,.24);
           float crescent=exp(-abs(r-.24-.055*sin(twist*2.))*12.)*max(0.,cos(twist-.6));
           well+=mainWell*vec3(.70,.15,.036)*crescent*(.33+.67*cloud);
           well+=mix(vec3(.26,.17,.58),vec3(1.64,.20,.085),mainWell)*exp(-7.*r);
@@ -73,7 +80,7 @@ function createYunasFigure(T,id,options={}){
           vec2 grid=n.xy*28.;vec2 cell=floor(grid);
           float speck=(1.-smoothstep(.018,.059+min(.095,fwidth(grid.x)),
             length(fract(grid)-vec2(hash(cell+3.),hash(cell+7.)))))*step(.80,hash(cell+19.));
-          well+=speck*vec3(.40,.32,.61)*(.38+.62*cloud);
+          well+=speck*vec3(.40,.32,.61)*(.38+.62*cloud)*(1.-smoothstep(.06,.37,length(fwidth(grid))));
           float side=dot(normal,normalize(vec3(-.50,.60,.59)));
           vec3 back=mix(vec3(.007,.004,.018),vec3(.030,.016,.065),.5+.35*n.y+.14*n.x);
           float facing=smoothstep(-.29,.59,n.z);
@@ -87,7 +94,7 @@ function createYunasFigure(T,id,options={}){
   const major=vortex(true),minor=vortex(false),body=new T.Group();sculpt.add(body);
   // A broken gas mantle behind the wells gathers into the throat. Three
   // turbulent lobes keep the outer silhouette visible even when it spans the sky.
-  const halo=material(new T.ShaderMaterial({uniforms:{age:clock},
+  const halo=material(new T.ShaderMaterial({uniforms:{age:clock},extensions:{derivatives:true},
     transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,
     vertexShader:`varying vec2 q;void main(){q=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
     fragmentShader:`varying vec2 q;uniform float age;
@@ -96,7 +103,10 @@ function createYunasFigure(T,id,options={}){
         vec2 p=q*vec2(1.,1.14);float r=length(p),a=atan(p.y,p.x+.00001);
         float swirl=2.8*r+.36*sin(2.*a+5.*r)+.015*age;
         vec2 curved=mat2(cos(swirl),sin(swirl),-sin(swirl),cos(swirl))*p;
-        float grain=noise2(11.*curved)*.54+noise2(27.*curved)*.30+noise2(68.*curved)*.16;
+        float pixel=max(length(dFdx(curved)),length(dFdy(curved)));
+        float grain=.5+(noise2(11.*curved)-.5)*.54
+                      +(noise2(27.*curved)-.5)*.30*(1.-smoothstep(.014,.046,pixel))
+                      +(noise2(68.*curved)-.5)*.16*(1.-smoothstep(.005,.019,pixel));
         float veil=(1.-smoothstep(.45,.74,r))*.59*smoothstep(.24,.71,grain);
         float lobes=.44+.56*pow(.5+.5*cos(3.*a+9.*r+4.*grain),2.);
         float lip=exp(-abs(r-.233)*35.)*(.18+.72*grain);

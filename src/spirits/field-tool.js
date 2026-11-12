@@ -13,6 +13,9 @@ function createFieldFlameTool(T,rig){
   const body=paint(0x444745,.47,.43),rim=paint(0x989b9a,.53,.34);
   const silver=paint(0xd0d1c9,.52,.32),olive=paint(0x89815a,.48,.45);
   const red=paint(0xb72d32,.32,.35),black=paint(0x281820,.15,.62),light=paint(0xe65e47,.2,.3);
+  for(const painted of [body,olive,red])applyManufacturedFinish(painted,'paint');
+  for(const alloy of [rim,silver])applyManufacturedFinish(alloy,'metal');
+  applyManufacturedFinish(black,'rubber');
   light.emissive.setHex(0xff7537).convertSRGBToLinear();
   light.emissiveIntensity=.12;
   const geometries=new Set();

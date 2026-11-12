@@ -11,6 +11,8 @@
       brass:paint(0xe5ab4a,.33,.61),steel:paint(0xb7c2ca,.22,.83),
       blade:paint(0xe5e9eb,.20,.79),gauge:paint(0xa8df88,.24,.12)
     };
+    applyManufacturedFinish(materials.red,'paint');
+    for(const alloy of [materials.dark,materials.brass,materials.steel,materials.blade])applyManufacturedFinish(alloy,'metal');
     materials.gauge.emissive.copy(materials.gauge.color);materials.gauge.emissiveIntensity=.22;
     const owned=new Set();
     function profile(rings,sides=32){
@@ -35,13 +37,14 @@
     // A continuous cutting flight, with a relieved back and a wider polished
     // edge, casts the alternating silver/dark bands of the equip portrait.
     function cuttingFlight(){
-      const positions=[],indices=[],steps=172;
+      const positions=[],uvs=[],indices=[],steps=172;
       for(let i=0;i<=steps;i++){
         const t=i/steps,angle=t*Math.PI*2*3.6;
         const r=.196*(1-t)+.033*t,y=-t*.445;
         for(const [rr,yy] of [[r-.01,y+.017],[r+.041*(1-.65*t),y],[r-.012,y-.026]]){
           positions.push(Math.cos(angle)*rr,yy,Math.sin(angle)*rr);
         }
+        uvs.push(t*3.6,0,t*3.6,.5,t*3.6,1);
         if(i===0)continue;
         const a=(i-1)*3;
         for(let face=0;face<2;face++){
@@ -49,6 +52,7 @@
         }
       }
       const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+      g.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));
       g.setIndex(indices);g.computeVertexNormals();owned.add(g);return g;
     }
     const flight=cuttingFlight();materials.blade.side=T.DoubleSide;

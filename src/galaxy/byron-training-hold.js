@@ -9,11 +9,11 @@ const BYRON_TRAINING_STATIONS=[
 ];
 
 function buildByronTrainingHold(T,k,obstruct){
-  const tau=Math.PI*2,paint=k.mat(0x34695a),edge=k.mat(0x719a8b),dark=k.mat(0x222e3e);
-  const steel=k.mat(0x89979f),violet=k.mat(0x62566e),recess=k.mat(0x152a31);
+  const metal=c=>k.mat(c,false,false,'metal');
+  const tau=Math.PI*2,paint=metal(0x34695a),edge=metal(0x719a8b),dark=k.mat(0x222e3e);
+  const steel=metal(0x89979f),violet=metal(0x62566e),recess=k.mat(0x152a31);
   const cyan=k.mat(0x60e6ee,true),green=k.mat(0x61ec49,true),orange=k.mat(0xffac39,true);
-  const red=k.mat(0xfa4134,true),glass=k.mat(0x4eacc9,false,true),rubber=k.mat(0x303945);
-  for(const material of [paint,edge,steel,violet])fieldSurfaceFinish(material,'metal');
+  const red=k.mat(0xfa4134,true),glass=k.mat(0x4eacc9,false,true),rubber=k.mat(0x303945,false,false,'rubber');
   const hoop=new T.TorusGeometry(1,.065,10,64);
 
   // Extruded front silhouettes avoid treating all four machines as scaled boxes.

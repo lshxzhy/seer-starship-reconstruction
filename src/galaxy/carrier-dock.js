@@ -40,16 +40,22 @@
       if(!o.isMesh||Array.isArray(o.material)||o.isInstancedMesh)return;
       if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
       if(!o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld).intersectsBox(hatch))return;
-      if(!cutMats.has(o.material)){const m=o.material.clone();m.clippingPlanes=planes;m.clipIntersection=true;owned.add(m);cutMats.set(o.material,m);}
+      if(!cutMats.has(o.material)){
+        const m=o.material.clone();
+        m.onBeforeCompile=o.material.onBeforeCompile;
+        m.customProgramCacheKey=o.material.customProgramCacheKey;
+        m.clippingPlanes=planes;m.clipIntersection=true;owned.add(m);cutMats.set(o.material,m);
+      }
       o.material=cutMats.get(o.material);
     });
     carrier.add(embarkRoom);
-    const paint=(hex,glow=false)=>{
+    const paint=(hex,glow=false,finish='paint')=>{
       const c=new T.Color(hex).convertSRGBToLinear();
-      const m=glow?new T.MeshBasicMaterial({color:c}):new T.MeshStandardMaterial({color:c,roughness:.64,metalness:.25});
+      const m=glow?new T.MeshBasicMaterial({color:c}):applyManufacturedFinish(new T.MeshStandardMaterial({
+        color:c,roughness:finish==='metal'?.39:.57,metalness:finish==='metal'?.72:.20}),finish);
       owned.add(m);return m;
     };
-    const steel=paint(0x394b63),deck=paint(0x7c8d9a),ivory=paint(0xdce4df),gold=paint(0xf0af4f);
+    const steel=paint(0x394b63,false,'metal'),deck=paint(0x7c8d9a),ivory=paint(0xdce4df),gold=paint(0xf0af4f);
     const cyan=paint(0x73eadd,true),light=paint(0xffdb95,true);
     function box(x,y,z,w,h,d,mat,angle=0){
       if(!batches.has(mat))batches.set(mat,[]);

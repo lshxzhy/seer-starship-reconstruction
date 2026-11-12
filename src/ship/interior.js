@@ -13,19 +13,21 @@
     root.visible = false;
 
     const palette = {};
-    function paint(name, color, glow=0) {
+    function paint(name, color, glow=0, finish='paint') {
       const c = new T.Color(color).convertSRGBToLinear();
       palette[name] = new T.MeshStandardMaterial({
-        color:c, roughness:.49, metalness:.17,
+        color:c, roughness:finish==='rubber'?.81:finish==='metal'?.32:.49,
+        metalness:finish==='metal'?.74:finish==='rubber'?.025:.17,
         emissive:glow ? c : 0x000000, emissiveIntensity:glow
       });
+      if (!glow) applyManufacturedFinish(palette[name],finish);
     }
     paint('plate',0x698299); paint('slate',0x354b61);
     paint('passage',0x273d50); paint('wall',0xc3cfd1); paint('cap',0xf0e7d2);
-    paint('frame',0x596d84); paint('rubber',0x1d2c38); paint('aluminum',0xb5c6c9);
+    paint('frame',0x596d84,0,'metal'); paint('rubber',0x1d2c38,0,'rubber'); paint('aluminum',0xb5c6c9,0,'metal');
     paint('engineering',0x516585); paint('science',0x518c8a);
     paint('command',0x6c7392); paint('support',0x867b6a);
-    paint('amber',0xe6a64d); paint('ceramic',0xe9ddc5);
+    paint('amber',0xe6a64d); paint('ceramic',0xe9ddc5,0,'ceramic');
     paint('screen',0x368b9e,.35); paint('guide',0x71e8ee,.48);
     paint('green',0xa1cc8d,.26); paint('power',0xffbc4b,.52);
     paint('ice',0x87cfff,.48); paint('glass',0x297d91,.19);

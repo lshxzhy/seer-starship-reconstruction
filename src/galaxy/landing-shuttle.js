@@ -13,19 +13,21 @@ function createLandingShuttle(T) {
   const geometries=new Set(),materials=new Set(),textures=new Set(),controls=[];
   const trackGeometry=g=>{geometries.add(g);return g;};
   const color=hex=>new T.Color(hex).convertSRGBToLinear();
-  function paint(hex,metal=.18,rough=.48,glow=0) {
+  function paint(hex,metal,rough,finish,glow=0) {
     const c=color(hex);
     const m=new T.MeshStandardMaterial({color:c,metalness:metal,roughness:rough,
       emissive:glow?c:0,emissiveIntensity:glow,side:T.DoubleSide});
+    if(finish)applyManufacturedFinish(m,finish);
     materials.add(m);return m;
   }
-  const cream=paint(0xe9dfc6,.30,.39),white=paint(0xd4dfdf,.31,.35),
-    gold=paint(0xf1a333,.40,.36),blue=paint(0x284d6e,.40,.39),edge=paint(0x253240,.48,.38),
-    alloy=paint(0x80949b,.65,.34),rubber=paint(0x2d3440,.17,.76),
-    lining=paint(0x8299a1,.16,.56),tile=paint(0x465b65,.25,.64),
-    cyan=paint(0x77e7ef,.15,.30,.75),amber=paint(0xffba49,.16,.34,.76),
-    red=paint(0xfc7266,.16,.37,.82),green=paint(0x80efd7,.16,.35,.71);
-  const glass=paint(0x70c7dc,.09,.13);
+  const cream=paint(0xe9dfc6,.10,.38,'paint'),white=paint(0xd4dfdf,.12,.34,'paint'),
+    gold=paint(0xf1a333,.14,.35,'paint'),blue=paint(0x284d6e,.13,.39,'paint'),
+    edge=paint(0x253240,.57,.43,'metal'),alloy=paint(0x80949b,.79,.36,'metal'),
+    rubber=paint(0x2d3440,.035,.81,'rubber'),lining=paint(0x8299a1,.09,.51,'ceramic'),
+    tile=paint(0x465b65,.12,.68,'rubber'),
+    cyan=paint(0x77e7ef,.15,.30,null,.75),amber=paint(0xffba49,.16,.34,null,.76),
+    red=paint(0xfc7266,.16,.37,null,.82),green=paint(0x80efd7,.16,.35,null,.71);
+  const glass=applyWindowFresnel(paint(0x70c7dc,.035,.12,null));
   glass.transparent=true;glass.opacity=.105;glass.depthWrite=false;
   const cube=trackGeometry(new T.BoxGeometry(1,1,1));
   const barrel=trackGeometry(new T.CylinderGeometry(1,1,1,16));
@@ -381,13 +383,29 @@ function createLandingShuttle(T) {
       obj.updateMatrix();
       const g=obj.geometry,indices=g.index,pos=g.getAttribute('position'),norm=g.getAttribute('normal'),uv=g.getAttribute('uv');
       const normals=new T.Matrix3().getNormalMatrix(obj.matrix);
+      const relief=obj.material.roughnessMap||obj.material.bumpMap||obj.material.normalMap;
       let bin=bins.get(obj.material);
-      if(!bin){bin={position:[],normal:[],uv:obj.material.map?[]:null,indices:[]};bins.set(obj.material,bin);}
-      const base=bin.position.length/3,p=new T.Vector3();
+      if(!bin){bin={position:[],normal:[],uv:(relief||obj.material.map)?[]:null,indices:[]};bins.set(obj.material,bin);}
+      const base=bin.position.length/3,p=new T.Vector3(),n=new T.Vector3();
+      const circumference=2*Math.PI*Math.sqrt(Math.abs(obj.scale.x*obj.scale.z));
       for(let i=0;i<pos.count;i++){
         p.fromBufferAttribute(pos,i).applyMatrix4(obj.matrix);bin.position.push(p.x,p.y,p.z);
-        p.fromBufferAttribute(norm,i).applyMatrix3(normals).normalize();bin.normal.push(p.x,p.y,p.z);
-        if(bin.uv)bin.uv.push(uv?uv.getX(i):0,uv?uv.getY(i):0);
+        n.fromBufferAttribute(norm,i).applyMatrix3(normals).normalize();bin.normal.push(n.x,n.y,n.z);
+        if(!bin.uv)continue;
+        if(!relief){
+          // Screen printing and the instrument canvas retain their atlas UVs.
+          bin.uv.push(uv.getX(i),uv.getY(i));
+        }else if(g===orb||(g===barrel&&Math.abs(norm.getY(i))<.99)){
+          bin.uv.push(uv.getX(i)*circumference,uv.getY(i)*obj.scale.y*(g===orb?Math.PI:1));
+        }else{
+          // Bearings keep their cylindrical unwrap. Sloping armour faces use
+          // a metre grid anchored to the rigid assembly, including custom
+          // hull panels that have never needed UVs for a flat paint colour.
+          const ax=Math.abs(n.x),ay=Math.abs(n.y),az=Math.abs(n.z);
+          if(ay>=ax&&ay>=az)bin.uv.push(p.x,-p.z*Math.sign(n.y));
+          else if(ax>=az)bin.uv.push(-p.z*Math.sign(n.x),p.y);
+          else bin.uv.push(p.x*Math.sign(n.z),p.y);
+        }
       }
       for(let i=0;i<(indices?indices.count:pos.count);i++)bin.indices.push(base+(indices?indices.getX(i):i));
       group.remove(obj);

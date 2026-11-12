@@ -1,3 +1,79 @@
+  // A linear data tile stores surface height in R and roughness in G.
+  // The four tiles belong to the viewer; meshes and material clones share them.
+  const manufacturedTiles = new Map();
+  const manufacturedProfiles = {
+    paint:   {repeat: 2, mean: .83, height: .0024},
+    metal:   {repeat: 3, mean: .78, height: .0018},
+    rubber:  {repeat: 3, mean: .88, height: .0045},
+    ceramic: {repeat: 2, mean: .85, height: .0011}
+  };
+
+  function makeManufacturedTile(kind, profile) {
+    const size = 128, data = new Uint8Array(size * size * 4);
+    // Periodic value noise. Interpolate neighbouring cells across both tile edges.
+    function noise(u, v, nx, ny) {
+      const x = u * nx, y = v * ny, i = Math.floor(x), j = Math.floor(y);
+      const fx = x-i, fy = y-j, a = fx*fx*(3-2*fx), b = fy*fy*(3-2*fy);
+      function corner(dx, dy) {
+        let h = Math.imul((i+dx)&(nx-1), 374761393) ^ Math.imul((j+dy)&(ny-1), 668265263);
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+      }
+      return (corner(0,0)*(1-a) + corner(1,0)*a)*(1-b) +
+             (corner(0,1)*(1-a) + corner(1,1)*a)*b;
+    }
+    for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
+      const u=(x+.5)/size, v=(y+.5)/size;
+      const grain=noise(u,v,64,64)-.5, cast=noise(u,v,16,16)-.5;
+      let height, roughness;
+      if (kind==='metal') {
+        const brush=noise(u,v,4,64)-.5, groove=Math.max(0,-brush-.15);
+        height=.48+.47*brush-.26*groove+.10*grain;
+        roughness=profile.mean-.37*brush+.21*groove;
+      } else if (kind==='rubber') {
+        const pore=Math.max(0,-cast-.12);
+        height=.53+.43*grain+.25*cast-.55*pore;
+        roughness=profile.mean+.18*grain+.24*pore;
+      } else if (kind==='ceramic') {
+        const glaze=noise(u,v,8,8)-.5;
+        height=.5+.16*glaze+.11*grain;
+        roughness=profile.mean+.20*glaze+.10*grain;
+      } else {
+        // Rounded enamel stipple breaks up the reflection without dyeing the panel.
+        const stipple=cast+.38*grain;
+        height=.50+.55*stipple;
+        roughness=profile.mean-.27*stipple;
+      }
+      const i=4*(y*size+x);
+      data[i]=Math.round(255*T.MathUtils.clamp(height,0,1));
+      data[i+1]=Math.round(255*T.MathUtils.clamp(roughness,0,1));
+      data[i+3]=255;
+    }
+    const texture = new T.DataTexture(data,size,size,T.RGBAFormat,T.UnsignedByteType);
+    texture.name='Workshop '+kind;
+    texture.wrapS=texture.wrapT=T.RepeatWrapping;
+    texture.repeat.set(profile.repeat,profile.repeat);
+    texture.generateMipmaps=true;
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+    texture.needsUpdate=true;
+    return texture;
+  }
+
+  function applyManufacturedFinish(material, kind) {
+    const profile=manufacturedProfiles[kind];
+    if (!profile || !material.isMeshStandardMaterial || material.transparent ||
+        material.map || material.normalMap || material.bumpMap || material.roughnessMap) return material;
+    if (!manufacturedTiles.has(kind)) manufacturedTiles.set(kind,makeManufacturedTile(kind,profile));
+    const tile=manufacturedTiles.get(kind);
+    material.bumpMap=tile;
+    material.bumpScale=profile.height;
+    material.roughnessMap=tile;
+    material.roughness=Math.min(1,material.roughness/profile.mean);
+    return material;
+  }
+
   // Angular radiance probes supply the reflected light that is missing from
   // a rig of point sources. The RGBE pixels describe light, not a sky backdrop.
   function createReflectionProbes() {

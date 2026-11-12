@@ -41,8 +41,8 @@ function createKloseSafariModel(T,id){
     oval('#fffdf0',x-r*.115,y+r*.29,z+.56*r,r*.15,r*.18,r*.075,parent);
   }
   if(id===22){
-    oval(teal,0,.49,0,.277,.264,.245);
-    oval(white,0,.502,.151,.204,.179,.116);
+    finishSpiritPart(oval(teal,0,.49,0,.277,.264,.245),'velvet',materials);
+    finishSpiritPart(oval(white,0,.502,.151,.204,.179,.116),'velvet',materials);
     for(const s of [-1,1]){
       eye(s*.068,.524,.256,.042,black,'#16151d');
       const g=pivot(s*.21,.43,-.01,'z',.14,s);
@@ -116,7 +116,9 @@ function createKloseSafariModel(T,id){
     fin('#aabddb',[[-.008,0,.055],[0,.173,-.201],[0,.035,-.167],[0,-.129,-.23],[0,-.060,.035]],[.017,0,-.097],tail);
     for(const s of [-1,1])path(stone,[[s*.095,.381,.186],[s*.139,.346,.039],[s*.103,.326,-.15],[s*.045,.33,-.25]],.014);
   }else if(id===153){
-    oval(honey,0,.31,0,.177,.163,.161);
+    finishSpiritPart(oval(honey,0,.31,0,.177,.163,.161),'velvet',materials);
+    const membrane=new T.MeshPhysicalMaterial({color:0xc3e8e9,roughness:.26,clearcoat:.4,
+      clearcoatRoughness:.18,transparent:true,opacity:.68,side:T.DoubleSide,depthWrite:false});
     for(let j=0;j<33;j++){
       const y=.19+.226*((j%9)/8),a=j*2.39996,d=.162*Math.sqrt(Math.max(.1,1-((y-.31)/.166)**2));
       const x=d*Math.sin(a),z=d*Math.cos(a);
@@ -128,7 +130,6 @@ function createKloseSafariModel(T,id){
       const g=pivot(s*.120,.359,-.044,'z',.13,s);
       for(const [dx,dy,z] of [[.326,.268,-.062],[.25,.020,-.151]]){
         const points=[[0,0,0],[s*dx*.43,dy*.67,z*.41],[s*dx,dy,z],[s*dx*.81,dy*.55-.034,z],[s*dx*.30,dy*.23-.038,z*.50]];
-        const membrane=new T.MeshPhysicalMaterial({color:0xc3e8e9,roughness:.24,transparent:true,opacity:.68,side:T.DoubleSide,depthWrite:false});
         fin(null,points,[s*dx*.5,dy*.54,z*.51-.012],g,membrane);
         path('#b19e6d',[...points,points[0]],.005,g);
         path('#cfdae0',[points[0],[s*dx*.42,dy*.46,z*.46],points[2]],.004,g);

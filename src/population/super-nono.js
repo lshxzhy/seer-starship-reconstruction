@@ -8,6 +8,8 @@
     const tint=n=>new T.Color(n).convertSRGBToLinear();
     const shell=new T.MeshPhysicalMaterial({color:tint(0xeaf5f4),metalness:.08,roughness:.32,clearcoat:.36});
     const seal=new T.MeshStandardMaterial({color:tint(0x27505a),metalness:.31,roughness:.43});
+    applyManufacturedFinish(shell,'ceramic');
+    applyManufacturedFinish(seal,'rubber');
     const glass=new T.MeshPhysicalMaterial({color:tint(0x040c11),metalness:.04,roughness:.25,
       clearcoat:.26,clearcoatRoughness:.22,envMapIntensity:.37});
     const aqua=new T.MeshStandardMaterial({color:tint(0x10d4d3),emissive:tint(0x0ba5a9),emissiveIntensity:.57,roughness:.38});
@@ -30,12 +32,14 @@
     // seal wrap around the cheeks without floating flat over the shell.
     function inset(az,el,width,height,r,roundness,tilt=0,lowerHeight=height){
       const positions=surface(az,el,r),indices=[],n=56,bands=7;
+      const uvs=[.75-az/(2*Math.PI),.5+el/Math.PI];
       for(let band=1;band<=bands;band++){
         for(let i=0;i<n;i++){
           const angle=i*Math.PI*2/n,c=Math.cos(angle),s=Math.sin(angle);
           const x=Math.sign(c)*Math.pow(Math.abs(c),roundness)*width*band/bands;
           const y=Math.sign(s)*Math.pow(Math.abs(s),roundness)*(s<0?lowerHeight:height)*band/bands;
           positions.push(...surface(az+x+tilt*y,el+y,r));
+          uvs.push(.75-(az+x+tilt*y)/(2*Math.PI),.5+(el+y)/Math.PI);
           const a=1+(band-1)*n+i,b=1+(band-1)*n+(i+1)%n;
           if(band===1)indices.push(0,b,a);
           else indices.push(a-n,b,a, a-n,b-n,b);
@@ -43,6 +47,7 @@
       }
       const g=new T.BufferGeometry();
       g.setAttribute('position',new T.Float32BufferAttribute(positions,3));
+      g.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));
       g.setIndex(indices);g.computeVertexNormals();return g;
     }
     // Trace the domed window in the front elevation, then project each
@@ -55,17 +60,19 @@
     outline.bezierCurveTo(-.91,.50,-.58,.86,0,.86);
     const border=outline.getPoints(14).slice(0,-1);
     function visor(from,to,stand,rings){
-      const xyz=[],ix=[],count=border.length;
+      const xyz=[],uvs=[],ix=[],count=border.length;
       for(let row=0;row<=rings;row++){
         const t=from+(to-from)*row/rings;
         for(let i=0;i<count;i++){
           const x=t*border[i].x,y=.16+t*(border[i].y-.16);
           xyz.push(rx*x*stand,ry*y*stand,-rz*stand*Math.sqrt(1-x*x-y*y));
+          uvs.push(.5+.5*x,.5+.5*y);
           if(row){const a=(row-1)*count+i,b=(row-1)*count+(i+1)%count;
             ix.push(a,a+count,b+count,a,b+count,b);}
         }
       }
       const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(xyz,3));
+      g.setAttribute('uv',new T.Float32BufferAttribute(uvs,2));
       g.setIndex(ix);g.computeVertexNormals();return g;
     }
     part(body,'白壳嵌窗密封边',visor(.966,1,1.022,3),seal);
@@ -74,6 +81,7 @@
     part(body,'面屏左上柔光',inset(-.53,.58,.196,.220,1.045,1,-.39),reflection);
     // The unseen rear service cover follows the pearl sphere without changing its outline.
     const seam=new T.MeshStandardMaterial({color:0xb5cbce,metalness:.16,roughness:.42});
+    applyManufacturedFinish(seam,'metal');
     part(body,'后壳同色检修边',inset(Math.PI,-.19,.68,.55,1.008,.83),seam);
     part(body,'检修盖',inset(Math.PI,-.19,.66,.53,1.014,.83),shell);
     for(const side of [-1,1])

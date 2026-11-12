@@ -27,6 +27,9 @@
     const gasket = finish(0x292b35,.08,.75), sole = finish(0x49505d,.12,.64);
     const amber = finish(0xffcb59,.16,.29,.42), teal = finish(0x62d9d0,.15,.32,.50);
     const liftLight = finish(0x79f5eb,.15,.28,.55);
+    for(const enamel of [orange,violet,scarlet,redTop,darkRed,ivory])applyManufacturedFinish(enamel,'paint');
+    for(const alloy of [tin,edge])applyManufacturedFinish(alloy,'metal');
+    for(const insert of [gasket,sole])applyManufacturedFinish(insert,'rubber');
 
     // Bake the rigid fittings by paint. The four ducts and all their screws,
     // for example, do not cost one draw each while following the player.
@@ -40,9 +43,10 @@
       const raw = geometry.index ? geometry.toNonIndexed() : geometry;
       raw.applyMatrix4(matrix);
       let batch=batches.get(material);
-      if(!batch){batch={positions:[],normals:[]};batches.set(material,batch);}
+      if(!batch){batch={positions:[],normals:[],uvs:[]};batches.set(material,batch);}
       for(const value of raw.attributes.position.array)batch.positions.push(value);
       for(const value of raw.attributes.normal.array)batch.normals.push(value);
+      for(const value of raw.attributes.uv.array)batch.uvs.push(value);
       raw.dispose();
       if(raw!==geometry)geometry.dispose();
     }
@@ -174,6 +178,7 @@
       const g=new T.BufferGeometry();
       g.setAttribute('position',new T.Float32BufferAttribute(b.positions,3));
       g.setAttribute('normal',new T.Float32BufferAttribute(b.normals,3));
+      g.setAttribute('uv',new T.Float32BufferAttribute(b.uvs,2));
       g.computeBoundingSphere();ownedGeometry.push(g);
       const mesh=new T.Mesh(g,material);
       // The boarding rig caches directional shadows; moving geometry must not

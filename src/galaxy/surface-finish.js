@@ -6,33 +6,42 @@ function fieldSurfaceFinish(material,kind){
       float mottling=sin(7.1*p.x+5.6*p.z+.7*sin(4.*p.y))*cos(4.3*p.y-.73*p.x);
       float pit=smoothstep(.76,.94,mottling+.11*grain);
       relief=.31*grain-.75*pit;
+      polish=-.065*grain+.23*pit;
+      oxide=.82*pit;
       pigment=mix(vec3(1.+.055*grain),vec3(.72,.54,.38),pit*.69);`,
     stone:`float layer=p.y*11.+1.7*p.z+.6*sin(3.*p.x)+.15*sin(13.*p.z);
       float seam=1.-smoothstep(.018,.10,abs(fract(layer)-.48));
       float fleck=sin(35.*p.x+14.*p.z)*sin(23.*p.y-25.*p.z);
       relief=.30*sin(layer*6.28)-seam+.13*fleck;
+      polish=.11*seam-.16*smoothstep(.58,.94,fleck);
       pigment=vec3(.98,1.,1.02)*(.98+.12*relief);`,
     stem:`float a=atan(p.z,p.x);
       float bark=cos(15.*a+.92*sin(6.*p.y)+.44*sin(3.*a+8.*p.y));
       relief=smoothstep(-.84,.4,bark)-.4;
+      polish=.08-.18*max(0.,relief);
       pigment=mix(vec3(.77,.73,.66),vec3(1.10,1.05,.98),.46+.50*relief);`,
     blade:`float spine=exp(-abs(p.x-.06*p.z*p.z)*78.);
       float rib=1.-smoothstep(.03,.22,abs(fract(9.*p.z-17.*abs(p.x)+.18*sin(p.z*9.))-.5));
       relief=.85*spine+.54*rib-.36;
+      polish=-.14*spine-.06*rib;
       pigment=vec3(.95,1.03,1.005)*(.99+.19*relief);`,
     moss:`float curl=sin(p.x*18.+sin(19.*p.z))*cos(14.*p.z-6.*p.y);
       relief=.59*curl+.23*sin(36.*p.x-17.*p.z);
+      polish=.16*max(0.,relief);
       pigment=mix(vec3(.85,.90,.94),vec3(1.11,1.08,1.04),.5+.45*relief);`,
     crystal:`float plane=p.y*14.+1.1*p.x-.83*p.z+.18*sin(4.*p.z+3.*p.x);
       relief=.53*cos(6.28*plane)+.30*cos(12.56*plane);
+      polish=.14*smoothstep(.33,.9,relief)-.095;
       pigment=mix(vec3(.90,.86,.79),vec3(1.11,1.07,1.03),.5+.55*relief);`,
     sponge:`vec2 grid=vec2(12.*atan(p.z,p.x)/6.283185+6.,7.*p.y);
       grid.x+=mod(floor(grid.y),2.)*.5;
       vec2 cell=fract(grid)-.5;float pore=length(cell*vec2(1.,.84));
       relief=smoothstep(.035,.18,pore)-.65+.28*exp(-abs(pore-.21)*20.);
+      polish=.15*(1.-smoothstep(.04,.18,pore))-.07;
       pigment=mix(vec3(.64,.59,.66),vec3(1.06,1.02,.99),smoothstep(.02,.18,pore));`,
     nacre:`float rib=cos(20.*atan(p.y-.2,p.x)+5.*p.z);
-      relief=rib*.58; pigment=mix(vec3(.93,.91,.86),vec3(.98,1.09,1.13),.5+.45*rib);`
+      relief=rib*.58;polish=-.12+.06*rib;
+      pigment=mix(vec3(.93,.91,.86),vec3(.98,1.09,1.13),.5+.45*rib);`
   };
   material.customProgramCacheKey=()=>'field-finish-'+kind;
   material.onBeforeCompile=s=>{
@@ -41,14 +50,19 @@ function fieldSurfaceFinish(material,kind){
     s.fragmentShader='varying vec3 fieldPoint;\n'+s.fragmentShader.replace('#include <color_fragment>',
       `#include <color_fragment>
        vec3 p=fieldPoint,pigment=vec3(1.);
-       float relief=0.,lod=1.-smoothstep(.006,.06,length(fwidth(p)));
+       float relief=0.,polish=0.,oxide=0.,lod=1.-smoothstep(.006,.06,length(fwidth(p)));
        ${surfaces[kind]}
-       diffuseColor.rgb*=mix(vec3(1.),pigment,lod);`).replace('#include <normal_fragment_maps>',
+       diffuseColor.rgb*=mix(vec3(1.),pigment,lod);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=clamp(roughnessFactor+polish*lod,.07,1.);')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor*=1.-oxide*lod;')
+      .replace('#include <normal_fragment_maps>',
       `#include <normal_fragment_maps>
        vec3 hx=dFdx(-vViewPosition),hy=dFdy(-vViewPosition);
        vec3 rx=cross(hy,normal),ry=cross(normal,hx);
        float det=dot(hx,rx);
-       normal=normalize(abs(det)*normal-sign(det)*.004*lod*(dFdx(relief)*rx+dFdy(relief)*ry)+1e-12*normal);`);
+       normal=normalize(abs(det)*normal-sign(det)*.004*lod*(dFdx(relief)*rx+dFdy(relief)*ry)+1e-12*normal);
+       ${kind==='nacre'?`float grazing=1.-abs(dot(normal,normalize(vViewPosition)));
+       diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.92,1.08,1.10),vec3(1.10,.94,1.06),.5+.5*sin(9.*grazing+relief)),.7*grazing*grazing);`:''}`);
   };
   return material;
 }
@@ -120,19 +134,23 @@ function finishSurveyGround(T,geo,material,definition,metresPerUV){
       `+shader.fragmentShader.replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
         vec2 metre=bedMetres;
         float broad=bedNoise(metre*.72),chip=bedNoise(metre*8.2),edge=bedNoise(metre*2.3);
-        float wet=bedWeights.x*smoothstep(.25,.76,broad+.13*chip);
         float ridge=sin(metre.x*4.2+metre.y*1.8+3.1*edge)*bedWeights.z;
         float line=abs(fract((metre.x*.63-metre.y*.47)+edge*.38)-.5);
         float seam=(1.-smoothstep(.012,.052,line))*bedWeights.y;
         float nearBed=1.-smoothstep(.07,.34,length(fwidth(metre)));
-        vec2 st=mat2(.94,.34,-.34,.94)*metre*.42;
+        // Broad distortion breaks up the mirrored tile without moving the bed underfoot.
+        vec2 st=mat2(.94,.34,-.34,.94)*metre*.42+vec2(edge-.5,broad-.5)*.25;
         vec3 albedo=mix(texture2D(dryBed,st).rgb,texture2D(wetBed,st*.84).rgb,bedWeights.x);
         albedo=mix(albedo,texture2D(rockBed,st*.67).rgb,bedWeights.y);
         float surfaceGrain=dot(albedo,vec3(.22,.69,.09))-.5;
-        float relief=(chip-.5)*(.021-.012*wet)+.018*ridge-.033*seam+.065*surfaceGrain;
+        // Film gathers in existing grain depressions and rock seams; dry ridges keep their relief.
+        float wet=bedWeights.x*smoothstep(.23,.74,broad-.27*surfaceGrain+.18*seam-.075*ridge);
+        float relief=((chip-.5)*.021+.018*ridge-.033*seam+.075*surfaceGrain)*(1.-.63*wet);
+        float crystalFace=bedWeights.y*smoothstep(.55,.91,chip)*smoothstep(.0,.22,surfaceGrain);
         diffuseColor.rgb*=mix(vec3(1.),clamp(2.*albedo,vec3(.44),vec3(1.72)),.77*nearBed);
-        roughnessFactor=mix(roughnessFactor,clamp(.88-.63*wet-.16*bedWeights.y+.09*(chip-.5),.2,.98),nearBed);
-        diffuseColor.rgb*=1.+nearBed*(.10*(chip-.5)+.05*ridge-.18*seam-.16*wet);
+        float dryRough=clamp(.91-.17*bedWeights.y+.09*(chip-.5)-.22*crystalFace,.4,.98);
+        roughnessFactor=mix(roughnessFactor,mix(dryRough,.18,wet),nearBed);
+        diffuseColor.rgb*=1.+nearBed*(.10*(chip-.5)+.05*ridge-.18*seam-.22*wet);
         `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
          vec3 dp1=dFdx(-vViewPosition),dp2=dFdy(-vViewPosition);
          vec3 aBed=cross(dp2,normal),bBed=cross(normal,dp1);

@@ -43,9 +43,13 @@ function shipTransporterCastings({T,root}) {
   const paints=new Map();
   function paint(color,roughness=.44,metalness=.22,clearcoat=0) {
     const key=[color,roughness,metalness,clearcoat].join('/');
-    if(!paints.has(key))paints.set(key,new T.MeshPhysicalMaterial({
-      color:new T.Color(color).convertSRGBToLinear(),roughness,metalness,
-      clearcoat,clearcoatRoughness:.24}));
+    if(!paints.has(key)){
+      const body=new T.MeshPhysicalMaterial({color:new T.Color(color).convertSRGBToLinear(),
+        roughness,metalness,clearcoat,clearcoatRoughness:.24});
+      // Cast alloy flanges, soft graphite seals and glazed ceramic shoulders.
+      const finish=metalness>=.60?'metal':roughness>=.75?'rubber':color===0xd6dedb?'ceramic':'paint';
+      paints.set(key,applyManufacturedFinish(body,finish));
+    }
     return paints.get(key);
   }
   function casting(geometry,color,z=0,roughness=.44,metalness=.22,clearcoat=0) {
@@ -146,9 +150,9 @@ function installShipTransporterPorts(kit,roomId,placements,castings=shipTranspor
     {depth:.065,bevelEnabled:true,bevelSize:.016,bevelThickness:.008,bevelSegments:2});
   // A single closed pane, air gap, internal rails and a dark rear well supply
   // depth without a transmission render pass or multiple transparent shells.
-  const glassPaint=new T.MeshPhysicalMaterial({color:new T.Color(0x9ec8d2).convertSRGBToLinear(),
+  const glassPaint=applyWindowFresnel(new T.MeshPhysicalMaterial({color:new T.Color(0x9ec8d2).convertSRGBToLinear(),
     roughness:.11,metalness:.035,clearcoat:1,clearcoatRoughness:.08,
-    transparent:true,opacity:.19,depthWrite:false,envMapIntensity:.75});
+    transparent:true,opacity:.19,depthWrite:false,envMapIntensity:.75}));
   const glintGeo=new T.ShapeGeometry([
     faceShape([[-1.00,3.66],[-.96,3.67],[-.66,4.75],[-.22,5.72],[-.26,5.68],[-.71,4.72]]),
     faceShape([[.72,4.39],[.743,4.38],[.50,5.12],[.48,5.13]])]);

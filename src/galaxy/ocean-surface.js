@@ -606,6 +606,8 @@ function createOceanSurface(T,world){
     g.setAttribute('uv',chartUV);
   }
   groundGeo.setAttribute('color',new T.BufferAttribute(new Float32Array(coords.length*3),3));
+  const waterColumn=new T.BufferAttribute(new Float32Array(coords.length),1);
+  seaGeo.setAttribute('waterColumn',waterColumn);
   const sandMat=new T.MeshStandardMaterial({vertexColors:true,roughness:.92});
   sandMat.onBeforeCompile=s=>{
     s.uniforms.tideTime=tideTime;
@@ -629,16 +631,54 @@ function createOceanSurface(T,world){
   sandMat.defines={USE_UV:''};sandMat.extensions={derivatives:true};
   const writeBed=finishSurveyGround(T,groundGeo,sandMat,OCEAN_WORLD,1);
   const seabed=new T.Mesh(groundGeo,sandMat);seabed.frustumCulled=false;seabed.receiveShadow=true;
-  const seaMat=new T.ShaderMaterial({uniforms:{uTime:tideTime},side:T.DoubleSide,transparent:true,depthWrite:false,
-    vertexShader:'varying vec2 wuv;varying float vz;void main(){wuv=uv;vec4 p=modelViewMatrix*vec4(position,1.);vz=max(0.,-p.z);gl_Position=projectionMatrix*p;}',
-    fragmentShader:`varying vec2 wuv;varying float vz;uniform float uTime;void main(){
-      float a=sin(.52*wuv.y+.9*sin(.23*wuv.x+uTime*.38)+uTime*.72);
-      float b=sin(.41*wuv.x-.18*wuv.y+.8*cos(.28*wuv.y-uTime*.17));
-      float cut=1.-smoothstep(55.,680.,vz);
-      float gleam=pow(max(0.,(a+b)*.50),8.)*cut;
-      vec3 c=mix(vec3(.14,.39,.59),vec3(.35,.62,.75),.48+.15*(a+b)*cut);
-      if(!gl_FrontFacing)c=mix(c,vec3(.31,.72,.79),.51);
-      gl_FragColor=vec4(c+vec3(.23,.36,.32)*gleam,gl_FrontFacing?mix(.56,.98,smoothstep(18.,400.,vz)):.34);
+  const seaUniforms=Object.assign(T.UniformsUtils.clone(T.UniformsLib.lights),{uTime:tideTime,seaRadius:{value:radius}});
+  const seaMat=new T.ShaderMaterial({uniforms:seaUniforms,lights:true,extensions:{derivatives:true},
+    side:T.DoubleSide,transparent:true,depthWrite:false,
+    vertexShader:`attribute float waterColumn;uniform float seaRadius;
+      varying vec3 waterChart,seaEye,seaUp;
+      void main(){
+        waterChart=vec3(uv,waterColumn);
+        seaUp=normalMatrix*normalize(position+vec3(0.,seaRadius,0.));
+        vec4 mv=modelViewMatrix*vec4(position,1.);seaEye=-mv.xyz;
+        gl_Position=projectionMatrix*mv;
+      }`,
+    fragmentShader:`varying vec3 waterChart,seaEye,seaUp;uniform float uTime;
+      #if NUM_DIR_LIGHTS > 0
+        struct DirectionalLight {vec3 direction;vec3 color;};
+        uniform DirectionalLight directionalLights[NUM_DIR_LIGHTS];
+      #endif
+      void main(){
+      vec2 uvM=waterChart.xy;
+      float swell=dot(uvM,vec2(.41,.83))+uTime*.87;
+      float crossSea=dot(uvM,vec2(.92,-.34))-uTime*.69;
+      float fine=dot(uvM,vec2(4.6,2.7))+.9*sin(swell)+uTime*1.7;
+      vec2 slope=.16*vec2(.41,.83)*cos(swell)*(1.-smoothstep(.6,2.8,fwidth(swell)))
+                +.08*vec2(.92,-.34)*cos(crossSea)*(1.-smoothstep(.6,2.8,fwidth(crossSea)))
+                +.013*(vec2(4.6,2.7)+.9*cos(swell)*vec2(.41,.83))*cos(fine)*(1.-smoothstep(.6,2.8,fwidth(fine)));
+      vec3 n=normalize(seaUp),dx=dFdx(-seaEye),dy=dFdy(-seaEye);
+      vec3 rx=cross(dy,n),ry=cross(n,dx);float det=dot(dx,rx);
+      n=normalize(max(abs(det),1.e-7)*n-sign(det)*(dot(slope,dFdx(uvM))*rx+dot(slope,dFdy(uvM))*ry));
+      vec3 eye=normalize(seaEye);float nv=clamp(abs(dot(n,eye)),0.,1.);
+      float fresnel=.02+.98*pow(1.-nv,5.);
+      float path=min(100.,waterChart.z/max(.33,nv));
+      float depthTint=1.-exp(-.038*path);
+      vec3 c=mix(vec3(.15,.48,.55),vec3(.07,.23,.40),depthTint);
+      float opacity=.26+.47*depthTint;
+      if(gl_FrontFacing){
+        c=mix(c,vec3(.38,.59,.72),fresnel);
+        opacity=mix(opacity,.98,fresnel);
+        #if NUM_DIR_LIGHTS > 0
+          vec3 halfRay=directionalLights[0].direction+eye;
+          float highlight=pow(max(0.,dot(n,halfRay)/max(.001,length(halfRay))),65.);
+          c+=directionalLights[0].color*highlight*.58*max(0.,dot(n,directionalLights[0].direction));
+        #endif
+      }else{
+        // Underwater, the sky occupies Snell's window. Grazing rays reflect the water column.
+        float window=smoothstep(.61,.72,nv);
+        c=mix(vec3(.07,.27,.33),vec3(.32,.65,.71),window);
+        opacity=mix(.78,.24,window);
+      }
+      gl_FragColor=vec4(c,opacity);
       #include <tonemapping_fragment>
       #include <encodings_fragment>
     }`});
@@ -653,11 +693,12 @@ function createOceanSurface(T,world){
       const ll=move(lat,lon,dx*range,-dz*range),{x,z}=chart(ll.lat,ll.lon),h=seaFloor(x,z),r=radius+h;
       gp.setXYZ(i,dx*ss*r,cs*r-radius,dz*ss*r);wp.setXYZ(i,dx*ss*radius,cs*radius-radius,dz*ss*radius);
       chartUV.setXY(i,x,z);
+      waterColumn.setX(i,Math.max(0,-h));
       writeBed(i,x,z);
       tone.copy(shallowsColor).lerp(deepColor,smooth(-h,10,28)).lerp(floorColor,smooth(-h,31,49)).lerp(abyssColor,smooth(-h,50,65));
       tone.multiplyScalar(.98+.07*Math.sin(x*.34+z*.12));gc.setXYZ(i,tone.r,tone.g,tone.b);
     }
-    for(const attr of [gp,wp,chartUV,gc])attr.needsUpdate=true;
+    for(const attr of [gp,wp,chartUV,gc,waterColumn])attr.needsUpdate=true;
     groundGeo.computeVertexNormals();capCenter.value.copy(f.up);cut.value=Math.cos(.95*patchReach/radius);
   }
   function canSwim(lat,lon,margin=.4){
