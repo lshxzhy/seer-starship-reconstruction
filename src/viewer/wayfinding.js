@@ -26,7 +26,7 @@
     const labels=new Map();
     const box=new T.BoxGeometry(),face=new T.PlaneGeometry(1,1);
     const trim=new T.MeshBasicMaterial({color:0x34515c,toneMapped:false});
-    const metal=new T.MeshStandardMaterial({color:0x52646a,metalness:.56,roughness:.42});
+    const metal=applyManufacturedFinish(new T.MeshStandardMaterial({color:0x52646a,metalness:.56,roughness:.42}),'metal');
     const amber=new T.MeshBasicMaterial({color:0xffcf67,toneMapped:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
     const shape=new T.Shape();
     shape.moveTo(0,.47);shape.lineTo(.34,.08);shape.lineTo(.34,-.13);

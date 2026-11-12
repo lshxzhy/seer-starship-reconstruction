@@ -72,14 +72,23 @@ function createKloseScenery(T, parent, surface) {
     base.onBeforeCompile=s=>{
       s.uniforms.poolClock=poolTime;
       s.vertexShader='varying vec2 basinXY;\n'+s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nbasinXY=position.xz;');
-      s.fragmentShader='uniform float poolClock; varying vec2 basinXY;\n'+s.fragmentShader.replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+      s.fragmentShader='uniform float poolClock; varying vec2 basinXY;\n'+s.fragmentShader.replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
         vec2 q=basinXY;
-        float w=sin(24.*q.x+17.*q.y+1.3*sin(5.*q.y)-poolClock*1.45);
-        float pulse=sin(40.*length(q-vec2(.32,-.19))-2.3*poolClock);
-        float h=(w+.42*pulse)*${strength.toFixed(3)}*(1.-smoothstep(.62,1.,dot(q,q)));
+        float depth=1.-smoothstep(.36,1.,dot(q,q));
+        float activity=${((strength-.026)/.059).toFixed(3)};
+        float drift=24.*q.x+17.*q.y+1.3*sin(5.*q.y)-poolClock*(.65+.80*activity);
+        float pulse=40.*length(q-vec2(.32,-.19))-poolClock*(1.15+1.15*activity);
+        float filterDrift=1.-smoothstep(.55,2.8,fwidth(drift));
+        float filterPulse=1.-smoothstep(.55,2.8,fwidth(pulse));
+        float crest=filterDrift*.5*sin(drift)+filterPulse*.23*sin(pulse);
+        roughnessFactor=clamp(roughnessFactor-.065*depth+.08*(1.-depth)-.04*crest,.10,1.);
+        diffuseColor.rgb*=1.-.07*depth+.018*crest;
+        `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+        float hw=sin(drift)*depth*${strength.toFixed(3)},hp=sin(pulse)*depth*${(.42*strength).toFixed(4)};
+        vec2 grad=vec2(dFdx(hw),dFdy(hw))*filterDrift+vec2(dFdx(hp),dFdy(hp))*filterPulse;
         vec3 a=cross(dFdy(-vViewPosition),normal),b=cross(normal,dFdx(-vViewPosition));
         float det=dot(dFdx(-vViewPosition),a);
-        normal=normalize(max(abs(det),1.e-7)*normal-sign(det)*(dFdx(h)*a+dFdy(h)*b));`);
+        normal=normalize(max(abs(det),1.e-7)*normal-sign(det)*(grad.x*a+grad.y*b));`);
     };
     base.customProgramCacheKey=()=>'klose-basin-'+strength;return base;
   }

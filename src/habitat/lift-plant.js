@@ -8,12 +8,12 @@
     const meshBins=new Map(),stamp=new T.Object3D();
     const axisY=new T.Vector3(0,1,0);
     const cyan=metal(0x64e9e4,.8),amber=metal(0xffc16b,.8);
-    const enamel=metal(0xd7d8c7),rubber=metal(0x24303b);
-    const rack=metal(0x798899),rail=metal(0xc0c8ca);
+    const enamel=metal(0xd7d8c7),rubber=metal(0x24303b,0,'rubber');
+    const rack=metal(0x798899,0,'metal'),rail=metal(0xc0c8ca,0,'metal');
     const blue=metal(0x365772),night=metal(0x344451),ivory=metal(0xcdd6cd);
-    const safety=metal(0xf0a94e),brass=metal(0xae8753);
-    const glass=new T.MeshStandardMaterial({color:0x72bccb,metalness:.07,roughness:.18,
-      transparent:true,opacity:.11,depthWrite:false});
+    const safety=metal(0xf0a94e),brass=metal(0xae8753,0,'metal');
+    const glass=applyWindowFresnel(new T.MeshStandardMaterial({color:0x72bccb,metalness:.07,roughness:.18,
+      transparent:true,opacity:.11,depthWrite:false}));
     const linePlants=new Map();
     const hallKeys=new Map();
     const root=new T.Group();root.name='升降设备 · 井道与轿厢';installation.add(root);

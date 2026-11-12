@@ -162,7 +162,7 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     }
   }
   const ventData=[[-7,-12,3.05],[5,-21,2.75],[-18,-27,2.65],[7,-6,1.95],[-15,3,2.2],[.5,-37,2.35],[-32,-7,2.1],[18,-29,1.8]];
-  const water=new T.ShaderMaterial({uniforms:{clock:{value:0}},vertexShader:`
+  const water=new T.ShaderMaterial({uniforms:{clock:{value:0}},extensions:{derivatives:true},vertexShader:`
     varying vec2 disk;varying vec3 eye;void main(){disk=position.xz;mat4 pose=modelViewMatrix;
     #ifdef USE_INSTANCING
       pose=pose*instanceMatrix;
@@ -172,11 +172,14 @@ function buildAlphaLandmarks({T,root,ground,material,stamp,block,animate,portal}
     fragmentShader:`varying vec2 disk;varying vec3 eye;uniform float clock;void main(){
       float r=length(disk),r2=length(disk-vec2(.23,-.16));
       float phase=24.*r-clock*2.5,phase2=31.*r2-clock*1.85;
-      vec2 slope=.115*cos(phase)*disk/max(.03,r)+.064*cos(phase2)*(disk-vec2(.23,-.16))/max(.03,r2);
+      float detail=1.-smoothstep(.55,2.8,fwidth(phase)),detail2=1.-smoothstep(.55,2.8,fwidth(phase2));
+      vec2 slope=.115*detail*cos(phase)*disk/max(.03,r)+.064*detail2*cos(phase2)*(disk-vec2(.23,-.16))/max(.03,r2);
       vec3 n=normalize(vec3(-slope.x,1.,-slope.y)),v=normalize(eye);
       float fresnel=.07+.77*pow(1.-max(0.,dot(n,v)),4.);
-      float caustic=pow(max(0.,.6*sin(phase)+.4*sin(phase2)),4.)*(.3+.7*r);
+      float caustic=pow(max(0.,.6*detail*sin(phase)+.4*detail2*sin(phase2)),4.)*(.3+.7*r);
       vec3 col=mix(vec3(.13,.60,.59),vec3(.56,.87,.73),smoothstep(.2,1.,r));
+      float shallows=smoothstep(.76,.95,r+.022*sin(phase2)*detail2);
+      col=mix(col,vec3(.63,.82,.66),.36*shallows);
       col=mix(col,vec3(.73,.90,.88),fresnel)+vec3(.12,.21,.16)*caustic;
       col+=vec3(.46,.42,.32)*pow(max(0.,dot(reflect(normalize(vec3(-.49,-.84,.26)),n),v)),46.);
       gl_FragColor=vec4(col,1.);}`});

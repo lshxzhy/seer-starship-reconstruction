@@ -6,8 +6,8 @@
     return collection.get(key);
   }
 
-  // One seamless painted pattern per manufacturing finish. Red stores height
-  // and green stores microsurface roughness in the same linear data texture.
+  // Each finish packs height, roughness and exposed metal in RGB. The bolt
+  // heads, walking surfaces and insulated joints can share one draw.
   // G03 shows segmented floor bands; G04 and G07 show framed equipment bays.
   // Joint widths, captive screws, overhead air slots and tread are inferred.
   function cabinFinish(kind){
@@ -27,32 +27,36 @@
         const row=Math.floor(i/(4*n));
         const x=i/4%n;
         const brush=Math.sin(2*Math.PI*row/16)+.45*Math.sin(2*Math.PI*(x+2*row)/32);
+        const edge=Math.min(x,row,n-1-x,n-1-row)/n;
+        const traffic=deck?Math.min(1,Math.max(0,(edge-.055)*5)):0;
         const shade=246+grain+(casework?1:2)*brush;
         pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=shade;
         pixels.data[i+3]=255;
-        packed.data[i]=156+grain*.35;packed.data[i+1]=(deck?218:casework?193:203)+grain*3+brush*7;
+        packed.data[i]=156+grain*(casework?.95:.35);
+        packed.data[i+1]=(deck?225:casework?184:203)+grain*3+brush*7-traffic*(kind==='sealed'?9:27);
+        packed.data[i+2]=kind==='tread'?70:kind==='ribbed'?47:casework?19:29;
         packed.data[i+3]=255;
       }
       ink.putImageData(pixels,0,0);data.putImageData(packed,0,0);
       // Work on a common drafting grid, independent of the texture resolution.
       for(const ctx of [ink,data])ctx.scale(n/256,n/256);
-      function stroke(points,width,grey,height,rough){
-        for(const [ctx,style] of [[ink,'rgb('+[grey,grey,grey]+')'],[data,'rgb('+[height,rough,0]+')']]){
+      function stroke(points,width,grey,height,rough,metal=24){
+        for(const [ctx,style] of [[ink,'rgb('+[grey,grey,grey]+')'],[data,'rgb('+[height,rough,metal]+')']]){
           ctx.strokeStyle=style;ctx.lineWidth=width;ctx.lineJoin='round';
           ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();
         }
       }
       function screw(x,y){
-        for(const [ctx,style] of [[ink,'#abadae'],[data,'rgb(105,165,0)']]){
+        for(const [ctx,style] of [[ink,'#abadae'],[data,'rgb(105,165,229)']]){
           ctx.fillStyle=style;ctx.beginPath();ctx.arc(x,y,1.6,0,Math.PI*2);ctx.fill();
         }
-        stroke([[x-.8,y+.7],[x+.8,y-.7]],.55,90,69,205);
+        stroke([[x-.8,y+.7],[x+.8,y-.7]],.55,90,69,205,108);
       }
       const bevel=deck?3.0:2.1;
       const edge=[[bevel,8],[8,bevel],[248,bevel],[256-bevel,8],
         [256-bevel,248],[248,256-bevel],[8,256-bevel],[bevel,248],[bevel,8]];
       if(!casework){
-        stroke(edge,deck?4.5:3.4,224,143,220);
+        stroke(edge,deck?4.5:3.4,224,143,180,135);
         stroke(edge,deck?2.5:1.8,200,106,247);
         stroke(edge,.9,163,70,244);
         for(const x of [11,245])for(const y of [11,245])screw(x,y);
@@ -61,12 +65,12 @@
         // Two recessed finger holds near one edge of each removable deck plate.
         for(const x of [98,140]){
           stroke([[x,237],[x+18,237]],2.7,188,85,218);
-          stroke([[x,239],[x+18,239]],.75,253,164,163);
+          stroke([[x,239],[x+18,239]],.75,253,164,147,205);
         }
         if(kind==='tread'){
           for(let j=0;j<12;j++)for(let i=0;i<14;i++){
             const x=15+i*17+(j%2)*5,y=21+j*18;
-            stroke([[x,y],[x+5,y-3]],2.1,226,205,153);
+            stroke([[x,y],[x+5,y-3]],2.1,226,205,149,187);
           }
         }else if(kind==='sealed'){
           // Flush resin pans in the laboratory and workshop. Double joints
@@ -78,15 +82,15 @@
           // Hairline metal inlay and broad, polished chamfers for the civic decks.
           for(const side of [-1,1]){
             const x=side<0?15:241;
-            stroke([[x,35],[x,19],[x-side*5,14],[x-side*28,14]],1.8,217,151,96);
+            stroke([[x,35],[x,19],[x-side*5,14],[x-side*28,14]],1.8,217,151,96,213);
           }
-          stroke([[14,220],[14,237],[20,243],[68,243]],1.4,216,151,105);
+          stroke([[14,220],[14,237],[20,243],[68,243]],1.4,216,151,105,213);
         }else if(kind==='ribbed'){
           // Finely ribbed foot panels beside optics and exterior observation rails.
           for(let i=0;i<20;i++){
             const y=28+i*10;
-            stroke([[18,y],[44,y],[48,y-2],[80,y-2]],1.65,223,184,160);
-            stroke([[176,y+2],[206,y+2],[211,y],[238,y]],1.65,223,184,160);
+            stroke([[18,y],[44,y],[48,y-2],[80,y-2]],1.65,223,184,160,154);
+            stroke([[176,y+2],[206,y+2],[211,y],[238,y]],1.65,223,184,160,154);
           }
         }
       }else if(lid){
@@ -100,7 +104,7 @@
         stroke([[15,180],[15,216],[26,227],[124,227]],1.2,219,112,233);
         for(const x of [24,232]){
           stroke([[x-3,37],[x+3,37]],2.0,180,116,170);
-          stroke([[x-2,38],[x+2,38]],.7,250,163,152);
+          stroke([[x-2,38],[x+2,38]],.7,250,163,152,215);
         }
       }
       // A tangent-space normal keeps the same physical slopes on the full
@@ -126,7 +130,7 @@
       for(const tex of [albedo,detail,normalMap]){
         tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.repeat.set(1/spanX,1/spanY);tex.anisotropy=4;
       }
-      return {map:albedo,roughnessMap:detail,normalMap};
+      return {map:albedo,roughnessMap:detail,metalnessMap:detail,metalness:.88,normalMap};
     });
   }
 
@@ -233,9 +237,12 @@
       return cabinAsset(cabinAssets.materials,key,()=>{
         tint.convertSRGBToLinear();
         const finish=opts.finish?cabinFinish(opts.finish):null;
-        return new T.MeshStandardMaterial({color:tint,roughness,metalness,
+        const paint=new T.MeshStandardMaterial({color:tint,roughness,metalness,
           emissive:tint.clone(),emissiveIntensity:glow,transparent:opacity<1,
           opacity,depthWrite:opacity>=1,...finish});
+        if(!glow&&opacity<1)return applyWindowFresnel(paint);
+        if(!finish&&!glow&&opacity===1)return applyManufacturedFinish(paint,metalness>=.5?'metal':'paint');
+        return paint;
       });
     };
     const blocks=root.userData.blocks||(root.userData.blocks=[]);
@@ -477,7 +484,7 @@
     const floorFinish=({power:'tread',teleport:'tread',machine:'tread',laboratory:'sealed',workshop:'sealed',
       captain:'inlay',honors:'inlay',archives:'inlay',observation:'ribbed',terraceAccess:'ribbed'})[family]||'deck';
     const floorMaterial=material(floorColor,{finish:floorFinish,
-      roughness:floorFinish==='inlay'?.60:floorFinish==='sealed'?.69:.80,metalness:.12});
+      roughness:floorFinish==='inlay'?.60:floorFinish==='sealed'?.69:.80});
     const floorUV=geom('metric-deck/'+W+'/'+D,()=>cabinMetricUV(faceGeometry.clone(),W,D,1));
     const tiles=place(floorUV,floorMaterial,0,.004,0,{rx:-Math.PI/2,parent:shell});
     tiles.scale.set(W,D,1);

@@ -90,7 +90,7 @@ function createWetlandEvolution(T,id){
     const base=0xc7dbe4,adult=id===110,head=adult?1.10:.87;
     oval(0,adult?.56:.44,.006,adult?.17:.13,adult?.43:.29,.15,base);
     oval(0,adult?.63:.47,.11,.099,adult?.31:.21,.062,white);
-    oval(0,head,.025,.36,.28,.26,base);eyes(head+.002,.244,.162,.065,0x367b9d);
+    finishSpiritPart(oval(0,head,.025,.36,.28,.26,base),'cuticle',palette);eyes(head+.002,.244,.162,.065,0x367b9d);
     const cap=oval(0,head+.185,.053,adult?.268:.22,adult?.142:.094,.178,0x415682);
     cap.rotation.x=adult?.46:.27;
     oval(-.026,head+(adult?.29:.265),.047,.137,.038,.088,0x6a8bd2);
@@ -112,7 +112,8 @@ function createWetlandEvolution(T,id){
         const bulge=corners[1].clone().lerp(end,.52);bulge.x-=k*.044;bulge.z+=.038;
         const g=new T.BufferGeometry().setFromPoints([...corners,bulge]);
         g.setIndex([0,1,3,0,3,2]);g.computeVertexNormals();extraGeometry.push(g);
-        const web=mat(0xa3e2f0);web.side=T.DoubleSide;fan.add(new T.Mesh(g,web));
+        const web=spiritCoating(mat(0xa3e2f0),'fin',palette);
+        web.side=T.DoubleSide;fan.add(new T.Mesh(g,web));
       }
     }
     oval(0,.071,.146,.072,.063,.086,base);
@@ -131,7 +132,8 @@ function createWetlandEvolution(T,id){
     paws(0xd4b274,1.2);
     for(let i=0;i<4;i++)oval(0,.39+i*.13,-.22+i*.12,.32+.018*i,.17,.24,i%2?0xe2c487:0xb89d64);
     oval(0,.95,.30,.30,.23,.26,0xe2cc93);eyes(.94,.49,.16,.07,0x8d2a4c);
-    for(let i=-2;i<=2;i++)tip([i*.10,.96,-.13],[i*.17,1.3+.07*(2-Math.abs(i)),-.12],.11,i%2?0xf87681:0xb92d4f);
+    for(let i=-2;i<=2;i++)finishSpiritPart(
+      tip([i*.10,.96,-.13],[i*.17,1.3+.07*(2-Math.abs(i)),-.12],.11,i%2?0xf87681:0xb92d4f),'gem',palette);
   }else if(shape==='blimp'){
     fish(id===250?0xf4d36f:0xf4e0a2,id===250?0xeac24f:0xff9b48);
     oval(0,.85,-.07,id===250?.265:.36,.39,.30,id===250?0xd8e5ec:0xebebd4);oval(-.09,.97,.12,.12,.16,.04,white);

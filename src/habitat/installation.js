@@ -238,17 +238,18 @@
     const symbolFace=new T.PlaneGeometry(1,1);
     const symbolBatches=new Map();
     const pen=new T.Object3D();
-    function metal(color,emission=0) {
-      const key=color+'/'+emission;
+    function metal(color,emission=0,finish='paint') {
+      const key=color+'/'+emission+'/'+finish;
       if(!cachedMaterials.has(key)){
         const tone=new T.Color(color).convertSRGBToLinear();
-        cachedMaterials.set(key,new T.MeshStandardMaterial({color:tone,metalness:.22,roughness:.54,
-          emissive:emission?tone:0,emissiveIntensity:emission}));
+        const panel=new T.MeshStandardMaterial({color:tone,metalness:finish==='metal'?.76:finish==='rubber'?.025:.22,
+          roughness:finish==='metal'?.37:finish==='rubber'?.81:.54,emissive:emission?tone:0,emissiveIntensity:emission});
+        cachedMaterials.set(key,emission?panel:applyManufacturedFinish(panel,finish));
       }
       return cachedMaterials.get(key);
     }
     const paint={skin:metal(0xa9bac9),ivory:metal(0xdae2e1),base:metal(0x32465b),
-      floor:metal(0x52677b),ceiling:metal(0x61788c),trim:metal(0x263e52),silver:metal(0x889bad),
+      floor:metal(0x52677b),ceiling:metal(0x61788c),trim:metal(0x263e52,0,'metal'),silver:metal(0x889bad,0,'metal'),
       marking:metal(0xc3d1ca),orange:metal(0xf2ab4a),light:metal(0xb6eaff,.70)};
     function stamp(collection,parent,material) {
       const matrix=pen.matrix.clone();

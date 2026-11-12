@@ -32,12 +32,18 @@ function byronKit(T,root){
   const groups=new Map(),materials=new Map(),solids=new Map(),v=(x,y,z)=>new T.Vector3(x,y,z),axis=v(0,1,0);
   const cube=new T.BoxGeometry(1,1,1),round=new T.SphereGeometry(1,32,18),drum=new T.CylinderGeometry(1,1,1,36);
   const hoop=new T.TorusGeometry(1,.060,8,48),pose=new T.Object3D();
-  function mat(c,lit=false,glass=false){
-    const key=[c,lit,glass].join('/');
+  function mat(c,lit=false,glass=false,finish='paint'){
+    const key=[c,lit,glass,finish].join('/');
     if(!materials.has(key)){
       const paint=new T.Color(c).convertSRGBToLinear();
-      materials.set(key,new T.MeshStandardMaterial({color:paint,metalness:glass?.12:.35,roughness:glass?.21:.56,
-        emissive:lit?paint:0,emissiveIntensity:lit?.89:0,transparent:glass,opacity:glass?.33:1,depthWrite:!glass,side:glass?T.DoubleSide:T.FrontSide}));
+      const surface=new T.MeshStandardMaterial({color:paint,metalness:glass?.12:.35,roughness:glass?.21:.56,
+        emissive:lit?paint:0,emissiveIntensity:lit?.89:0,transparent:glass,opacity:glass?.33:1,depthWrite:!glass,side:glass?T.DoubleSide:T.FrontSide});
+      if(!lit){
+        if(glass)applyWindowFresnel(surface);
+        else if(finish==='metal')fieldSurfaceFinish(surface,'metal');
+        else applyManufacturedFinish(surface,finish);
+      }
+      materials.set(key,surface);
     }
     return materials.get(key);
   }
@@ -126,9 +132,20 @@ function finishByronCoating(T,paint){
       `#include <color_fragment>
        vec3 stoneSample=texture2D(byronMineral,stoneCoord).rgb;
        vec3 stoneGrain=clamp(stoneSample/vec3(.208,.231,.243),.42,1.92);
+       float stoneValue=dot(stoneGrain,vec3(.21,.72,.07));
+       float stoneDetail=1.-smoothstep(.009,.065,length(fwidth(stoneCoord)));
+       float cleavage=sin(dot(stoneCoord,vec2(18.4,-9.6))+.7*sin(7.*stoneCoord.y));
+       float facet=smoothstep(.92,1.35,stoneValue)*smoothstep(-.33,.63,cleavage);
+       float stoneHeight=.042*(stoneValue-1.)+.012*cleavage;
        diffuseColor.rgb*=mix(vec3(1.),stoneGrain,.72);`).replace('#include <roughnessmap_fragment>',
       `#include <roughnessmap_fragment>
-       roughnessFactor=clamp(roughnessFactor+.17*(1.-dot(stoneGrain,vec3(.21,.72,.07))),.22,.87);`);
+       roughnessFactor=clamp(roughnessFactor+.17*(1.-stoneValue)-.20*stoneDetail*facet,.18,.92);`)
+      .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+       vec3 stoneDx=dFdx(-vViewPosition),stoneDy=dFdy(-vViewPosition);
+       vec3 stoneX=cross(stoneDy,normal),stoneY=cross(normal,stoneDx);
+       float stoneDet=dot(stoneDx,stoneX);
+       normal=normalize(max(abs(stoneDet),1.e-7)*normal-sign(stoneDet)*stoneDetail*
+          (dFdx(stoneHeight)*stoneX+dFdy(stoneHeight)*stoneY));`);
   };
   paint.customProgramCacheKey=()=>'byron-blackstone';
   paint.addEventListener('dispose',()=>{image.onload=null;tile.dispose();});
@@ -331,10 +348,10 @@ function createByronSurface(T,world){
   const {sites,landingSites,radius,chartScale}=BYRON_WORLD,root=new T.Group(),ship=createByronHull(T);
   root.name='拜伦号 · 穿越黑暗之门';root.add(ship);world.add(root);root.visible=false;
   const k=byronKit(T,root),m=k.mat,tau=Math.PI*2,w=BYRON_WITNESS,co=Math.cos(w.yaw),si=Math.sin(w.yaw);
-  const hull=m(0x434b65),pale=m(0x8498b3),iron=m(0x333b50),purple=m(0x63566e),shadow=m(0x252838);
-  const cyan=m(0x36cced,true),ice=m(0x97effb,true),red=m(0xe64b65,true),amber=m(0xe7bf66,true),jade=m(0x4a8072);
-  const green=m(0x87dc58,true),glass=m(0x58a4c1,false,true),copper=m(0x9b746b),darkCable=m(0x343045);
-  for(const paint of [iron,purple,jade,pale,copper])fieldSurfaceFinish(paint,'metal');
+  const bareMetal=c=>m(c,false,false,'metal');
+  const hull=m(0x434b65),pale=bareMetal(0x8498b3),iron=bareMetal(0x333b50),purple=bareMetal(0x63566e),shadow=m(0x252838);
+  const cyan=m(0x36cced,true),ice=m(0x97effb,true),red=m(0xe64b65,true),amber=m(0xe7bf66,true),jade=bareMetal(0x4a8072);
+  const green=m(0x87dc58,true),glass=m(0x58a4c1,false,true),copper=bareMetal(0x9b746b),darkCable=m(0x343045,false,false,'rubber');
   const walkRects=[[-15.2,-7.1,-5,17],[1,20.6,-20.4,-13.6],[14.2,20.6,-32,-16.4]];
   const chart=(lat,lon)=>({x:lon*chartScale,z:-lat*chartScale}),coordinates=p=>({lat:-p.z/chartScale,lon:p.x/chartScale});
   const ll=(x,z)=>({lat:-z/chartScale,lon:x/chartScale}),clamp=T.MathUtils.clamp;
@@ -564,7 +581,12 @@ function createByronSurface(T,world){
   const observer=new T.Group();observer.name='逃生舰 · 观测驾驶舱';observer.position.set(w.x,w.y,w.z);observer.rotation.y=w.yaw;root.add(observer);
   const o=byronKit(T,observer),cab=o.mat(0x414665),seam=o.mat(0x222537),silver=o.mat(0x8795c2),blue=o.mat(0x47bdf8,true),lavender=o.mat(0xc3b4ff,true);
   const trim=o.mat(0x596b90),pad=o.mat(0x2d3757);
-  const finish=cabinFinish('enamel');Object.assign(cab,finish);Object.assign(trim,finish);
+  const finish=cabinFinish('enamel');
+  for(const panel of [cab,trim]){
+    Object.assign(panel,finish);
+    panel.bumpMap=null; // The enamel atlas supplies its own normal and roughness.
+    panel.roughness=.56;
+  }
   const displayPlane=new T.PlaneGeometry(1,1),displays=[];
   for(let type=0;type<2;type++){
     const canvas=document.createElement('canvas');canvas.width=256;canvas.height=128;

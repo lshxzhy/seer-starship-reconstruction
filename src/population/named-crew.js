@@ -15,7 +15,7 @@ function createOfficerFigure(post){
   const rig=seerRobots.create(post.tint,{name:post.name,officer:post.id,castShadow:false});
   // Rigid armour follows the same torso pivot as its face. Batch it once;
   // individual rivets, vents and collar plates never need separate draws.
-  const positions=[],normals=[],colors=[],surfaces=[[],[],[],[]];
+  const positions=[],normals=[],uvs=[],colors=[],surfaces=[[],[],[],[]];
   const matrix=new T.Matrix4(),normalMatrix=new T.Matrix3();
   const origin=new T.Vector3(),size=new T.Vector3(),axis=new T.Vector3(),normal=new T.Vector3();
   const rotation=new T.Quaternion(),angles=new T.Euler(),tone=new T.Color();
@@ -32,6 +32,7 @@ function createOfficerFigure(post){
       axis.fromBufferAttribute(points,i).applyMatrix4(matrix);
       normal.fromBufferAttribute(surface,i).applyNormalMatrix(normalMatrix);
       positions.push(axis.x,axis.y,axis.z);normals.push(normal.x,normal.y,normal.z);colors.push(tone.r,tone.g,tone.b);
+      uvs.push(geometry.attributes.uv.getX(i),geometry.attributes.uv.getY(i));
     }
     // Keep the reflected light of enamel, exposed alloy and insulating
     // covers separate even though the uniform stays one rigid mesh.
@@ -158,7 +159,8 @@ function createOfficerFigure(post){
     }
   }
   const attributes={position:new T.Float32BufferAttribute(positions,3),
-    normal:new T.Float32BufferAttribute(normals,3),color:new T.Float32BufferAttribute(colors,3)};
+    normal:new T.Float32BufferAttribute(normals,3),uv:new T.Float32BufferAttribute(uvs,2),
+    color:new T.Float32BufferAttribute(colors,3)};
   sphere.dispose();cube.dispose();unitRing.dispose();
   const materials=[
     new T.MeshPhysicalMaterial({vertexColors:true,metalness:.18,roughness:.36,clearcoat:.62,clearcoatRoughness:.20}),
@@ -166,6 +168,9 @@ function createOfficerFigure(post){
     new T.MeshStandardMaterial({vertexColors:true,metalness:.06,roughness:.65}),
     new T.MeshBasicMaterial({vertexColors:true,toneMapped:false})
   ];
+  applyManufacturedFinish(materials[0],'paint');
+  applyManufacturedFinish(materials[1],'metal');
+  applyManufacturedFinish(materials[2],'rubber');
   const armour=new T.Group();armour.name=post.name+' · 职务机装';
   for(const [surface,indices] of surfaces.entries()){
     if(!indices.length)continue;
