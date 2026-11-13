@@ -570,7 +570,7 @@
           const bearing=Math.atan2(delta.x,-delta.z)*180/Math.PI;
           const mark=Math.abs(bearing)<8?'正前':(bearing>0?'右 ':'左 ')+Math.round(Math.abs(bearing))+'°';
           hint.textContent=pending?'尾舱门正在闭锁 · 可拖动环视 · P 取消':(s.auto?s.stage+' · 拖动或方向键环视 · P 接管':s.phase!=='flying'?
-            arrivedOnDeck?'已停稳 · J 离席后可从尾坡下船':'泊位就绪 · E 手动起飞 / P 自动出发':'W/S 推进 · A/D 转向 · ↑/↓ 俯仰 · 左拖操舵 · 右拖环视 · H 正视')+
+            arrivedOnDeck?'已停稳 · 拖动环视 · P 自动出发 · J 离席下船':'泊位就绪 · 拖动环视 · E 手动起飞 / P 自动出发':'W/S 推进 · A/D 转向 · ↑/↓ 俯仰 · 左拖操舵 · 右拖环视 · H 正视')+
             '　／　'+targetName()+' '+distanceText(range)+' '+mark;
         }
       }else{
@@ -1221,7 +1221,7 @@
       if(e.button===1){e.preventDefault();faceForward();return;}
       e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);
       drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,travel:0,
-        steering:phase==='helm'&&e.button===0&&!e.altKey&&!autoViewing(),turn:0,pitch:0,button:e.button};
+        steering:phase==='helm'&&flight.status().phase==='flying'&&e.button===0&&!e.altKey&&!autoViewing(),turn:0,pitch:0,button:e.button};
     });
     listen(canvas,'pointermove',e=>{
       if(drag?.id!==e.pointerId)return;

@@ -12,7 +12,8 @@ function createSpiritEscort(T,world,metre=1){
   let model=null,selected=null,foot=null,lastOwner=null,goal=null,sample=0,stalled=0;
   let heading=0,stride=0,radius=.26,stepHeight=.03;
   const footprint=Array.from({length:8},(_,i)=>[Math.cos(i*Math.PI/4),Math.sin(i*Math.PI/4)]);
-  const clearanceHeight=()=>model?model.size+stepHeight+radius*.047+.08:0;
+  const clearanceHeight=()=>model?model.size+.08+
+    (model.articulatedGait?0:stepHeight+2*radius*Math.sin(.047)):0;
   const trail=[];
   function hide(){
     anchor.visible=false;foot=lastOwner=goal=null;sample=stalled=stride=0;trail.length=0;
@@ -130,7 +131,7 @@ function createSpiritEscort(T,world,metre=1){
       if(mayStand&&!mayStand(p,r,h))return false;
       const supplied=Boolean(mayStand)||typeof body.canStand==='function'||typeof body.canSwim==='function';
       if(body.canStand&&!body.canStand(p.lat,p.lon,r,h))return false;
-      if(!body.canStand&&body.canSwim&&!body.canSwim(p.lat,p.lon,r))return false;
+      if(!body.canStand&&body.canSwim&&!body.canSwim(p.lat,p.lon,r,h))return false;
       // Shelter at foot level but not at head level means the head crosses
       // the roof. The existing shelter API uses height above the local floor.
       if(body.isSheltered?.(p.lat,p.lon,.06)&&!body.isSheltered(p.lat,p.lon,h))return false;

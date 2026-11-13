@@ -58,8 +58,8 @@ function createCompanionFigure(T,id){
 }
 // Heights are world metres. Regular encounters use the catalogue and a floor;
 // bosses retain the desktop presentation, including its field growth factor.
-const FIELD_SPIRIT_SCALE=4.0,FIELD_SPIRIT_MIN_HEIGHT=1.50,KLOSE_ITEM_SCALE=1.40;
 const FIELD_SPIRIT_GROWTH=1.25,FIELD_BOSS_SCALE=3.30;
+const FIELD_SPIRIT_SCALE=3*FIELD_SPIRIT_GROWTH,FIELD_SPIRIT_MIN_HEIGHT=1.10*FIELD_SPIRIT_GROWTH,KLOSE_ITEM_SCALE=1.40;
 function createFieldSpirit(T,id,{boss=false,sceneScale=1}={}){
   const model=createCompanionFigure(T,id);if(!model)return null;
   const bounds=new T.Box3().setFromObject(model.root),extent=bounds.getSize(new T.Vector3());
