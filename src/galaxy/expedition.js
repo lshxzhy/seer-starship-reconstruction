@@ -900,6 +900,18 @@
       view.position.copy(object.localToWorld(point));const q=object.getWorldQuaternion(new T.Quaternion());
       view.up.set(0,1,0).applyQuaternion(q);view.lookAt(view.position.clone().add(dir.applyQuaternion(q)));
     }
+    function clipExternalCamera(aim){
+      if(!body.clipCamera)return;
+      const ray=view.position.clone().sub(aim),wanted=ray.length();
+      if(wanted<.000001)return;
+      body.clipCamera(aim,view.position);
+      const allowed=view.position.distanceTo(aim);
+      if(allowed<wanted-.000001){
+        // Scene geometry excludes L-01. Leave room for the near clip plane;
+        // the user's preferred boom length must not push the eye back inside.
+        view.position.copy(aim).addScaledVector(ray,Math.max(0,allowed-.30)/wanted);
+      }
+    }
     function insideCamera(s,dt){
       const helm=phase==='helm',inCar=phase==='transfer';
       const base=inCar?dock.car:craft.root,foot=inCar?vec(0,0,.5):feet.clone();
@@ -915,7 +927,10 @@
         const horizontal=Math.cos(elevation)*chaseBoom.length;
         const v=vec(Math.sin(yaw)*horizontal,1.4+Math.sin(elevation)*chaseBoom.length,Math.cos(yaw)*horizontal);
         view.position.copy(base.localToWorld(v));view.up.set(0,1,0).applyQuaternion(flight.quaternion);
-        view.lookAt(base.localToWorld(vec(0,1.4,-2)));
+        const aim=base.localToWorld(vec(0,1.4,-2)),sight=aim.clone().sub(view.position);
+        clipExternalCamera(aim);
+        // Preserve the original ray even if an obstruction retracts to the aim.
+        view.lookAt(view.position.clone().add(sight));
       }else attachCamera(base,helm?vec(...craft.layout.eye):foot.add(vec(0,seerRobots.eyeHeight,0)),yaw,pitch+(helm?-.065:0));
     }
     function drawWorld(agl,walking){
@@ -1038,7 +1053,9 @@
         sky.scale.setScalar(T.MathUtils.lerp(7500,30000,T.MathUtils.smoothstep(agl,900,2600)));
       }
       flameRig.update(dt);
-      blendCamera(dt);sky.position.copy(view.position);
+      blendCamera(dt);
+      if(phase==='helm'&&external)clipExternalCamera(craft.root.localToWorld(vec(0,1.4,-2)));
+      sky.position.copy(view.position);
       dock.updateView(view.position);
       drawWorld(agl,walking);
       cameraReady=true;
