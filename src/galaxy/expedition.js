@@ -84,7 +84,9 @@
     observer.observe(stage);
     const keyNames=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ShiftLeft','ShiftRight','Space','KeyC','KeyX','KeyQ','KeyR']);
     const flightPulses=new Map();
-    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();drag=null;lastTime=null;worksites?.cancel();}
+    let flightLookYaw=0,flightLookPitch=0;
+    function clearPointerInput(){drag=null;flightLookYaw=flightLookPitch=0;}
+    function resetInput(){keys.clear();touch.clear();pendingSteps.clear();flightPulses.clear();clearPointerInput();lastTime=null;worksites?.cancel();}
     const lookKeys=new Set(['KeyW','KeyS','KeyA','KeyD','ArrowLeft','ArrowRight','ArrowUp','ArrowDown']);
     const autoViewing=()=>phase==='helm'&&!!(pending||flight.status().auto);
     function lookAround(left,right,up,down,amount){
@@ -450,7 +452,7 @@
       beginCameraBlend(next==='surface'?null:next==='transfer'?dock.car:craft.root);
       phase=next;jump.reset();
       if(keepWalking){pendingSteps.clear();lastTime=null;}else resetInput();
-      observedBird=null;throughScope=false;feedback='';drag=null;external=false;
+      observedBird=null;throughScope=false;feedback='';clearPointerInput();external=false;
       if(direction){
         if(next==='surface'){
           const f=body.frame(position.lat,position.lon);
@@ -568,10 +570,10 @@
           const delta=flightTarget().clone().sub(flight.position),range=delta.length();
           delta.applyQuaternion(originRotation.copy(flight.quaternion).invert());
           const bearing=Math.atan2(delta.x,-delta.z)*180/Math.PI;
-          const mark=Math.abs(bearing)<8?'正前':(bearing>0?'右 ':'左 ')+Math.round(Math.abs(bearing))+'°';
-          hint.textContent=pending?'尾舱门正在闭锁 · 可拖动环视 · P 取消':(s.auto?s.stage+' · 拖动或方向键环视 · P 接管':s.phase!=='flying'?
-            arrivedOnDeck?'已停稳 · 拖动环视 · P 自动出发 · J 离席下船':'泊位就绪 · 拖动环视 · E 手动起飞 / P 自动出发':'W/S 推进 · A/D 转向 · ↑/↓ 俯仰 · 左拖操舵 · 右拖环视 · H 正视')+
-            '　／　'+targetName()+' '+distanceText(range)+' '+mark;
+          const mark=Math.abs(bearing)<8?'船首正前':(bearing>0?'船首右 ':'船首左 ')+Math.round(Math.abs(bearing))+'°';
+          const controlHint=pending?'尾舱门正在闭锁 · 可拖动环视 · P 取消':s.auto?s.stage+' · 拖动或方向键环视 · P 接管':s.phase!=='flying'?
+            arrivedOnDeck?'已停稳 · 拖动环视 · P 自动出发 · J 离席下船':'泊位就绪 · 拖动环视 · E 手动起飞 / P 自动出发':'W/S 推进 · A/D 转向 · ↑/↓ 俯仰 · 左拖操舵 · 右拖环视';
+          hint.textContent=controlHint+' · H 回正船首'+(pending?'':'　／　'+targetName()+' '+distanceText(range)+' '+mark);
         }
       }else{
         tag.textContent=site?.name||definition.name;status.textContent='SE-00001 · '+(definition.kind==='ship'?'拜伦号':body.waterDepth?.(position.lat,position.lon)>1.7?'水下':'地表')+' · 空格跳跃';
@@ -957,16 +959,19 @@
       const handInput=freeInput&&!pending&&!s.auto;
       if(freeInput&&(pending||s.auto))lookAround(pressed('KeyA')||pressed('ArrowLeft'),pressed('KeyD')||pressed('ArrowRight'),
         pressed('KeyW')||pressed('ArrowUp'),pressed('KeyS')||pressed('ArrowDown'),dt*1.4);
+      const lookYaw=handInput?flightLookYaw:0,lookPitch=handInput?flightLookPitch:0;
       let remaining=dt;
       while(remaining>0){
         const sub=flightPulses.size?Math.min(remaining,...flightPulses.values()):remaining;
         const held=k=>pressed(k)||flightPulses.has(k),axis=(a,b)=>Number(held(a))-Number(held(b));
-        flight.tick(sub,handInput?{forward:axis('KeyW','KeyS'),turn:clamp(Number(held('KeyD')||held('ArrowRight'))-Number(held('KeyA')||held('ArrowLeft'))+(drag?.steering?drag.turn:0),-1,1),
-        strafe:axis('KeyR','KeyQ'),pitch:clamp(axis('ArrowUp','ArrowDown')+(drag?.steering?drag.pitch:0),-1,1),lift:axis('Space','KeyC'),
+        flight.tick(sub,handInput?{forward:axis('KeyW','KeyS'),turn:Number(held('KeyD')||held('ArrowRight'))-Number(held('KeyA')||held('ArrowLeft')),
+        strafe:axis('KeyR','KeyQ'),pitch:axis('ArrowUp','ArrowDown'),lookYaw:lookYaw*sub/dt,lookPitch:lookPitch*sub/dt,lift:axis('Space','KeyC'),
         boost:held('ShiftLeft')||held('ShiftRight'),brake:held('KeyX')||time<brakeUntil}:{});
         for(const [key,left] of flightPulses){if(left<=sub)flightPulses.delete(key);else flightPulses.set(key,left-sub);}
         remaining-=sub;
       }
+      // A zero-time first frame must leave the pending drag for the next tick.
+      if(dt>0||!handInput)flightLookYaw=flightLookPitch=0;
       if(phase==='helm'&&dt)pendingSteps.clear();
       s=flight.status();
       if(phase!=='surface'&&definition.id!==flight.planetId)usePlanet(flight.planetId);
@@ -1095,7 +1100,7 @@
       setPhase('cabin');canvas.focus({preventScroll:true});
     }
     listen(unseat,'click',leaveHelm);listen(leaveSeat,'click',leaveHelm);
-    function faceForward(){yaw=pitch=0;drag=null;updateUI();requestFrame();canvas.focus({preventScroll:true});}
+    function faceForward(){yaw=pitch=0;clearPointerInput();updateUI();requestFrame();canvas.focus({preventScroll:true});}
     listen(centerView,'click',faceForward);
     function cancelRoute(){
       if(phase!=='surface')return;
@@ -1121,6 +1126,7 @@
     function toggleView(){
       if(throughScope){throughScope=false;updateUI();requestFrame();return;}
       beginCameraBlend();
+      clearPointerInput();
       if(phase==='helm')external=!external;
       else if(phase==='surface')eye=!eye;
       updateUI();requestFrame();persist();
@@ -1215,19 +1221,24 @@
       if(keys.delete(code)){if(pendingSteps.delete(code))shortStep(code);persist();requestFrame();}
     });
     listen(window,'blur',resetInput);listen(document,'visibilitychange',()=>{resetInput();if(!document.hidden)requestFrame();});
+    listen(canvas,'blur',clearPointerInput);
     listen(canvas,'pointerdown',e=>{
       if(phase==='hidden'||!atlas.hidden||stage.dataset.consoleOpen||boarding.commsOpen||drag||![0,1,2].includes(e.button))return;
       if(e.button!==0&&phase!=='helm')return;
       if(e.button===1){e.preventDefault();faceForward();return;}
       e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);
-      drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,travel:0,
-        steering:phase==='helm'&&flight.status().phase==='flying'&&e.button===0&&!e.altKey&&!autoViewing(),turn:0,pitch:0,button:e.button};
+      drag={id:e.pointerId,x:e.clientX,y:e.clientY,travel:0,pendingX:0,pendingY:0,
+        steering:phase==='helm'&&flight.status().phase==='flying'&&e.button===0&&!e.altKey&&!autoViewing(),button:e.button};
     });
     listen(canvas,'pointermove',e=>{
       if(drag?.id!==e.pointerId)return;
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;drag.travel+=Math.abs(dx)+Math.abs(dy);
       if(drag.steering){
-        if(drag.travel>=5){drag.turn=clamp((e.clientX-drag.startX)/100,-1,1);drag.pitch=clamp((drag.startY-e.clientY)/100,-1,1);}
+        drag.pendingX+=dx;drag.pendingY+=dy;
+        if(drag.travel>=5){
+          flightLookYaw+=drag.pendingX*.004;flightLookPitch-=drag.pendingY*.004;
+          drag.pendingX=drag.pendingY=0;
+        }
       }else if(observedBird!==null&&phase==='surface'){
         observation.bearing-=dx*.006;observation.elevation=clamp(observation.elevation+dy*.004,observingWreck()?-.95:-.04,1.12);
       }else{yaw-=dx*.004;pitch=clamp(pitch-dy*.004,-1.1,1.12);}
@@ -1236,6 +1247,8 @@
     for(const type of ['pointerup','pointercancel','lostpointercapture'])listen(canvas,type,e=>{
       if(drag?.id!==e.pointerId)return;
       const tap=type==='pointerup'&&drag.travel<5&&drag.button===0;drag=null;
+      // Normal release keeps the last movement, even if no frame ran after it.
+      if(type!=='pointerup')clearPointerInput();
       if(tap&&(phase==='surface'||phase==='cabin'||phase==='helm'&&!external)){
         const r=canvas.getBoundingClientRect();
         picker.setFromCamera(new T.Vector2(2*(e.clientX-r.left)/r.width-1,1-2*(e.clientY-r.top)/r.height),view);

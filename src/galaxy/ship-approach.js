@@ -7,7 +7,7 @@ function createShipApproach(T,body,saved){
   const mark=new T.Vector3(),attitude=new T.Quaternion(),forward=new T.Vector3(),euler=new T.Euler(0,0,0,'YXZ');
   const gearSamples=[[0,.04,-4.3],[-2.93,.04,2.75],[2.93,.04,2.75],[0,1.55,-6.4],[0,1.6,6.3],[-5.4,1.8,0],[5.4,1.8,0]].map(a=>new T.Vector3(...a));
   const clamp=T.MathUtils.clamp;
-  let phase='landed',auto=null,leg='',yaw=0,pitch=0,roll=0,throttle=0,timeScale=1,range=0,boostPower=0,lastDriveSign=1;
+  let phase='landed',auto=null,leg='',yaw=0,pitch=0,roll=0,throttle=0,timeScale=1,range=0,boostPower=0;
   let stage='接驳坪已停稳';
   function settle(){
     phase='landed';auto=null;leg='';velocity.set(0,0,0);
@@ -17,7 +17,10 @@ function createShipApproach(T,body,saved){
     if(phase!=='landed')return false;
     phase='flying';leg='rise';stage='离开接驳坪';return true;
   }
-  function manual(){auto=null;if(leg!=='rise')leg='';stage=leg==='rise'?'离开接驳坪':'舷侧手动驾驶';}
+  function manual(){
+    euler.setFromQuaternion(quaternion,'YXZ');yaw=euler.y;pitch=euler.x;roll=euler.z;
+    auto=null;boostPower=0;if(leg!=='rise')leg='';stage=leg==='rise'?'离开接驳坪':'舷侧手动驾驶';
+  }
   function departSystem(){if(phase==='landed')launch();auto='outbound';stage='离开拜伦号';}
   function autopilot(destination,site){
     if(destination!=='surface'||(site?.id&&site.id!==berth.id))return false;
@@ -52,8 +55,9 @@ function createShipApproach(T,body,saved){
     const guided=Boolean(auto||leg==='rise');
     boostPower=clamp(boostPower+(input.boost&&!guided ? .22 : -.32)*dt,0,1);
     const distance=nearestHullDistance(),clearanceLimit=Math.min(1700,13+distance*.72);
-    const speedLimit=guided?Math.min(90,clearanceLimit*.42):clearanceLimit*(.52+.48*boostPower);
-    const accel=Math.min(650,21+distance*.48)*(guided ? .64 : 1+2.4*boostPower);
+    const envelope=shuttleManualEnvelope(distance,true);
+    const speedLimit=guided?Math.min(90,clearanceLimit*.42):envelope.limit*(.52+.48*boostPower);
+    const accel=(guided?Math.min(650,21+distance*.48):envelope.accel)*(guided ? .64 : 1+2.4*boostPower);
     if(guided){
       if(leg==='rise'||auto==='outbound'){
         mark.copy(position);
@@ -89,15 +93,12 @@ function createShipApproach(T,body,saved){
       pitch=clamp(pitch+(input.pitch||0)*dt*.82+(input.lookPitch||0),-1.32,1.32);
       roll+=(-(input.turn||0)*.2-roll)*(1-Math.exp(-3*dt));
       attitude.setFromEuler(euler.set(pitch,yaw,0));
-      const drive=input.forward||(input.boost?1:0);if(drive)lastDriveSign=Math.sign(drive);
+      const drive=input.forward||(input.boost?1:0);
       desired.set(input.strafe||0,0,-drive).applyQuaternion(attitude);
       desired.y+=input.lift||0;desired.clampLength(0,1).multiplyScalar(speedLimit);
       if(input.brake)desired.set(0,0,0);
-      // Mouse steering rotates the actual craft and redirects its existing
-      // forward speed immediately; acceleration still controls its magnitude.
-      const speed=velocity.length();
-      if(desired.lengthSq()>1e-8)velocity.copy(desired).setLength(speed);
-      else if(speed>1e-8)velocity.set(0,0,-lastDriveSign).applyQuaternion(attitude).setLength(speed);
+      // Preserve momentum until the acceleration-limited controller below
+      // applies thrust or braking; releasing lift must not create forward speed.
     }
     attitude.setFromEuler(euler.set(pitch,yaw,roll));
     if(guided)quaternion.slerp(attitude,1-Math.exp(-5*dt));else quaternion.copy(attitude);
@@ -139,7 +140,6 @@ function createShipApproach(T,body,saved){
   if(saved?.p&&saved.q&&saved.v){
     position.fromArray(saved.p);velocity.fromArray(saved.v);quaternion.fromArray(saved.q).normalize();
     euler.setFromQuaternion(quaternion,'YXZ');yaw=euler.y;pitch=euler.x;roll=euler.z;
-    lastDriveSign=velocity.dot(forward.set(0,0,-1).applyQuaternion(quaternion))<0?-1:1;
     if(saved.phase==='landed')settle();
     else{phase='flying';boostPower=clamp(Number(saved.boostPower)||0,0,1);auto=['surface','outbound'].includes(saved.auto)?saved.auto:null;
       leg=['rise','approach'].includes(saved.leg)?saved.leg:'';stage=auto?'接驳续航':'舷侧手动驾驶';}

@@ -9,6 +9,20 @@ function shuttleCruiseSpeed(limit,boost=false){
   return boost?limit:Math.min(limit,Math.max(16,limit*.76));
 }
 
+// The local and inertial controllers use the same metre/second response.
+// Far from a body the envelope grows continuously, rather than changing gear
+// merely because the same craft crossed a controller boundary.
+function shuttleManualEnvelope(clearance,ship=false){
+  const h=Math.max(0,clearance);
+  const limit=ship?Math.min(1700,13+h*.72)+Math.max(0,h-4500)*.65:
+    h<12?22+2.5*h:h<120?52+2.8*(h-12):h<1400?354.4+1.4*(h-120):2146.4+.65*(h-1400);
+  const base=ship?Math.min(650,21+h*.48):Math.min(650,32+h*.26);
+  return {limit:Math.min(260000,limit),accel:Math.min(13500,base+Math.max(0,h-3000)*.18)};
+}
+function shuttleDockSpeedLimit(distance,accel){
+  return Math.min(22+distance*.27,Math.sqrt(22*22+2*.63*accel*distance));
+}
+
 function createShuttleFlight(T,body,dock,saved,planetId='klose'){
   const clamp=T.MathUtils.clamp,R=body.radius,highSpeed=8000;
   const position=dock.position.clone(),quaternion=dock.quaternion.clone(),velocity=new T.Vector3();
@@ -26,7 +40,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
   let phase='docked',auto=null,leg='',target=null,detour=null,detourClock=0;
   let pitch=0,roll=0,riseLevel=0,latitude=0,longitude=0,altitude=0,ground=0,power=0;
   let pad=null,range=0,timeScale=1,stage='泊位锁定',boostPower=0;
-  let tour=[],tourIndex=0,coastSign=1;
+  let tour=[],tourIndex=0,departureWaypoint=null,departureBlocked=false;
   const next=new T.Vector3(),error=new T.Vector3(),delta=new T.Vector3();
   const tangent=new T.Vector3(),destUp=new T.Vector3(),probe=new T.Vector3();
   function angles(p){
@@ -83,8 +97,8 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
         attitude.slerp(target,T.MathUtils.smoothstep(gap,.08,2.8));
       }
     }
-    // A manual turn changes the actual nose and the forward track together.
-    // Keeping an independent, slowly following body pose caused long sideways slides.
+    // The nose follows the pilot immediately; the velocity follows through the
+    // finite thrust budget in advance(), including when a turn reverses thrust.
     if(!auto&&!atDock)quaternion.copy(attitude);
     else quaternion.slerp(attitude,1-Math.exp(-4.5*dt)).normalize();
   }
@@ -126,8 +140,16 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     return true;
   }
   function manual(){
+    if(phase==='flying'){
+      currentFrame();
+      tangent.set(0,0,-1).applyQuaternion(quaternion);
+      pitch=Math.asin(clamp(tangent.dot(up),-1,1));
+      heading.copy(tangent).projectOnPlane(up);levelHeading(body.frame(latitude,longitude));
+      tangent.set(1,0,0).applyQuaternion(quaternion);
+      roll=Math.atan2(tangent.dot(up),tangent.dot(right)*Math.max(.0001,Math.cos(pitch)));
+    }
     auto=null;target=detour=null;tour=[];tourIndex=0;range=0;timeScale=1;boostPower=0;
-    coastSign=1;
+    departureWaypoint=null;departureBlocked=false;
     if(phase==='flying'){
       if(leg==='latch')leg='undock';
       if(leg!=='rise'&&leg!=='undock')leg='';
@@ -174,7 +196,8 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
   function departSystem(){
     if(phase!=='flying')launch();
     if(leg==='latch')leg='undock';
-    if(leg!=='undock'&&leg!=='rise')leg='';
+    if(leg!=='undock'&&leg!=='rise')leg='escape';
+    departureWaypoint=null;departureBlocked=false;
     auto='outbound';target=detour=null;tour=[];tourIndex=0;boostPower=0;stage='驶向星际航路';return true;
   }
   function canCapture(){
@@ -192,10 +215,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     return autopilot('surface',{lat:latitude,lon:longitude,name:'当前着陆点'});
   }
   function manualLimit(agl){
-    if(agl<12)return 22+2.5*Math.max(0,agl);
-    if(agl<120)return 52+2.8*(agl-12);
-    if(agl<1400)return 354.4+1.4*(agl-120);
-    return Math.min(highSpeed,2146.4+.65*(agl-1400));
+    return shuttleManualEnvelope(agl).limit;
   }
   // Limit both commanded speed and braking distance. Fine approach speed
   // tends continuously to zero when the position error vanishes.
@@ -216,6 +236,56 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
       if(dock.isBlocked(probe))return false;
     }
     return true;
+  }
+  function departureLine(a,b){
+    const sample=new T.Vector3(),offset=new T.Vector3();
+    const count=Math.max(1,Math.ceil(a.distanceTo(b)/24));
+    for(let i=1;i<=count;i++){
+      sample.lerpVectors(a,b,i/count);
+      const at=angles(sample);
+      if(sample.length()-R<body.flightHeight(at.lat,at.lon,padFootprint)+2)return false;
+      if(dock.isBlocked)for(const v of [[0,0,0],[7,0,0],[-7,0,0],[0,3,0],[0,0,7],[0,0,-7]]){
+        if(dock.isBlocked(offset.fromArray(v).add(sample)))return false;
+      }
+    }
+    return true;
+  }
+  function climbPoint(from){
+    const at=angles(from),floor=body.flightHeight(at.lat,at.lon,padFootprint);
+    const height=Math.max(from.length()+600,R+floor+Math.max(400,R*.9),
+      dock.isBlocked?dock.position.length()+2400:0);
+    return from.clone().setLength(height);
+  }
+  function planDeparture(){
+    // The carrier faces the grassland. Extending its forward axis by 2400 m
+    // points into a compact planet, so only the short physical undock uses it.
+    const climb=climbPoint(position);
+    if(departureLine(position,climb)){leg='climb';departureWaypoint=climb;return;}
+    const directions=[dockRight,dockRight.clone().negate(),dockUp,dockUp.clone().negate(),eastAxis,northAxis];
+    for(const distance of [250,500,900,1400,2200])for(const direction of directions){
+      const side=direction.clone().projectOnPlane(up);
+      if(side.lengthSq()<.01)continue;
+      // A tangent departure cannot cut a chord through the planet. Check both
+      // the lateral clearance and the following climb against terrain/hull.
+      const via=position.clone().addScaledVector(side.normalize(),distance);
+      if(departureLine(position,via)&&departureLine(via,climbPoint(via))){
+        leg='escape';departureWaypoint=via;return;
+      }
+    }
+    departureBlocked=true;
+  }
+  function outboundGuidance(limit,accel){
+    if(!departureWaypoint&&!departureBlocked)planDeparture();
+    if(!departureWaypoint){desired.set(0,0,0);stage='离星航路净空不足 · 可手动接管';return;}
+    const climbing=leg==='climb';
+    const distance=seek(departureWaypoint,Math.min(limit,climbing?480:120),Math.min(accel*.3,40),.65);
+    stage=climbing?'爬升至转移轨道':'绕开母舰 · 离星净空';
+    if(!climbing&&distance<8&&velocity.length()<12){
+      // This transition is one-way. Climbing closer to the carrier must not
+      // send the craft back to the departure corridor on the next step.
+      const climb=climbPoint(position);
+      if(departureLine(position,climb)){leg='climb';departureWaypoint=climb;}
+    }
   }
   function exteriorWaypoint(dt){
     detourClock-=dt;
@@ -320,7 +390,6 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     // Holding afterburner is itself forward thrust. This also gives the screen
     // afterburner button a useful effect without a second simultaneous button.
     const drive=forward||(input.boost?1:0);
-    if(drive)coastSign=Math.sign(drive);
     desired.copy(heading).multiplyScalar(drive*Math.cos(pitch)).addScaledVector(right,side*.64)
       .addScaledVector(up,lift+drive*Math.sin(pitch)).clampLength(0,1).multiplyScalar(cruise);
     if(input.brake)desired.set(0,0,0);
@@ -343,16 +412,9 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     const downLimit=.65+Math.sqrt(2*.29*accel*agl);
     const vr=desired.dot(up);
     if(vr<-downLimit)desired.addScaledVector(up,-downLimit-vr);
-    if(!auto&&!leg&&velocity.lengthSq()>.000001){
-      // Arcade flight has no uncommanded lateral inertia: preserve speed while
-      // steering it onto the nose, including the coast after releasing W/S.
-      // With no thrust the desired velocity stays zero, so braking still follows.
-      const speed=velocity.length();
-      if(desired.lengthSq()>.01)velocity.copy(desired).setLength(speed);
-      else velocity.copy(heading).multiplyScalar(Math.cos(pitch)).addScaledVector(up,Math.sin(pitch)).multiplyScalar(speed*coastSign);
-      const descent=velocity.dot(up);
-      if(descent<-downLimit)velocity.addScaledVector(up,-downLimit-descent);
-    }
+    // Turning changes the nose, not the existing momentum. Reversal, side
+    // thrust and releasing a climb all converge through this acceleration
+    // budget; zero thrust still actively damps velocity and X brakes faster.
     delta.subVectors(desired,velocity);
     const demand=clamp(delta.length()/Math.max(1,accel*.65),0,1);
     const engine=auto?Math.max(demand,clamp(velocity.length()/highSpeed,0,1)):
@@ -431,7 +493,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     const frame=currentFrame();
     levelHeading(frame);
     const agl=Math.max(0,altitude-ground),limit=manualLimit(agl),near=position.distanceTo(dock.position);
-    let accel=clamp(32+agl*.26,32,650);
+    let accel=shuttleManualEnvelope(agl).accel;
     let dockPose=false,viewingMarker=null;
     if(leg==='undock'){
       const end=dock.position.clone().addScaledVector(dockForward,corridor+5);
@@ -443,10 +505,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
       stage='垂直起飞';accel=15;
       if(altitude>=riseLevel-.7)leg='';
     }else if(auto==='outbound'){
-      if(near<2000){
-        const exit=probe.copy(dock.position).addScaledVector(dockForward,2400);
-        seek(exit,near<180?35:Math.min(limit,480),32);stage='离开母舰航道';
-      }else{desired.copy(up).multiplyScalar(shuttleCruiseSpeed(limit));stage='爬升至转移轨道';}
+      outboundGuidance(limit,accel);
     }else if(auto==='dock'&&((near<2400&&velocity.length()<132)||leg)){
       dockGuidance(dt);accel=leg==='latch'?5:28;dockPose=leg==='latch'||leg==='gate';
     }else if(auto){
@@ -454,7 +513,7 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
       else planetaryGuidance(Math.min(limit,auto==='dock'?600:Math.max(10,Math.min(120,10+agl*.32))),accel);
     }
     else{
-      const dockLimit=Math.min(22+near*.27,Math.sqrt(22*22+2*.63*accel*near));
+      const dockLimit=shuttleDockSpeedLimit(near,accel);
       manualGuidance(input,dt,Math.min(limit,dockLimit));
       accel*=1+2.4*boostPower;
       if(input.brake)accel*=2.5;
@@ -516,7 +575,6 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     phase=s.phase;heading.fromArray(s.heading);levelHeading(frame);quaternion.fromArray(s.q).normalize();
     velocity.fromArray(s.v).clampLength(0,highSpeed);
     pitch=clamp(Number(s.pitch)||0,-1.32,1.32);roll=clamp(Number(s.roll)||0,-.3,.3);
-    coastSign=velocity.dot(heading)*Math.cos(pitch)+velocity.dot(up)*Math.sin(pitch)<0?-1:1;
     if(phase==='landed'){
       // A parked craft already has a berth. Keep its latitude and longitude
       // even if an animal is now inside the flight planner's approach margin.
@@ -525,8 +583,12 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     if(altitude<ground){position.setLength(R+ground+2);currentFrame();}
     target=validSite(s.target)?{...s.target}:null;
     auto=s.auto==='surface'&&target?'surface':s.auto==='dock'?'dock':s.auto==='outbound'?'outbound':null;
-    leg=['undock','rise','outer','gate','latch'].includes(s.leg)?s.leg:'';
-    if(!auto&&['outer','gate','latch'].includes(leg))leg='';
+    leg=['undock','rise','outer','gate','latch','escape','climb'].includes(s.leg)?s.leg:'';
+    if(!auto&&['outer','gate','latch','escape','climb'].includes(leg))leg='';
+    // Old outbound records have no departure phase. Replan from their actual
+    // position; never restore the obsolete downward carrier exit target.
+    departureWaypoint=null;departureBlocked=false;
+    if(auto==='outbound'&&leg!=='undock'&&leg!=='rise')leg='escape';
     riseLevel=Number.isFinite(s.riseLevel)?s.riseLevel:altitude+10;
     if(leg==='rise')riseLevel=Math.max(riseLevel,ground+10);
     boostPower=clamp(Number(s.boostPower)||0,0,1);
@@ -539,6 +601,9 @@ function createShuttleFlight(T,body,dock,saved,planetId='klose'){
     return {phase,auto,stage,speed:velocity.length(),verticalSpeed:velocity.dot(up),clearance:Math.max(0,altitude-ground),
       altitude,lat:latitude,lon:longitude,heading:Math.atan2(heading.dot(eastAxis),heading.dot(northAxis)),range,timeScale,throttle:power,boostPower,
       targetName:auto==='dock'?'赛尔号泊位':target?.name||'',targetId:target?.id||null,
+      // Keep the carrier's hull sweep active until the checked climb has
+      // actually cleared its complete envelope, not merely started climbing.
+      departureReady:auto==='outbound'&&leg==='climb'&&departureWaypoint!==null&&position.distanceTo(departureWaypoint)<50,
       canCapture:canCapture(),canLand:canLand(),landingReason:pad?.reason||''};
   }
   settleDock();if(saved)restore(saved);

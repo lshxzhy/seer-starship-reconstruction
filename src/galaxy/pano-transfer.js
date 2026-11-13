@@ -1,7 +1,7 @@
 // One L-01. Surface flight uses the current planet's metre frame; while in
 // transit the same pose and velocity integrate in the star-centred inertial frame.
 function createPanoFlight(T,getSurface,dock,pano,saved){
-  const ids=Object.keys(PANO_ORBITS),clamp=T.MathUtils.clamp,cruiseLimit=260000;
+  const ids=Object.keys(PANO_ORBITS),clamp=T.MathUtils.clamp;
   const position=new T.Vector3(),velocity=new T.Vector3(),quaternion=new T.Quaternion();
   const globalP=new T.Vector3(),globalV=new T.Vector3(),wanted=new T.Vector3(),goal=new T.Vector3();
   const centre=new T.Vector3(),orbitalV=new T.Vector3(),axis=new T.Vector3(),turn=new T.Quaternion();
@@ -10,11 +10,14 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   const approach=new T.Vector3(),radial=new T.Vector3(),along=new T.Vector3(),segment=new T.Vector3();
   const waypoint=new T.Vector3(),prev=new T.Vector3(),previousRel=new T.Vector3();
   const destinationCentre=new T.Vector3(),relativeV=new T.Vector3(),priorCentre=new T.Vector3();
+  const controlUp=new T.Vector3(),frameUp=new T.Vector3(),controlRight=new T.Vector3(),controlHeading=new T.Vector3();
+  const controlBasis=new T.Matrix4(),controlEuler=new T.Euler(0,0,0,'YXZ'),frameTurn=new T.Quaternion();
   const emptyDock={position:new T.Vector3(1e9,0,0),quaternion:new T.Quaternion()};
   const available=id=>ids.includes(id);
   const definition=id=>PANO_NAVIGATION.regions[id].definition;
   const tuple=(a,n)=>Array.isArray(a)&&a.length===n&&a.every(Number.isFinite);
-  let reference='klose',local=null,transit=false,route=null,time=0,range=0,stage='',scale=1,power=0,boostPower=0,coastSign=1;
+  let reference='klose',local=null,transit=false,route=null,time=0,range=0,stage='',scale=1,power=0,boostPower=0;
+  let controlFrameReady=false,manualAcceleration=32,manualVessel=false;
   function createLocal(id,record){
     reference=id;local=definition(id).kind==='ship'?createShipApproach(T,getSurface(id),record):
       createShuttleFlight(T,getSurface(id),id==='klose'?dock:emptyDock,record,id);
@@ -49,14 +52,14 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
       return accepted;
     }
     route=requested;
-    boostPower=0;
+    boostPower=0;controlFrameReady=false;
     if(!transit)local.departSystem();
     return true;
   }
   function enterTransfer(status){
     syncLocal();
     boostPower=clamp(Number(status.boostPower)||0,0,1);
-    coastSign=velocity.dot(axis.copy(forward).applyQuaternion(quaternion))<0?-1:1;
+    controlFrameReady=false;
     globalP.copy(position).add(pano.center(reference,time,centre));
     globalV.copy(velocity).add(pano.velocity(reference,time,orbitalV));
     transit=true;stage=route?'星际转移':'星际手动驾驶';range=0;
@@ -141,21 +144,42 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   }
   function manualGuidance(dt,input){
     const value=k=>clamp(Number(input[k])||0,-1,1);
-    quaternion.multiply(turn.setFromAxisAngle(up,-value('turn')*dt*1.4-(Number(input.lookYaw)||0)));
-    quaternion.multiply(turn.setFromAxisAngle(right,value('pitch')*dt*.95+(Number(input.lookPitch)||0))).normalize();
+    const body=getSurface(reference),vessel=definition(reference).kind==='ship';manualVessel=vessel;
+    const at=vessel?body.coordinates(position):{lat:Math.atan2(position.y,Math.hypot(position.x,position.z)),lon:Math.atan2(-position.z,position.x)};
+    const clearance=vessel?Math.max(0,position.length()-body.radius,position.y-body.point(body.landingSites[0].lat,body.landingSites[0].lon).y):
+      Math.max(0,position.length()-body.radius-body.height(at.lat,at.lon));
+    frameUp.copy(vessel?up:position).normalize();
+    if(!controlFrameReady){controlUp.copy(frameUp);controlFrameReady=true;}
+    else{
+      // A new nearest planet changes coordinates, not the direction of a held
+      // lift key. Transport the control frame continuously across that boundary.
+      turn.setFromUnitVectors(controlUp,frameUp);
+      frameTurn.identity().slerp(turn,1-Math.exp(-2.4*dt));controlUp.applyQuaternion(frameTurn).normalize();
+    }
+    const yawRate=vessel?1.15:1.70-.60*clamp(velocity.length()/2200,0,1);
+    quaternion.premultiply(turn.setFromAxisAngle(controlUp,-value('turn')*dt*yawRate-(Number(input.lookYaw)||0))).normalize();
+    localHeading.copy(forward).applyQuaternion(quaternion);
+    const oldPitch=Math.asin(clamp(localHeading.dot(controlUp),-1,1));
+    controlHeading.copy(localHeading).projectOnPlane(controlUp);
+    if(controlHeading.lengthSq()<.000001)controlHeading.crossVectors(controlUp,axis.copy(right).applyQuaternion(quaternion));
+    controlHeading.normalize();controlRight.crossVectors(controlHeading,controlUp).normalize();
+    const side=axis.copy(right).applyQuaternion(quaternion);
+    let roll=Math.atan2(side.dot(controlUp),side.dot(controlRight)*Math.max(.0001,Math.cos(oldPitch)));
+    const pitch=clamp(oldPitch+value('pitch')*dt*(vessel?.82:.95)+(Number(input.lookPitch)||0),-1.32,1.32);
+    const banking=clamp(value('turn')+(Number(input.lookYaw)||0)/Math.max(dt,.0001)*.35,-1,1);
+    roll+=(-banking*(vessel?.20:.23)-roll)*(1-Math.exp(-3*dt));
+    controlBasis.makeBasis(controlRight,controlUp,axis.copy(controlHeading).negate());
+    quaternion.setFromRotationMatrix(controlBasis).multiply(turn.setFromEuler(controlEuler.set(pitch,0,roll))).normalize();
     boostPower=clamp(boostPower+(input.boost ? .22 : -.32)*dt,0,1);
-    const clearance=position.length()-definition(reference).radius;
-    let limit=Math.min(cruiseLimit,3200+Math.max(0,clearance)*.49);
+    const envelope=shuttleManualEnvelope(clearance,vessel);let limit=envelope.limit;
+    manualAcceleration=envelope.accel*(1+2.4*boostPower)*(input.brake?2.5:1);
     if(reference==='klose'){
       const fromBerth=position.distanceTo(dock.position);
-      // This local berth is high above the ground. Closing speed must depend
-      // on the ship as well as on altitude until the deck controller takes over.
-      limit=Math.min(limit,Math.sqrt(900*900+2*8000*Math.max(0,fromBerth-4200)));
+      limit=Math.min(limit,shuttleDockSpeedLimit(fromBerth,envelope.accel));
     }
     const drive=value('forward')||(input.boost?1:0);
-    if(drive)coastSign=Math.sign(drive);
-    wanted.set(value('strafe')*.68,value('lift'),-drive).clampLength(0,1);
-    wanted.applyQuaternion(quaternion).multiplyScalar(limit*(.52+.48*boostPower));
+    wanted.copy(controlHeading).multiplyScalar(drive*Math.cos(pitch)).addScaledVector(controlRight,value('strafe')*(vessel?1:.64))
+      .addScaledVector(controlUp,value('lift')+drive*Math.sin(pitch)).clampLength(0,1).multiplyScalar(limit*(.52+.48*boostPower));
     if(input.brake)wanted.set(0,0,0);
     wanted.add(pano.velocity(reference,time,orbitalV));
     stage=input.boost?'星际加力 · '+Math.round(boostPower*100)+'%':'星际手动驾驶';range=0;
@@ -201,19 +225,17 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   }
   function transferStep(dt,input){
     if(route)guide(dt);else manualGuidance(dt,input);
-    if(!route){
-      // Match near-planet arcade steering while retaining the reference body's
-      // orbital velocity. Mouse steering also turns the coast after releasing W.
-      relativeV.copy(wanted).sub(pano.velocity(reference,time,orbitalV));
-      const speed=axis.copy(globalV).sub(orbitalV).length();
-      if(relativeV.lengthSq()>.01)globalV.copy(relativeV).setLength(speed).add(orbitalV);
-      else globalV.copy(forward).applyQuaternion(quaternion).multiplyScalar(speed*coastSign).add(orbitalV);
-    }
+    // Momentum is continuous through mode changes. A new control direction
+    // changes wanted velocity only; the budget below applies the actual turn.
     const dv=along.subVectors(wanted,globalV);
     power=route?Math.min(1,dv.length()/8000):(input.forward||input.boost ? .38+.62*boostPower : .12);
-    const acceleration=route?800:input.brake?42000:13500*(1+2.4*boostPower);
+    const acceleration=route?800:manualAcceleration;
     if(route)dv.multiplyScalar(1-Math.exp(-2.4*dt));
-    globalV.add(dv.clampLength(0,acceleration*dt));
+    if(!route&&!manualVessel){
+      const vertical=dv.dot(controlUp);
+      dv.addScaledVector(controlUp,-vertical).clampLength(0,.71*acceleration*dt);
+      globalV.add(dv).addScaledVector(controlUp,clamp(vertical,-.70*acceleration*dt,.70*acceleration*dt));
+    }else globalV.add(dv.clampLength(0,acceleration*dt));
     prev.copy(globalP);globalP.addScaledVector(globalV,dt);time+=dt;
     for(const id of ['star',...ids])protectSurface(id,dt);
     // Keep a little hysteresis at an influence boundary. Evaluate every registered body
@@ -251,9 +273,10 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
       time+=local.tick(dt,input);
       const s=local.status();syncLocal();
       const outsideDock=reference!=='klose'||position.distanceTo(dock.position)>(route?1850:5100);
+      const departureClear=!route||reference!=='klose'||s.departureReady;
       const orbitalBoundary=definition(reference).kind==='ship'?(route?1700:4500):
         definition(reference).radius*(route ? .75 : 1.7);
-      if(s.phase==='flying'&&outsideDock&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer(s);
+      if(s.phase==='flying'&&outsideDock&&departureClear&&s.clearance>=orbitalBoundary&&(route||!s.auto))enterTransfer(s);
       return;
     }
     scale=1;
@@ -307,7 +330,7 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
     route=readRoute(rec.route);boostPower=clamp(Number(rec.boostPower)||0,0,1);
     if(rec.inTransit){
       reference=id;position.fromArray(rec.p);velocity.fromArray(rec.v);quaternion.fromArray(rec.q).normalize();
-      coastSign=velocity.dot(axis.copy(forward).applyQuaternion(quaternion))<0?-1:1;
+      controlFrameReady=false;
       globalP.copy(position).add(pano.center(reference,time,centre));globalV.copy(velocity).add(pano.velocity(reference,time,orbitalV));
       transit=true;scale=1;stage=route?'星际巡航续航':'星际手动驾驶';range=route?globalP.distanceTo(approachPoint(route)):0;return true;
     }
@@ -324,6 +347,6 @@ function createPanoFlight(T,getSurface,dock,pano,saved){
   return {position,quaternion,velocity,tick,status,autopilot,snapshot,restore,placeOnSurface,
     get orbitTime(){return time;},get planetId(){return reference;},
     launch(){return !transit&&local.launch();},
-    manual(){route=null;boostPower=0;coastSign=1;if(!transit)local.manual();else{stage='星际手动驾驶';range=0;}},
+    manual(){route=null;boostPower=0;controlFrameReady=false;if(!transit)local.manual();else{stage='星际手动驾驶';range=0;}},
     captureDock(){return !transit&&reference==='klose'&&local.captureDock();},land(){return !transit&&local.land();}};
 }
