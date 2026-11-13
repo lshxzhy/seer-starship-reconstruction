@@ -878,6 +878,23 @@
       }
       return 0;
     }
+    function setHelmViewDirection(direction){
+      // The requested unit direction is expressed in the craft's local frame.
+      if(external){
+        // Intersect the reverse view ray from the existing focus with the
+        // orbit sphere centred at (0, 1.4, 0), preserving its framing.
+        const orbitRadius=chaseBoom.length,focusDot=-2*direction.z;
+        const distance=focusDot+Math.sqrt(focusDot*focusDot+orbitRadius*orbitRadius-4);
+        const offset=vec(0,0,-2).addScaledVector(direction,-distance);
+        yaw=Math.atan2(offset.x,offset.z);
+        pitch=.20-Math.atan2(offset.y,Math.hypot(offset.x,offset.z));
+      }else{
+        yaw=Math.atan2(-direction.x,-direction.z);
+        pitch=Math.asin(clamp(direction.y,-1,1))+.065;
+      }
+      // Existing angle bounds and the external low-altitude limit still apply.
+      pitch=clamp(pitch,-1.1,1.12);
+    }
     function attachCamera(object,point,headYaw,headPitch){
       const dir=vec(-Math.sin(headYaw)*Math.cos(headPitch),Math.sin(headPitch),-Math.cos(headYaw)*Math.cos(headPitch));
       view.position.copy(object.localToWorld(point));const q=object.getWorldQuaternion(new T.Quaternion());
@@ -891,7 +908,9 @@
       if(helm)nono.followOnPlanet(1.02,0,1.35,0,dt);
       else nono.followOnPlanet(inCar?.92:clamp(.87-foot.x,-.95,.95),0,inCar?-.65:clamp(-1.4-foot.z,-1.45,1.45),0,dt);
       if(helm&&external){
-        const minElevation=(s.phase!=='flying'||s.clearance<60) ? .06 : -1.10;
+        // Keep the low-altitude limit, then release it over one boom length.
+        const freedom=s.phase==='flying'?T.MathUtils.smoothstep(s.clearance,60,60+chaseBoom.length):0;
+        const minElevation=T.MathUtils.lerp(.06,-1.10,freedom);
         const elevation=clamp(.20-pitch,minElevation,1.30);
         const horizontal=Math.cos(elevation)*chaseBoom.length;
         const v=vec(Math.sin(yaw)*horizontal,1.4+Math.sin(elevation)*chaseBoom.length,Math.cos(yaw)*horizontal);
@@ -1100,7 +1119,11 @@
       setPhase('cabin');canvas.focus({preventScroll:true});
     }
     listen(unseat,'click',leaveHelm);listen(leaveSeat,'click',leaveHelm);
-    function faceForward(){yaw=pitch=0;clearPointerInput();updateUI();requestFrame();canvas.focus({preventScroll:true});}
+    function faceForward(){
+      if(phase==='helm')setHelmViewDirection(vec(0,Math.sin(-.065),-Math.cos(-.065)));
+      else yaw=pitch=0;
+      clearPointerInput();updateUI();requestFrame();canvas.focus({preventScroll:true});
+    }
     listen(centerView,'click',faceForward);
     function cancelRoute(){
       if(phase!=='surface')return;
@@ -1125,9 +1148,14 @@
     });
     function toggleView(){
       if(throughScope){throughScope=false;updateUI();requestFrame();return;}
+      const direction=phase==='helm'&&cameraReady?view.getWorldDirection(vec())
+        .applyQuaternion(craft.root.getWorldQuaternion(new T.Quaternion()).invert()).normalize():null;
       beginCameraBlend();
       clearPointerInput();
-      if(phase==='helm')external=!external;
+      if(phase==='helm'){
+        external=!external;
+        if(direction)setHelmViewDirection(direction);
+      }
       else if(phase==='surface')eye=!eye;
       updateUI();requestFrame();persist();
     }
